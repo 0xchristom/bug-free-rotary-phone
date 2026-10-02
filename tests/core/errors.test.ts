@@ -26,6 +26,9 @@ describe('ERROR_MESSAGES', () => {
         'KEYSTORE_UNSUPPORTED_VERSION',
         'KEYSTORE_WRONG_PASSWORD_OR_CORRUPTED',
         'PASSWORD_TOO_SHORT',
+        'VAULT_LOCKED',
+        'VAULT_TIMEOUT',
+        'INTERNAL_ERROR',
       ].sort(),
     );
   });

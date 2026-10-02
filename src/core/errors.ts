@@ -22,6 +22,9 @@ export const ERROR_MESSAGES = {
   KEYSTORE_UNSUPPORTED_KDF: 'Plik keystore używa nieobsługiwanej metody zabezpieczenia hasła.',
   KEYSTORE_TAMPERED:
     'Jawna część pliku keystore nie zgadza się z zaszyfrowaną. Plik mógł zostać zmodyfikowany.',
+  VAULT_LOCKED: 'Plik floty jest zablokowany. Odblokuj go hasłem, aby kontynuować.',
+  VAULT_TIMEOUT: 'Sejf z kluczami nie odpowiedział w wyznaczonym czasie. Spróbuj ponownie.',
+  INTERNAL_ERROR: 'Wystąpił wewnętrzny błąd aplikacji. Spróbuj ponownie.',
 } as const satisfies Record<string, string>;
 
 export type ErrorCode = keyof typeof ERROR_MESSAGES;

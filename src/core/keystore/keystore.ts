@@ -18,10 +18,12 @@ import {
 import { AppError, isAppError } from '../errors.ts';
 import {
   MIN_PASSWORD_LENGTH,
-  decryptSecrets,
-  encryptSecrets,
+  createSession,
+  encryptWithSession,
   passwordLength,
+  unlockSession,
   type CryptoOptions,
+  type KeystoreSession,
 } from './crypto.ts';
 import {
   KEYSTORE_VERSION,
@@ -52,6 +54,8 @@ export interface CreateKeystoreParams extends CryptoOptions {
 export interface OpenedKeystore {
   readonly file: KeystoreFileV1;
   readonly secrets: KeystoreSecretsV1;
+  /** Derived key + KDF parameters, for re-encrypting without the password. */
+  readonly session: KeystoreSession;
 }
 
 /** W01, W02, …, W99, W100. */
@@ -116,17 +120,17 @@ function verifySecrets(
 }
 
 /**
- * Encrypts ready-made secrets into a keystore file. Also used when saving settings.
- * The public part is computed from the secrets, never taken from the caller.
+ * Encrypts ready-made secrets into a keystore file with an existing session (same KDF
+ * parameters and salt, fresh IV). Used by the vault to save settings or add wallets
+ * without the password. The public part is computed from the secrets, never taken
+ * from the caller.
  */
-export async function buildKeystore(
+export async function buildKeystoreWithSession(
   secrets: KeystoreSecretsV1,
   meta: KeystoreMeta,
-  password: string,
-  options: CryptoOptions = {},
+  session: KeystoreSession,
 ): Promise<KeystoreFileV1> {
   if (!isValidFleetName(meta.fleetName)) throw new AppError('INVALID_FLEET_NAME');
-  if (passwordLength(password) < MIN_PASSWORD_LENGTH) throw new AppError('PASSWORD_TOO_SHORT');
   // Round-trip through the validator so only well-formed secrets are ever encrypted.
   const json = secretsToJson(secrets);
   const normalized = parseSecrets(JSON.parse(json));
@@ -143,7 +147,7 @@ export async function buildKeystore(
 
   const plaintext = new TextEncoder().encode(json);
   try {
-    const encrypted = await encryptSecrets(plaintext, password, options);
+    const encrypted = await encryptWithSession(plaintext, session);
     return {
       version: KEYSTORE_VERSION,
       fleetName: meta.fleetName,
@@ -159,8 +163,36 @@ export async function buildKeystore(
 }
 
 /**
+ * Encrypts ready-made secrets into a keystore file under a new password (new salt).
+ * Validates the fleet name, password and secrets before running scrypt.
+ */
+export async function buildKeystore(
+  secrets: KeystoreSecretsV1,
+  meta: KeystoreMeta,
+  password: string,
+  options: CryptoOptions = {},
+): Promise<KeystoreFileV1> {
+  return (await buildKeystoreSession(secrets, meta, password, options)).file;
+}
+
+async function buildKeystoreSession(
+  secrets: KeystoreSecretsV1,
+  meta: KeystoreMeta,
+  password: string,
+  options: CryptoOptions,
+): Promise<{ file: KeystoreFileV1; session: KeystoreSession }> {
+  if (!isValidFleetName(meta.fleetName)) throw new AppError('INVALID_FLEET_NAME');
+  if (passwordLength(password) < MIN_PASSWORD_LENGTH) throw new AppError('PASSWORD_TOO_SHORT');
+  // Fail on bad secrets before the expensive scrypt.
+  verifySecrets(parseSecrets(JSON.parse(secretsToJson(secrets))));
+  const session = await createSession(password, options);
+  return { file: await buildKeystoreWithSession(secrets, meta, session), session };
+}
+
+/**
  * New fleet: wallets 0..walletCount-1 from a new 24-word mnemonic or an imported one.
- * Returns the file and the secrets (the UI shows the mnemonic once for backup).
+ * Returns the file, the secrets and the session for the vault worker. The UI never
+ * shows the mnemonic; a backup goes only through the explicit export (BUNNDLY-11).
  */
 export async function createKeystore(params: CreateKeystoreParams): Promise<OpenedKeystore> {
   if (!isValidFleetName(params.fleetName)) throw new AppError('INVALID_FLEET_NAME');
@@ -183,13 +215,13 @@ export async function createKeystore(params: CreateKeystoreParams): Promise<Open
     apiKeys: {},
   };
   const options = params.onProgress ? { onProgress: params.onProgress } : {};
-  const file = await buildKeystore(
+  const { file, session } = await buildKeystoreSession(
     secrets,
     { fleetName: params.fleetName },
     params.password,
     options,
   );
-  return { file, secrets };
+  return { file, secrets, session };
 }
 
 /**
@@ -202,7 +234,7 @@ export async function openKeystore(
   password: string,
   options: CryptoOptions = {},
 ): Promise<OpenedKeystore> {
-  const plaintext = await decryptSecrets(
+  const { plaintext, session } = await unlockSession(
     { kdf: file.kdf, cipher: file.cipher, ciphertext: file.ciphertext },
     password,
     options,
@@ -217,5 +249,5 @@ export async function openKeystore(
     wipe(plaintext);
   }
   verifySecrets(secrets, file.public.wallets);
-  return { file, secrets };
+  return { file, secrets, session };
 }

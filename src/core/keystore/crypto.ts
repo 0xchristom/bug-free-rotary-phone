@@ -62,12 +62,23 @@ export interface EncryptOptions extends CryptoOptions {
   readonly kdf?: ScryptCost;
 }
 
-interface ValidatedParams {
+interface ValidatedKdf {
   readonly N: number;
   readonly r: number;
   readonly p: number;
   readonly salt: Uint8Array;
-  readonly iv: Uint8Array;
+}
+
+/** Non-extractable AES-256-GCM key (type spelled this way to work without DOM typings). */
+export type AesKey = Awaited<ReturnType<typeof crypto.subtle.importKey>>;
+
+/**
+ * An unlocked keystore: the derived key plus the KDF parameters it came from. Lets the
+ * vault re-encrypt (new IV, same salt) without keeping the password (BUNNDLY-7).
+ */
+export interface KeystoreSession {
+  readonly key: AesKey;
+  readonly kdf: KdfParams;
 }
 
 function isPowerOfTwo(n: number): boolean {
@@ -97,21 +108,28 @@ function validCost(N: unknown, r: unknown, p: unknown): boolean {
   );
 }
 
-/** Throws KEYSTORE_UNSUPPORTED_KDF for anything outside the allowed parameter set. */
-function validateParams(kdf: unknown, cipher: unknown): ValidatedParams {
-  const unsupported = (): never => {
-    throw new AppError('KEYSTORE_UNSUPPORTED_KDF');
-  };
+function unsupported(): never {
+  throw new AppError('KEYSTORE_UNSUPPORTED_KDF');
+}
+
+/** Throws KEYSTORE_UNSUPPORTED_KDF for anything outside the allowed KDF parameter set. */
+function validateKdf(kdf: unknown): ValidatedKdf {
   if (typeof kdf !== 'object' || kdf === null) return unsupported();
-  if (typeof cipher !== 'object' || cipher === null) return unsupported();
   const k = kdf as Partial<Record<keyof KdfParams, unknown>>;
-  const c = cipher as Partial<Record<keyof CipherParams, unknown>>;
-  if (k.name !== 'scrypt' || c.name !== 'AES-GCM') return unsupported();
-  if (!validCost(k.N, k.r, k.p)) return unsupported();
+  if (k.name !== 'scrypt' || !validCost(k.N, k.r, k.p)) return unsupported();
   const salt = decodeBase64(k.salt);
+  if (salt?.length !== SALT_LENGTH) return unsupported();
+  return { N: k.N as number, r: SCRYPT_R, p: k.p as number, salt };
+}
+
+/** Throws KEYSTORE_UNSUPPORTED_KDF unless the cipher is AES-GCM with a 12-byte IV. */
+function validateCipher(cipher: unknown): Uint8Array<ArrayBuffer> {
+  if (typeof cipher !== 'object' || cipher === null) return unsupported();
+  const c = cipher as Partial<Record<keyof CipherParams, unknown>>;
+  if (c.name !== 'AES-GCM') return unsupported();
   const iv = decodeBase64(c.iv);
-  if (salt?.length !== SALT_LENGTH || iv?.length !== IV_LENGTH) return unsupported();
-  return { N: k.N as number, r: SCRYPT_R, p: k.p as number, salt, iv };
+  if (iv?.length !== IV_LENGTH) return unsupported();
+  return new Uint8Array(iv);
 }
 
 /** User-perceived characters (grapheme clusters) after NFKC. */
@@ -126,10 +144,9 @@ function passwordBytes(password: string): Uint8Array {
 
 async function deriveAesKey(
   password: string,
-  params: ValidatedParams,
-  usage: 'encrypt' | 'decrypt',
+  params: ValidatedKdf,
   onProgress: ((progress: number) => void) | undefined,
-) {
+): Promise<AesKey> {
   const pw = passwordBytes(password);
   let derived: Uint8Array | undefined;
   let keyBytes: Uint8Array<ArrayBuffer> | undefined;
@@ -144,7 +161,7 @@ async function deriveAesKey(
       ...(onProgress ? { onProgress } : {}),
     });
     keyBytes = new Uint8Array(derived);
-    return await crypto.subtle.importKey('raw', keyBytes, 'AES-GCM', false, [usage]);
+    return await crypto.subtle.importKey('raw', keyBytes, 'AES-GCM', false, ['encrypt', 'decrypt']);
   } finally {
     pw.fill(0);
     derived?.fill(0);
@@ -156,38 +173,108 @@ function randomBytes(length: number): Uint8Array<ArrayBuffer> {
   return crypto.getRandomValues(new Uint8Array(length));
 }
 
+function decodeSealed(ciphertext: unknown): Uint8Array<ArrayBuffer> {
+  const sealed = decodeBase64(ciphertext);
+  if (sealed === undefined || sealed.length < TAG_LENGTH) {
+    throw new AppError('KEYSTORE_WRONG_PASSWORD_OR_CORRUPTED');
+  }
+  return new Uint8Array(sealed);
+}
+
 /**
- * Encrypts `plaintext` with a key derived from `password`. Requires at least
- * MIN_PASSWORD_LENGTH characters (after NFKC), else PASSWORD_TOO_SHORT.
+ * New session for a new password: fresh 16-byte salt, default (or given) cost.
+ * Requires at least MIN_PASSWORD_LENGTH characters (after NFKC), else PASSWORD_TOO_SHORT.
  */
+export async function createSession(
+  password: string,
+  options: EncryptOptions = {},
+): Promise<KeystoreSession> {
+  if (passwordLength(password) < MIN_PASSWORD_LENGTH) {
+    throw new AppError('PASSWORD_TOO_SHORT');
+  }
+  const kdf: KdfParams = {
+    name: 'scrypt',
+    N: options.kdf?.N ?? DEFAULT_SCRYPT_N,
+    r: SCRYPT_R,
+    p: options.kdf?.p ?? MIN_SCRYPT_P,
+    salt: base64.encode(randomBytes(SALT_LENGTH)),
+  };
+  const key = await deriveAesKey(password, validateKdf(kdf), options.onProgress);
+  return { key, kdf };
+}
+
+/** Encrypts with the session key and a fresh random 12-byte IV. */
+export async function encryptWithSession(
+  plaintext: Uint8Array,
+  session: KeystoreSession,
+): Promise<EncryptedSecrets> {
+  validateKdf(session.kdf);
+  const iv = randomBytes(IV_LENGTH);
+  const plainCopy = new Uint8Array(plaintext);
+  try {
+    const sealed = await crypto.subtle.encrypt(
+      { name: 'AES-GCM', iv, tagLength: TAG_LENGTH_BITS },
+      session.key,
+      plainCopy,
+    );
+    return {
+      kdf: session.kdf,
+      cipher: { name: 'AES-GCM', iv: base64.encode(iv) },
+      ciphertext: base64.encode(new Uint8Array(sealed)),
+    };
+  } finally {
+    plainCopy.fill(0);
+  }
+}
+
+/**
+ * Decrypts with an existing session (no scrypt). The data must have been encrypted
+ * under the same KDF parameters; any mismatch or tampering gives
+ * KEYSTORE_WRONG_PASSWORD_OR_CORRUPTED. The caller must wipe the result.
+ */
+export async function decryptWithSession(
+  encrypted: EncryptedSecrets,
+  session: KeystoreSession,
+): Promise<Uint8Array> {
+  const iv = validateCipher(encrypted.cipher);
+  const sealed = decodeSealed(encrypted.ciphertext);
+  try {
+    const plain = await crypto.subtle.decrypt(
+      { name: 'AES-GCM', iv, tagLength: TAG_LENGTH_BITS },
+      session.key,
+      sealed,
+    );
+    return new Uint8Array(plain);
+  } catch {
+    // OperationError from GCM: wrong key or modified data. No cause, no details.
+    throw new AppError('KEYSTORE_WRONG_PASSWORD_OR_CORRUPTED');
+  }
+}
+
+/**
+ * Derives the session from `password` and the file's KDF parameters and decrypts.
+ * Unsupported parameters give KEYSTORE_UNSUPPORTED_KDF before any scrypt work.
+ */
+export async function unlockSession(
+  encrypted: EncryptedSecrets,
+  password: string,
+  options: CryptoOptions = {},
+): Promise<{ plaintext: Uint8Array; session: KeystoreSession }> {
+  const params = validateKdf(encrypted.kdf);
+  validateCipher(encrypted.cipher);
+  decodeSealed(encrypted.ciphertext);
+  const key = await deriveAesKey(password, params, options.onProgress);
+  const session: KeystoreSession = { key, kdf: encrypted.kdf };
+  return { plaintext: await decryptWithSession(encrypted, session), session };
+}
+
+/** Encrypts `plaintext` under a new session for `password` (see createSession). */
 export async function encryptSecrets(
   plaintext: Uint8Array,
   password: string,
   options: EncryptOptions = {},
 ): Promise<EncryptedSecrets> {
-  if (passwordLength(password) < MIN_PASSWORD_LENGTH) {
-    throw new AppError('PASSWORD_TOO_SHORT');
-  }
-  const N = options.kdf?.N ?? DEFAULT_SCRYPT_N;
-  const p = options.kdf?.p ?? MIN_SCRYPT_P;
-  const salt = randomBytes(SALT_LENGTH);
-  const iv = randomBytes(IV_LENGTH);
-  const kdf: KdfParams = { name: 'scrypt', N, r: SCRYPT_R, p, salt: base64.encode(salt) };
-  const cipher: CipherParams = { name: 'AES-GCM', iv: base64.encode(iv) };
-  const params = validateParams(kdf, cipher);
-
-  const key = await deriveAesKey(password, params, 'encrypt', options.onProgress);
-  const plainCopy = new Uint8Array(plaintext);
-  try {
-    const sealed = await crypto.subtle.encrypt(
-      { name: 'AES-GCM', iv, tagLength: TAG_LENGTH_BITS },
-      key,
-      plainCopy,
-    );
-    return { kdf, cipher, ciphertext: base64.encode(new Uint8Array(sealed)) };
-  } finally {
-    plainCopy.fill(0);
-  }
+  return encryptWithSession(plaintext, await createSession(password, options));
 }
 
 /**
@@ -200,21 +287,5 @@ export async function decryptSecrets(
   password: string,
   options: CryptoOptions = {},
 ): Promise<Uint8Array> {
-  const params = validateParams(encrypted.kdf, encrypted.cipher);
-  const sealed = decodeBase64(encrypted.ciphertext);
-  if (sealed === undefined || sealed.length < TAG_LENGTH) {
-    throw new AppError('KEYSTORE_WRONG_PASSWORD_OR_CORRUPTED');
-  }
-  const key = await deriveAesKey(password, params, 'decrypt', options.onProgress);
-  try {
-    const plain = await crypto.subtle.decrypt(
-      { name: 'AES-GCM', iv: new Uint8Array(params.iv), tagLength: TAG_LENGTH_BITS },
-      key,
-      new Uint8Array(sealed),
-    );
-    return new Uint8Array(plain);
-  } catch {
-    // OperationError from GCM: wrong key or modified data. No cause, no details.
-    throw new AppError('KEYSTORE_WRONG_PASSWORD_OR_CORRUPTED');
-  }
+  return (await unlockSession(encrypted, password, options)).plaintext;
 }
