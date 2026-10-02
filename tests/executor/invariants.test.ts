@@ -54,6 +54,8 @@ export interface Scenario {
   /** ms after the start, or null for no STOP. */
   readonly stopAt: number | null;
   readonly noRouteMs: number;
+  /** Fresh mint (D-035): HTTP 500 for this long, then "no route" for `noRouteMs`. */
+  readonly serverErrorMs: number;
 }
 
 export function scenario(seed: number): Scenario {
@@ -65,6 +67,7 @@ export function scenario(seed: number): Scenario {
     dryRun: random() < 0.25,
     stopAt: random() < 0.3 ? Math.floor(random() * 120_000) : null,
     noRouteMs: random() < 0.5 ? Math.floor(random() * 8_000) : 0,
+    serverErrorMs: random() < 0.5 ? Math.floor(random() * 600) : 0,
   };
 }
 
@@ -89,7 +92,9 @@ export async function simulate(s: Scenario): Promise<SimResult> {
     chain,
     orderDelayMs: () => 50 + Math.floor(random() * 1_500),
     order: (): OrderOutcome => {
-      if (clock.now() - T0 < s.noRouteMs) return { fail: 'NO_ROUTE', httpStatus: 400 };
+      const since = clock.now() - T0;
+      if (since < s.serverErrorMs) return { fail: 'SERVER_ERROR', httpStatus: 500 };
+      if (since < s.serverErrorMs + s.noRouteMs) return { fail: 'NO_ROUTE', httpStatus: 400 };
       const r = random();
       if (r < 0.05) return { fail: 'RATE_LIMITED', httpStatus: 429 };
       if (r < 0.1) return { fail: 'SERVER_ERROR', httpStatus: 503 };
@@ -192,6 +197,13 @@ export async function simulate(s: Scenario): Promise<SimResult> {
     if (!FINAL_STATES.has(w.state)) broken.push(`${taker}: not final (${w.state})`);
     if (w.state !== 'CONFIRMED' && w.reason === null) broken.push(`${taker}: no reason`);
     if (w.state === 'UNKNOWN') broken.push(`${taker}: UNKNOWN with a healthy chain`);
+    // "no route" and HTTP 500 from /order never use attempts (D-035)
+    if (
+      w.reason?.code === 'MAX_ATTEMPTS' &&
+      (w.reason.detail === 'NO_ROUTE' || w.reason.detail === 'SERVER_ERROR')
+    ) {
+      broken.push(`${taker}: MAX_ATTEMPTS from ${w.reason.detail}`);
+    }
     const buys = chain.successfulBuys(taker);
     if (buys.length > 1) broken.push(`${taker}: ${String(buys.length)} buys`);
     const spent = buys.reduce((sum, b) => sum + b.spent, 0n);
@@ -277,5 +289,6 @@ describe(`fleet invariants (${String(SEEDS)} seeds${LONG ? ', long set' : ''})`,
     expect(new Set(all.map((s) => s.dryRun))).toEqual(new Set([true, false]));
     expect(all.some((s) => s.stopAt !== null)).toBe(true);
     expect(all.some((s) => s.noRouteMs > 0)).toBe(true);
+    expect(all.some((s) => s.serverErrorMs > 0)).toBe(true);
   });
 });

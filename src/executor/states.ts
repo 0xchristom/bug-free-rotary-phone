@@ -25,7 +25,8 @@ export type WalletState = (typeof WALLET_STATES)[number];
  */
 export const TRANSITIONS: Readonly<Record<WalletState, readonly WalletState[]>> = {
   IDLE: ['QUEUED', 'SKIPPED'],
-  QUEUED: ['QUOTING', 'SKIPPED'],
+  // QUEUED → FAILED: the mint gate's window ended while the wallet waited (D-035).
+  QUEUED: ['QUOTING', 'SKIPPED', 'FAILED'],
   QUOTING: ['SIGNING', 'QUEUED', 'SKIPPED', 'FAILED'],
   SIGNING: ['SUBMITTED', 'SKIPPED', 'FAILED'],
   SUBMITTED: ['CONFIRMED', 'QUEUED', 'FAILED', 'UNKNOWN'],

@@ -134,14 +134,20 @@ async function setup(o: Setup = {}) {
   return { clock, jupiter, fakeChain, h, events, status, secrets };
 }
 
+/**
+ * Final event of each wallet, sorted by wallet index: wallets finish in any order (the
+ * vault signs with real WebCrypto, whose timing varies), so tests never depend on it.
+ */
 const finals = (events: ExecutorEvent[]): WalletEvent[] =>
-  events.filter(
-    (e): e is WalletEvent =>
-      e.kind === 'wallet' &&
-      ['CONFIRMED', 'FAILED', 'UNKNOWN', 'SKIPPED'].includes(e.state) &&
-      // UNKNOWN while the chain is checked is not final
-      e.reason?.code !== 'EXECUTE_NO_ANSWER',
-  );
+  events
+    .filter(
+      (e): e is WalletEvent =>
+        e.kind === 'wallet' &&
+        ['CONFIRMED', 'FAILED', 'UNKNOWN', 'SKIPPED'].includes(e.state) &&
+        // UNKNOWN while the chain is checked is not final
+        e.reason?.code !== 'EXECUTE_NO_ANSWER',
+    )
+    .sort((a, b) => a.index - b.index);
 
 /**
  * Runs the fake clock until the run's `finished` event. The vault signs with real
@@ -230,7 +236,8 @@ describe('startBuy', () => {
     });
     await h.handle({ type: 'startBuy', mint: USDC });
     await runToEnd(clock, events);
-    const verify = (): VerifyEvent[] => events.filter((e): e is VerifyEvent => e.kind === 'verify');
+    const verify = (): VerifyEvent[] =>
+      events.filter((e): e is VerifyEvent => e.kind === 'verify').sort((a, b) => a.index - b.index);
     for (let i = 0; i < 100 && verify().length < 2; i++) await clock.runUntil();
     expect(verify().map((e) => [e.index, e.status, e.observed === e.expected])).toEqual([
       [0, 'MATCH', true],
@@ -283,11 +290,12 @@ describe('startBuy', () => {
       expect(global?.jupiterPlan).toBe('free'); // default plan in the settings
       await t.h.handle({ type: 'startBuy', mint: USDC });
       await runToEnd(t.clock, t.events);
-      const first = t.jupiter.calls.filter((c) => c.kind === 'order').map((c) => c.start);
-      return first.filter((at) => at === Math.min(...first)).length;
+      const starts = t.jupiter.calls.filter((c) => c.kind === 'order').map((c) => c.start);
+      // in the first 60 s window (after the probe, D-035)
+      return starts.filter((at) => at < Math.min(...starts) + 60_000).length;
     };
     expect(await startsAtOnce(false)).toBe(27); // Keyless budget: 90 % of 30 per minute
-    expect(await startsAtOnce(true)).toBe(30); // Free with a key: 54, all 30 at once
+    expect(await startsAtOnce(true)).toBe(30); // Free with a key: 54, all 30 in the window
   });
 
   it('wallets without a balance read are skipped before /order', async () => {

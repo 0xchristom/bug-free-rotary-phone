@@ -12,7 +12,10 @@
  * - Idempotency: after `/execute` a wallet is retried only when Jupiter said nothing was
  *   sent, or after the chain showed the transaction did not land and can no longer land.
  *   Until then the wallet is UNKNOWN and checked every 2 s (`landing.ts`).
- * - "No route" is retried inside a time window with backoff, without using attempts.
+ * - Mint gate (D-035): the run starts with one probe `/order`; "no route" or HTTP 500
+ *   closes the gate again later. While closed, one probe at a time (with backoff after
+ *   "no route") and everyone else waits in the queue without requests; a route opens it. The window counts from the first "no route"
+ *   of the run; when it ends, the waiting wallets fail without further requests.
  * - Price ceiling: after the first fill, a quote above it by more than the ceiling skips.
  *
  * Pure logic with injected Jupiter client, signer, limiters and clock; no DOM, no keys.
@@ -140,7 +143,7 @@ export interface RunOptions {
   readonly minReserveLamports: bigint;
   /** Max price above the fleet's first fill, in percent. */
   readonly priceCeilingPercent: number;
-  /** "No route" is retried this long after a wallet first saw it. */
+  /** "No route" (and HTTP 500) from `/order` is waited out this long, from its first time. */
   readonly noRouteWindowMs: number;
   readonly noRouteBackoffMinMs: number;
   readonly noRouteBackoffMaxMs: number;
@@ -180,9 +183,6 @@ interface Slot {
   orderMs: number | null;
   signMs: number | null;
   executeMs: number | null;
-  /** First "no route" of this wallet, and how many followed. */
-  noRouteSince: number | null;
-  noRoutes: number;
 }
 
 /** Price of the fleet's first fill: `input / output` lamports per token unit. */
@@ -223,16 +223,26 @@ export function startRun(deps: ExecutorDeps, options: RunOptions): ExecutorRun {
         orderMs: null,
         signMs: null,
         executeMs: null,
-        noRouteSince: null,
-        noRoutes: 0,
       },
     ]),
   );
   const pollMs = options.landingPollMs ?? LANDING_POLL_MS;
   const landingTimeoutMs = options.landingTimeoutMs ?? LANDING_TIMEOUT_MS;
   let entry: EntryPrice | null = null;
-  /** Wallets waiting out a "no route" backoff before going back to the queue. */
-  const delayed = new Set<number>();
+  /** Mint gate (D-035). */
+  const gate = {
+    // Starts closed: the run's first /order is a probe, so a mint without a route yet
+    // costs one request, not a burst that spends the whole limiter budget (D-035).
+    closed: true,
+    /** First "no route" of the run: the window counts from here and never restarts. */
+    since: null as number | null,
+    /** Backoff steps since the gate last closed. */
+    backoffs: 0,
+    /** A probe /order is in flight. */
+    probing: false,
+  };
+  /** The probe wallet waiting out its backoff, or null. */
+  let probeWaiting: number | null = null;
   const queue: number[] = [];
   const stopSignal = new AbortController();
   let stopped = false;
@@ -338,31 +348,63 @@ export function startRun(deps: ExecutorDeps, options: RunOptions): ExecutorRun {
     nudge();
   };
 
-  /** "No route": back to the queue after a backoff while the window lasts; then FAILED. */
-  const noRoute = (index: number, detail: string): void => {
+  const windowOver = (): boolean =>
+    gate.since !== null && clock.now() - gate.since >= options.noRouteWindowMs;
+
+  /** The window ended without a route: every waiting wallet fails, no more requests. */
+  const failWaiting = (detail: string): void => {
+    for (const waiting of queue.splice(0)) fail(waiting, 'NO_ROUTE', detail);
+    if (probeWaiting !== null) {
+      const probe = probeWaiting;
+      probeWaiting = null;
+      fail(probe, 'NO_ROUTE', detail);
+    }
+  };
+
+  /**
+   * No route yet (400 "no route" or 500): closes the mint gate. The wallet that closed it,
+   * or the probe, waits out a backoff and probes again; any other wallet waits in the
+   * queue. No attempt is used. After the window everyone waiting fails.
+   */
+  const noRoute = (index: number, detail: string, wasProbe: boolean): void => {
     const slot = slotOf(index);
-    const now = clock.now();
-    slot.noRouteSince ??= now;
-    if (now - slot.noRouteSince >= options.noRouteWindowMs) {
+    gate.since ??= clock.now();
+    if (windowOver()) {
       fail(index, 'NO_ROUTE', detail);
+      failWaiting(detail);
+      nudge();
       return;
     }
-    const delay = Math.min(
-      options.noRouteBackoffMinMs * 2 ** slot.noRoutes,
-      options.noRouteBackoffMaxMs,
-    );
-    slot.noRoutes += 1;
     move(index, 'QUEUED');
     slot.attempt -= 1; // inside the window "no route" does not use attempts
     if (stopped) {
       skip(index, 'STOPPED');
       return;
     }
-    delayed.add(index);
-    void clock.sleep(delay).then(() => {
-      // STOP may have skipped it meanwhile.
-      if (!delayed.delete(index)) return;
+    const becomesProbe = (!gate.closed || wasProbe) && probeWaiting === null;
+    gate.closed = true;
+    if (!becomesProbe) {
+      // A request that was already in flight: it waits with everyone else.
       queue.push(index);
+      nudge();
+      return;
+    }
+    const delay = Math.min(
+      options.noRouteBackoffMinMs * 2 ** gate.backoffs,
+      options.noRouteBackoffMaxMs,
+    );
+    gate.backoffs += 1;
+    probeWaiting = index;
+    void clock.sleep(delay).then(() => {
+      // STOP or the end of the window may have settled it meanwhile.
+      if (probeWaiting !== index) return;
+      probeWaiting = null;
+      if (windowOver()) {
+        fail(index, 'NO_ROUTE', detail);
+        failWaiting(detail);
+      } else {
+        queue.unshift(index); // the probe goes first
+      }
       nudge();
     });
   };
@@ -379,8 +421,8 @@ export function startRun(deps: ExecutorDeps, options: RunOptions): ExecutorRun {
         skip(index, decision.reason, decision.detail);
         return;
       case 'noRoute':
-        noRoute(index, decision.detail);
-        return;
+        // Only reachable after /order: the caller passes whether it was the probe.
+        throw new Error('noRoute outside /order');
       case 'check':
         // Only reachable after /execute: the caller runs the chain check.
         throw new Error('check outside /execute');
@@ -451,7 +493,7 @@ export function startRun(deps: ExecutorDeps, options: RunOptions): ExecutorRun {
   };
 
   /** One attempt of one wallet: /order → sign → /execute. Never throws on data. */
-  const attempt = async (index: number): Promise<void> => {
+  const attempt = async (index: number, probe: boolean): Promise<void> => {
     const slot = slotOf(index);
     const { wallet } = slot;
     slot.attempt += 1;
@@ -470,13 +512,21 @@ export function startRun(deps: ExecutorDeps, options: RunOptions): ExecutorRun {
       httpStatus: ordered.ok ? 200 : ordered.httpStatus,
       rateLimit: ordered.rateLimit,
     });
+    if (probe) gate.probing = false;
     if (!ordered.ok) {
-      apply(index, afterOrderFailure(ordered));
+      const decision = afterOrderFailure(ordered);
+      if (decision.action === 'noRoute') noRoute(index, decision.detail, probe);
+      else apply(index, decision);
+      nudge();
       return;
     }
+    // A route (even with a build error for this wallet) opens the gate for everyone.
+    if (gate.closed) {
+      gate.closed = false;
+      gate.backoffs = 0;
+      nudge();
+    }
     const order = ordered.value;
-    slot.noRouteSince = null;
-    slot.noRoutes = 0;
     slot.quote = { inAmount: order.inAmount, outAmount: order.outAmount, router: order.router };
     if (order.buildError !== null) {
       apply(index, afterBuildError(order.buildError.reason));
@@ -591,23 +641,24 @@ export function startRun(deps: ExecutorDeps, options: RunOptions): ExecutorRun {
       }
     }
 
+    /** Closed gate with its probe busy (in flight or in backoff): everyone else waits. */
+    const gateBusy = (): boolean => gate.closed && (gate.probing || probeWaiting !== null);
     while (fatal === null && !stopped) {
-      const index = queue.shift();
-      if (index === undefined) {
-        if (inFlight === 0 && delayed.size === 0) break;
+      if (queue.length === 0 || gateBusy()) {
+        if (queue.length === 0 && inFlight === 0 && probeWaiting === null) break;
         await idle();
         continue;
       }
-      if (!(await deps.orderLimiter.acquire(stopSignal.signal))) {
-        queue.unshift(index);
-        break;
-      }
-      if (isStopped()) {
-        queue.unshift(index);
-        break;
-      }
+      if (!(await deps.orderLimiter.acquire(stopSignal.signal))) break;
+      if (isStopped()) break;
+      // The gate may have closed while waiting for the limiter.
+      if (gateBusy()) continue;
+      const index = queue.shift();
+      if (index === undefined) continue;
+      const probe = gate.closed;
+      if (probe) gate.probing = true;
       inFlight += 1;
-      void attempt(index)
+      void attempt(index, probe)
         .catch((e: unknown) => {
           fatal ??= e;
         })
@@ -618,8 +669,11 @@ export function startRun(deps: ExecutorDeps, options: RunOptions): ExecutorRun {
     }
     // STOP: the queue empties; attempts in flight finish on their own.
     for (const index of queue.splice(0)) skip(index, 'STOPPED');
-    for (const index of delayed) skip(index, 'STOPPED');
-    delayed.clear();
+    if (probeWaiting !== null) {
+      const probe = probeWaiting;
+      probeWaiting = null;
+      skip(probe, 'STOPPED');
+    }
     while (inFlight > 0) await idle();
     if (fatal !== null) throw fatal instanceof Error ? fatal : new Error('executor failure');
     emitRun('finished');
