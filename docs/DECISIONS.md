@@ -443,3 +443,22 @@ Rejestr decyzji i rozbieżności z dokumentacją zewnętrzną. Nowe wpisy dopisu
 - Konsekwencje:
   - CSP (`connect-src`) musi obejmować również `https://api.jup.ag` (D-020 wymienia Helius HTTPS/WSS i awaryjny RPC).
   - Test ręczny z prawdziwymi kluczami robi Krystian (etykieta `blocked:krystian`); wynik i nagłówki opisujemy w komentarzu zadania.
+
+## D-025: Wdrożenie na Cloudflare Pages i nagłówki bezpieczeństwa
+
+- Data: 2026-10-02
+- Zadanie: BUNNDLY-31
+- Kontekst: SPEC 2.1, 6.4, 6.6, 7 (kryterium MVP „build statyczny działa lokalnie i po wdrożeniu, z nagłówkami CSP”), 8 i 10 (etap 5). Strona `developers.cloudflare.com` jest w moim środowisku zablokowana, więc dokumentację Cloudflare czytałem ze źródeł w repozytorium `cloudflare/cloudflare-docs` (gałąź `production`): Pages `headers`, `serving-pages`, `build-image`, `preview-deployments`, `known-issues`, `branch-build-controls` oraz Zero Trust `one-time-pin` i `policies`.
+- Decyzja:
+  - **Cloudflare Pages z integracją Git:** polecenie `npm run build`, katalog `dist`, Node z `.nvmrc` (Pages czyta ten plik sam). W repozytorium nie ma `wrangler.jsonc`, sekretów ani zmiennych środowiskowych. CI zostaje ręczne (D-012).
+  - **SPA fallback bez konfiguracji:** według dokumentacji Pages, jeśli w buildzie nie ma `404.html`, każda ścieżka dostaje `index.html`. Nie dodaję `_redirects`; test pilnuje, że `public/404.html` nie istnieje.
+  - **`public/_headers` to jedno źródło nagłówków.** Vite kopiuje go bez zmian do `dist/_headers`, a Cloudflare stosuje go do każdej odpowiedzi (reguła `/*`, także do skryptu workera, którego CSP obowiązuje w workerze).
+    - `Content-Security-Policy`: `default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self' https://*.helius-rpc.com wss://*.helius-rpc.com https://api.jup.ag https://api.mainnet.solana.com; worker-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'`. Bez `unsafe-inline` i `unsafe-eval`. `form-action 'none'` dodałem ponad opis zadania: wszystkie formularze są obsługiwane w JS (`preventDefault`), więc żaden nie wysyła danych.
+    - `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`, `X-Content-Type-Options: nosniff`.
+    - `Permissions-Policy`: wyłączone `camera`, `microphone`, `geolocation`, `payment`, `usb`, `serial`, `hid`, `midi`, `display-capture`; `screen-wake-lock=(self)` dla watchera (sprint 4). `bluetooth` usunąłem, bo Chromium zgłasza go w konsoli jako nieznaną funkcję.
+  - **`vite preview` wysyła te same nagłówki:** plugin `deploy/headers.ts` parsuje `public/_headers` (komentarze, wzorce dokładne i z jednym `*` na końcu, łączenie powtórzonych nagłówków przecinkiem jak w Cloudflare) i ustawia je w middleware podglądu. Testy w Chromium w kolejnych zadaniach działają więc z produkcyjnym CSP. `npm run dev` nie dostaje CSP, bo podgląd na żywo Vite i plugin React wymagają skryptów inline.
+  - **Cloudflare Access:** konfiguruje Krystian według README. Według dokumentacji przycisk „Enable access policy” w Pages chroni tylko wdrożenia podglądowe; główny adres `*.pages.dev` wymaga usunięcia `*` z hostname tej aplikacji i ponownego włączenia polityki. Logowanie: One-time PIN na e-mail, polityka `Allow` z `Include: Emails` tylko z adresem Krystiana. Własna domena: najpierw domena, potem osobna aplikacja Access (Access na domenie blokuje jej dodanie).
+  - **Vercel:** tylko wzmianka w README, bez `vercel.json` (SPEC 8.3).
+- Konsekwencje:
+  - Każdy merge do `main` wdraża produkcję; inne gałęzie tworzą wdrożenia podglądowe (chronione przez Access albo wyłączone w ustawieniach gałęzi).
+  - Nowe domeny w `connect-src` (np. dla watchera w sprincie 4) dopisujemy w `public/_headers` i w teście `tests/deploy/headers.test.ts`.
