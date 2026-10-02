@@ -7,3 +7,16 @@ export {
   toUserMessage,
 } from './errors.ts';
 export type { AppErrorOptions, ErrorCode } from './errors.ts';
+export {
+  MAX_FLEET_SIZE,
+  deriveSlip10Ed25519,
+  deriveWallets,
+  generateMnemonic,
+  normalizeMnemonic,
+  parseMnemonic,
+  secretKeyToBase58,
+  solanaDerivationPath,
+  validateMnemonic,
+  wipe,
+} from './derivation.ts';
+export type { DerivedWallet } from './derivation.ts';
