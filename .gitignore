@@ -1,0 +1,8 @@
+node_modules
+dist
+coverage
+*.tsbuildinfo
+.env*
+
+# Never commit wallet keystores (SPEC 6)
+*.keystore.json
