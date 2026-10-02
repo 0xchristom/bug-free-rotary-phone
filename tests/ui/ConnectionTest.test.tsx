@@ -85,7 +85,9 @@ describe('connection test in the settings', () => {
     expect(row(/Helius WebSocket/u)).toContain('slot 452700000');
     const jupiter = row(/Jupiter/u);
     expect(jupiter).toContain('0,01 SOL → 1,174568 USDC (metis)');
-    expect(jupiter).toContain('limit: pozostało 58, użyte 2, zwolnienie miejsca o');
+    expect(jupiter).toContain(
+      'x-ratelimit-remaining 58, x-ratelimit-current 2, x-ratelimit-reset 1790966971 (',
+    );
     expect(document.body.innerHTML).not.toContain(HELIUS);
     expect(document.body.innerHTML).not.toContain(JUPITER);
   });

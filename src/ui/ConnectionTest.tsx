@@ -21,8 +21,16 @@ function problemOf(check: ConnectionCheck): string {
   return check.problem === null ? '' : CONNECTION_PROBLEMS[check.problem];
 }
 
-function resetTime(limit: RateLimitHeaders): string {
-  return new Date(limit.reset * 1000).toLocaleTimeString('pl-PL');
+/** Raw header values as received; the reset also as local time (D-024). */
+function rateLimitText(limit: RateLimitHeaders): string {
+  const parts: string[] = [];
+  if (limit.remaining !== null) parts.push(`x-ratelimit-remaining ${String(limit.remaining)}`);
+  if (limit.current !== null) parts.push(`x-ratelimit-current ${String(limit.current)}`);
+  if (limit.reset !== null) {
+    const time = new Date(limit.reset * 1000).toLocaleTimeString('pl-PL');
+    parts.push(`x-ratelimit-reset ${String(limit.reset)} (${time})`);
+  }
+  return parts.join(', ');
 }
 
 function jupiterDetails(j: JupiterCheck): string {
@@ -30,14 +38,9 @@ function jupiterDetails(j: JupiterCheck): string {
   if (j.outAmount !== null && j.router !== null) {
     parts.push(`0,01 SOL → ${formatUnits(BigInt(j.outAmount), USDC_DECIMALS)} USDC (${j.router})`);
   }
-  if (j.rateLimit) {
-    const l = j.rateLimit;
-    parts.push(
-      `limit: pozostało ${String(l.remaining)}, użyte ${String(l.current)}, zwolnienie miejsca o ${resetTime(l)}`,
-    );
-  } else if (j.ok) {
-    parts.push('brak nagłówków x-ratelimit-* w odpowiedzi');
-  }
+  parts.push(
+    j.rateLimit ? rateLimitText(j.rateLimit) : 'nagłówki x-ratelimit-*: brak w odpowiedzi',
+  );
   return parts.join('; ');
 }
 
