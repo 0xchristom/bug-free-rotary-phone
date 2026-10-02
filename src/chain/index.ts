@@ -12,3 +12,16 @@ export {
 export type { ResilientTransportOptions, RpcSource } from './rpc.ts';
 export { MAX_ACCOUNTS_PER_CALL, chunk, createBalancesRpc, fetchSolBalances } from './balances.ts';
 export type { BalancesRpc } from './balances.ts';
+export {
+  ASSOCIATED_TOKEN_PROGRAM_ADDRESS,
+  MINT_SIZE,
+  TOKEN_2022_PROGRAM_ADDRESS,
+  TOKEN_ACCOUNT_SIZE,
+  TOKEN_PROGRAM_ADDRESS,
+  fetchTokenBalances,
+  findAssociatedTokenAddress,
+  parseMint,
+  programAddress,
+  readU64LE,
+} from './tokens.ts';
+export type { MintInfo, TokenBalances, TokenProgram } from './tokens.ts';
