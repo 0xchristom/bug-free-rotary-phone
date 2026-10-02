@@ -291,3 +291,32 @@ td.amount {
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
+
+/* Fleet table states (SPEC 3.2) */
+tr.row-error td {
+  background: color-mix(in srgb, var(--danger) 14%, transparent);
+}
+
+tr.row-ready td:first-child {
+  box-shadow: inset 3px 0 0 #46a758;
+}
+
+.badge.danger {
+  color: var(--danger);
+  margin-left: 0.35rem;
+}
+
+input.amount-input {
+  width: 8rem;
+  text-align: right;
+}
+
+.token-bar {
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.token-bar input {
+  width: min(28rem, 100%);
+}

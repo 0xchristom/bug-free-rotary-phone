@@ -77,7 +77,9 @@ export const DEFAULT_GLOBAL_SETTINGS: GlobalSettingsV1 = {
 
 /** Inclusive ranges of the numeric settings. */
 export const SETTINGS_LIMITS = {
-  minReserveLamports: { min: 1_000_000n, max: LAMPORTS_PER_SOL }, // 0.001–1 SOL
+  // 0.005–1 SOL: the reserve pays the token account rent (≈ 0.00204 SOL for SPL, more for
+  // Token-2022 with extensions), priority fees and the later sale (BUNNDLY-15 review).
+  minReserveLamports: { min: 5_000_000n, max: LAMPORTS_PER_SOL },
   maxAttempts: { min: 1, max: 10 },
   priceCeilingPercent: { min: 1, max: 1000 },
   noRouteWindowMs: { min: 1_000, max: 120_000 },
@@ -129,7 +131,7 @@ export function validateGlobalSettings(g: GlobalSettingsV1): SettingsProblem[] {
     g.minReserveLamports < L.minReserveLamports.min ||
     g.minReserveLamports > L.minReserveLamports.max
   ) {
-    add('minReserveLamports', 'Minimalna rezerwa musi wynosić od 0,001 do 1 SOL.');
+    add('minReserveLamports', 'Minimalna rezerwa musi wynosić od 0,005 do 1 SOL.');
   }
   if (!isIntIn(g.maxAttempts, L.maxAttempts)) {
     add('maxAttempts', 'Liczba prób musi być liczbą całkowitą od 1 do 10.');

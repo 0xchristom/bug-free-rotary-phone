@@ -77,16 +77,16 @@ describe('validateGlobalSettings', () => {
     [{ maxAttempts: 11 }, 'maxAttempts: Liczba prób musi być liczbą całkowitą od 1 do 10.'],
     [{ maxAttempts: 2.5 }, 'maxAttempts: Liczba prób musi być liczbą całkowitą od 1 do 10.'],
     [
-      { minReserveLamports: 999_999n },
-      'minReserveLamports: Minimalna rezerwa musi wynosić od 0,001 do 1 SOL.',
+      { minReserveLamports: 4_999_999n },
+      'minReserveLamports: Minimalna rezerwa musi wynosić od 0,005 do 1 SOL.',
     ],
     [
       { minReserveLamports: 1_000_000_001n },
-      'minReserveLamports: Minimalna rezerwa musi wynosić od 0,001 do 1 SOL.',
+      'minReserveLamports: Minimalna rezerwa musi wynosić od 0,005 do 1 SOL.',
     ],
     [
       { minReserveLamports: 15_000_000 },
-      'minReserveLamports: Minimalna rezerwa musi wynosić od 0,001 do 1 SOL.',
+      'minReserveLamports: Minimalna rezerwa musi wynosić od 0,005 do 1 SOL.',
     ],
     [{ noRouteWindowMs: 999 }, 'noRouteWindowMs: Okno „no route” musi wynosić od 1 do 120 s.'],
     [
@@ -129,7 +129,7 @@ describe('validateGlobalSettings', () => {
       problems({
         priceCeilingPercent: 1000,
         maxAttempts: 10,
-        minReserveLamports: 1_000_000n,
+        minReserveLamports: 5_000_000n, // exactly the 0.005 SOL floor
         autoLockMinutes: 120,
         noRouteBackoffMinMs: 2_000,
         noRouteBackoffMaxMs: 2_000,
@@ -270,10 +270,49 @@ describe('settings in the keystore secrets', () => {
     });
   });
 
+  it.each<[string, Record<string, unknown>, Partial<GlobalSettingsV1>, string[]]>([
+    [
+      'reserve 0.001 SOL saved by the previous version',
+      { minReserveLamports: '1000000', maxAttempts: 7 },
+      { maxAttempts: 7 },
+      ['minReserveLamports'],
+    ],
+    ['attempts out of range', { maxAttempts: 99 }, {}, ['maxAttempts']],
+    ['reserve as a number', { minReserveLamports: 15000000 }, {}, ['minReserveLamports']],
+    ['malformed reserve text', { minReserveLamports: '-5' }, {}, ['minReserveLamports']],
+    [
+      'backoff max below min',
+      { noRouteBackoffMinMs: 3000, noRouteBackoffMaxMs: 2000 },
+      {},
+      ['noRouteBackoffMaxMs', 'noRouteBackoffMinMs'],
+    ],
+    ['plan and limit that do not match', { jupiterPlan: 'pro', orderRpm: 60 }, {}, ['orderRpm']],
+    ['unknown mode', { mode: 'forever', explorer: 'orb' }, { explorer: 'orb' }, ['mode']],
+  ])(
+    '%s: the file still opens, the value takes the default and is reported',
+    (_label, stored, kept, resets) => {
+      const raw = { ...json(), settings: { maxSpend: [], global: stored } };
+      const { settings } = parseSecrets(raw);
+      expect(settings.global).toEqual({ ...DEFAULT_GLOBAL_SETTINGS, ...kept });
+      expect(settings.resetFields).toEqual(resets);
+      expect(validateGlobalSettings(settings.global)).toEqual([]);
+    },
+  );
+
+  it('a valid file has no resetFields, and they are never written', () => {
+    const raw = {
+      ...json(),
+      settings: { maxSpend: [], global: { minReserveLamports: '1000000' } },
+    };
+    const read = parseSecrets(raw);
+    expect(read.settings.resetFields).toEqual(['minReserveLamports']);
+    const again = parseSecrets(JSON.parse(secretsToJson(read)));
+    expect('resetFields' in again.settings).toBe(false);
+    expect(again.settings.global).toEqual(DEFAULT_GLOBAL_SETTINGS);
+  });
+
   it.each<[string, unknown]>([
-    ['global out of range', { maxSpend: [], global: { maxAttempts: 99 } }],
     ['unknown global key', { maxSpend: [], global: { telemetry: true } }],
-    ['reserve as number', { maxSpend: [], global: { minReserveLamports: 15000000 } }],
     ['active for a missing wallet', { maxSpend: [], active: [{ index: 7, active: true }] }],
     ['active not boolean', { maxSpend: [], active: [{ index: 0, active: 'yes' }] }],
     [

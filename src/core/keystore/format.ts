@@ -12,6 +12,7 @@ import {
   isValidEndpointUrl,
   validateGlobalSettings,
   type GlobalSettingsV1,
+  type SettingsField,
 } from '../settings.ts';
 
 export { MAX_KEYSTORE_FILE_BYTES, isValidFleetName } from './limits.ts';
@@ -69,6 +70,12 @@ export interface FleetSettingsV1 {
   readonly maxSpend: readonly MaxSpendV1[];
   readonly active: readonly WalletActiveV1[];
   readonly global: GlobalSettingsV1;
+  /**
+   * Global settings that were out of the current range in the file and were replaced by
+   * the defaults when reading it (D-019). Only present after reading such a file; it is
+   * never written and disappears with the next save.
+   */
+  readonly resetFields?: readonly SettingsField[];
 }
 
 export function defaultFleetSettings(): FleetSettingsV1 {
@@ -278,17 +285,53 @@ function expectBoolean(value: unknown): boolean {
 
 const GLOBAL_KEYS = Object.keys(DEFAULT_GLOBAL_SETTINGS) as (keyof GlobalSettingsV1)[];
 
-/** Missing keys take the defaults; present ones must be valid (else the file is invalid). */
-function parseGlobalSettings(value: unknown): GlobalSettingsV1 {
-  if (value === undefined) return DEFAULT_GLOBAL_SETTINGS;
+/**
+ * Missing keys take the defaults. Present values outside the current range (or of the
+ * wrong type) also take the defaults and are reported in `resets`: the file is
+ * authenticated, so such a value can only come from an older app version, and a changed
+ * range must never lock anyone out of their fleet (D-019). Unknown keys stay invalid.
+ */
+function parseGlobalSettings(value: unknown): {
+  global: GlobalSettingsV1;
+  resets: SettingsField[];
+} {
+  if (value === undefined) return { global: DEFAULT_GLOBAL_SETTINGS, resets: [] };
   const g = expectKeys(value, [], GLOBAL_KEYS);
   const merged: Record<string, unknown> = { ...DEFAULT_GLOBAL_SETTINGS };
   for (const key of GLOBAL_KEYS) {
     if (!(key in g)) continue;
-    merged[key] = key === 'minReserveLamports' ? expectLamports(g[key]) : g[key];
+    if (key === 'minReserveLamports') {
+      try {
+        merged[key] = expectLamports(g[key]);
+      } catch {
+        merged[key] = undefined; // reported as a reset below
+      }
+    } else {
+      merged[key] = g[key];
+    }
   }
-  const global = merged as unknown as GlobalSettingsV1;
-  return validateGlobalSettings(global).length === 0 ? global : invalid();
+  const resets = new Set<SettingsField>();
+  // Each round resets the reported fields; relations (backoff, plan/limit) settle in two.
+  for (let round = 0; round < GLOBAL_KEYS.length; round++) {
+    const problems = validateGlobalSettings(merged as unknown as GlobalSettingsV1);
+    if (problems.length === 0) break;
+    for (const { field } of problems) {
+      merged[field] = DEFAULT_GLOBAL_SETTINGS[field];
+      resets.add(field);
+      // Fields checked together are reset together, so the pair is consistent again.
+      if (field === 'orderRpm' || field === 'jupiterPlan') {
+        merged.jupiterPlan = DEFAULT_GLOBAL_SETTINGS.jupiterPlan;
+        merged.orderRpm = DEFAULT_GLOBAL_SETTINGS.orderRpm;
+      }
+      if (field === 'noRouteBackoffMaxMs' || field === 'noRouteBackoffMinMs') {
+        merged.noRouteBackoffMinMs = DEFAULT_GLOBAL_SETTINGS.noRouteBackoffMinMs;
+        merged.noRouteBackoffMaxMs = DEFAULT_GLOBAL_SETTINGS.noRouteBackoffMaxMs;
+        resets.add('noRouteBackoffMinMs');
+        resets.add('noRouteBackoffMaxMs');
+      }
+    }
+  }
+  return { global: merged as unknown as GlobalSettingsV1, resets: [...resets] };
 }
 
 /**
@@ -332,7 +375,7 @@ export function parseSecrets(raw: unknown): KeystoreSecretsV1 {
     expectUniqueIndices(active);
     if (!active.every((a) => walletIndices.has(a.index))) invalid();
   }
-  const global = parseGlobalSettings(settings.global);
+  const { global, resets } = parseGlobalSettings(settings.global);
 
   const keys = expectKeys(s.apiKeys, [], API_KEY_NAMES);
   const apiKeys: { -readonly [K in ApiKeyName]?: string } = {};
@@ -343,7 +386,12 @@ export function parseSecrets(raw: unknown): KeystoreSecretsV1 {
     apiKeys[name] = value;
   }
 
-  return { mnemonic, wallets, settings: { maxSpend, active, global }, apiKeys };
+  return {
+    mnemonic,
+    wallets,
+    settings: { maxSpend, active, global, ...(resets.length > 0 ? { resetFields: resets } : {}) },
+    apiKeys,
+  };
 }
 
 /** JSON with lamports as decimal strings (bigint is not JSON-serializable). */
