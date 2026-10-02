@@ -6,6 +6,7 @@ Format: `RRRR-MM-DD · BUNNDLY-<n> · <co działa>`
 
 ---
 
+- 2026-10-02 · BUNNDLY-10 · Otwieranie pliku floty: podgląd bez hasła (adresy „niezweryfikowane”, bez kopiowania i QR), odblokowanie w workerze z postępem, osobne ostrzeżenie o podmienionym pliku, czyszczenie hasła po każdej próbie; ekran Flota z kopiowaniem adresu i kodem QR; „Dodaj portfele” (do 100) z zapisem zaktualizowanego pliku. Sprawdzone w Chromium.
 - 2026-10-02 · BUNNDLY-9 · Kreator floty: liczba portfeli (domyślnie 30), nazwa, hasło ze wskaźnikiem siły (min. 12 znaków NFKC), opcjonalny import mnemonika; postęp scrypt z workera; zapis pliku dopiero po kliknięciu, ostrzeżenie o niezapisanym pliku (nawigacja, zamknięcie karty, auto-lock nie gubi pliku). Sprawdzone w Chromium: 30 portfeli zapisane do folderu (OPFS) i ponownie otwarte hasłem.
 - 2026-10-02 · BUNNDLY-17 · Szkielet UI: ekrany Start, Kreator, Flota i Ustawienia (bez routingu i URL), pasek z „Zablokuj” i informacją o auto-locku, odpytywanie statusu sejfu (auto-lock widoczny ≤ 5 s), zgłaszanie aktywności, natychmiastowe odrzucanie żądań przy awarii workera; testy UI w jsdom (Testing Library), testy core dalej w Node.
 - 2026-10-02 · BUNNDLY-8 · `src/storage`: zapis `<nazwa>.keystore.json` do wybranego folderu (File System Access API, potwierdzenie nadpisania) albo pobranie; odczyt przez `showOpenFilePicker` lub `<input type=file>`, limit 1 MB przed odczytem; kody błędów po polsku. Sprawdzone w Chromium (OPFS, pobranie, input).

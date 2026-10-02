@@ -6,7 +6,7 @@ import { createContext, useContext } from 'react';
 import type { VaultClient } from '../worker/vault-client.ts';
 import type { VaultStatus } from '../worker/protocol.ts';
 
-export type Screen = 'start' | 'wizard' | 'fleet' | 'settings';
+export type Screen = 'start' | 'wizard' | 'open' | 'fleet' | 'settings';
 
 /** Screens that need an unlocked fleet. */
 export const UNLOCKED_SCREENS: ReadonlySet<Screen> = new Set(['fleet', 'settings']);
