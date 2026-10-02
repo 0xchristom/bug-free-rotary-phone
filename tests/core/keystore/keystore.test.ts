@@ -413,7 +413,16 @@ describe('parseKeystoreFile on damaged files', () => {
 });
 
 describe('fleet names', () => {
-  it.each(['Flota 1', 'moja_flota-2.0', 'Żółw', 'a', 'a'.repeat(64)])('%j is valid', (name) => {
+  it.each([
+    'Flota 1',
+    'moja_flota-2.0',
+    'Żółw',
+    'a',
+    'a'.repeat(64),
+    'Console',
+    'COM10',
+    'nul_fleet',
+  ])('%j is valid', (name) => {
     expect(isValidFleetName(name)).toBe(true);
   });
 
@@ -429,6 +438,11 @@ describe('fleet names', () => {
     'trail ',
     'a:b',
     'x*',
+    'CON',
+    'nul',
+    'Com1',
+    'LPT9',
+    'aux.old',
     'a\u0000b',
   ])('%j is invalid', (name) => {
     expect(isValidFleetName(name)).toBe(false);
