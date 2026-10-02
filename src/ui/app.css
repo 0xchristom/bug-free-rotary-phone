@@ -320,3 +320,32 @@ input.amount-input {
 .token-bar input {
   width: min(28rem, 100%);
 }
+
+/* Fleet summary and bulk actions */
+dl.summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1.5rem;
+  margin: 1rem 0;
+}
+
+dl.summary div {
+  min-width: 9rem;
+}
+
+dl.summary dt {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+dl.summary dd {
+  margin: 0;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+fieldset.bulk .inline {
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}

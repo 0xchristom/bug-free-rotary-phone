@@ -7,6 +7,8 @@ import {
   type StorageEnv,
 } from '../../storage/keystore-file.ts';
 import type { VaultInfo } from '../../worker/protocol.ts';
+import { FleetBulk, FleetSummaryBar } from '../FleetBulk.tsx';
+import { shareOf, summarize } from '../fleet-math.ts';
 import { FleetTable } from '../FleetTable.tsx';
 import { SettingsResetNotice } from '../SettingsResetNotice.tsx';
 import { formatSol, formatUnits, parseSolAmount } from '../sol.ts';
@@ -158,6 +160,38 @@ export function FleetScreen({
     );
   }, [balances.token]);
 
+  // Bulk actions change only the drafts; saving stays a separate, explicit step.
+  const setAllAmount = (lamports: bigint): void => {
+    setMaxSpendText(Object.fromEntries(info.wallets.map((w) => [w.index, formatSol(lamports)])));
+  };
+  const setAllPercent = (basisPoints: number): void => {
+    setMaxSpendText((d) => {
+      const next: Record<number, string> = { ...d };
+      for (const w of info.wallets) {
+        const balance = balances.lamports?.get(w.index);
+        if (balance !== undefined) next[w.index] = formatSol(shareOf(balance, basisPoints));
+      }
+      return next;
+    });
+  };
+  const setAllActive = (value: boolean): void => {
+    setActive(Object.fromEntries(info.wallets.map((w) => [w.index, value])));
+  };
+  const unknownBalances = info.wallets.filter((w) => !balances.lamports?.has(w.index)).length;
+
+  const summary = summarize(
+    info.wallets.map((w) => {
+      const lamports = draftLamports(w.index);
+      return {
+        balance: balances.lamports?.get(w.index) ?? null,
+        maxSpend: typeof lamports === 'bigint' ? lamports : null,
+        minReserve: info.settings.global.minReserveLamports,
+        active: active[w.index] ?? true,
+        token: balances.token?.amounts.get(w.index) ?? null,
+      };
+    }),
+  );
+
   const saveTable = async (): Promise<void> => {
     if (!tableDirty || tableInvalid || phase.kind === 'unsaved' || phase.kind === 'adding') return;
     const maxSpend = info.wallets.flatMap((w) => {
@@ -295,6 +329,18 @@ export function FleetScreen({
           </p>
         )}
       </form>
+
+      <FleetSummaryBar
+        summary={summary}
+        walletCount={info.wallets.length}
+        tokenDecimals={balances.token?.decimals ?? null}
+      />
+      <FleetBulk
+        onAmount={setAllAmount}
+        onPercent={setAllPercent}
+        onAllActive={setAllActive}
+        unknownBalances={unknownBalances}
+      />
 
       <FleetTable
         wallets={info.wallets}
