@@ -95,9 +95,18 @@ export function mockStorage(mode: 'directory' | 'download' = 'directory') {
     },
   };
   const showDirectoryPicker = vi.fn(() => Promise.resolve(dir));
+  /** The file the next "open" picks; null = the user cancels. */
+  let offered: { name: string; text: string } | null = null;
   const env: StorageEnv = {
     ...(mode === 'directory' ? { showDirectoryPicker } : {}),
-    pickFileWithInput: () => Promise.resolve(null),
+    pickFileWithInput: () =>
+      Promise.resolve(
+        offered && {
+          name: offered.name,
+          size: new TextEncoder().encode(offered.text).length,
+          text: () => Promise.resolve(offered?.text ?? ''),
+        },
+      ),
     createObjectURL: vi.fn(() => 'blob:fake'),
     revokeObjectURL: vi.fn(),
     clickDownload: vi.fn(),
@@ -108,5 +117,9 @@ export function mockStorage(mode: 'directory' | 'download' = 'directory') {
     files,
     showDirectoryPicker,
     clickDownload: env.clickDownload as ReturnType<typeof vi.fn>,
+    /** Makes the next file pick return this file. */
+    offerFile: (file: { name: string; text: string } | null) => {
+      offered = file;
+    },
   };
 }

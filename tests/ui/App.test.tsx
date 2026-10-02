@@ -48,7 +48,7 @@ describe('navigation', () => {
     renderApp(mockVault(unlocked()));
     expect(await screen.findByRole('heading', { name: 'Flota' })).toBeTruthy();
     expect(screen.getByText('Flota testowa')).toBeTruthy();
-    expect(screen.getByText('3')).toBeTruthy();
+    expect(screen.getByText(/Portfele we flocie/u).textContent).toBe('Portfele we flocie: 3');
 
     const nav = screen.getByRole('navigation', { name: 'Nawigacja' });
     await user.click(within(nav).getByRole('button', { name: 'Ustawienia' }));
