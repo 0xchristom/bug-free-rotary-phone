@@ -80,7 +80,7 @@ describe('connection test in the settings', () => {
       status: 200,
       json: { jsonrpc: '2.0', id: b.id, result: b.method === 'getHealth' ? 'ok' : 452_673_384 },
     }));
-    expect(row(/Helius HTTP/u)).toMatch(/OK\d+ msslot 452673384/u);
+    expect(row(/Helius HTTP/u)).toMatch(/OK, \d+ msslot 452673384/u);
     expect(row(/Helius WebSocket/u)).toContain('pierwsze zdarzenie po');
     expect(row(/Helius WebSocket/u)).toContain('slot 452700000');
     const jupiter = row(/Jupiter/u);

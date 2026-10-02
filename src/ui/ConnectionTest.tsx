@@ -122,30 +122,34 @@ export function ConnectionTest() {
         </p>
       )}
       {report && (
-        <table aria-label="Wyniki testu połączeń">
-          <thead>
-            <tr>
-              <th scope="col">Usługa</th>
-              <th scope="col">Wynik</th>
-              <th scope="col">Czas</th>
-              <th scope="col">Szczegóły</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rowsOf(report).map((row) => (
-              <tr key={row.name} className={row.check.ok ? '' : 'row-error'}>
-                <th scope="row">{row.name}</th>
-                <td>{row.check.ok ? 'OK' : 'Błąd'}</td>
-                <td>{timeOf(row.check.ms)}</td>
-                <td>
-                  {row.check.ok
-                    ? row.details
-                    : [problemOf(row.check), row.details].filter(Boolean).join(' ')}
-                </td>
+        // Wrapped like the fleet table: on a phone the table scrolls, not the page.
+        <div className="table-wrap">
+          <table aria-label="Wyniki testu połączeń" className="connections">
+            <thead>
+              <tr>
+                <th scope="col">Usługa</th>
+                <th scope="col">Wynik i czas</th>
+                <th scope="col">Szczegóły</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {rowsOf(report).map((row) => (
+                <tr key={row.name} className={row.check.ok ? '' : 'row-error'}>
+                  <th scope="row">{row.name}</th>
+                  <td>
+                    {row.check.ok ? 'OK' : 'Błąd'}
+                    {row.check.ms === null ? '' : `, ${timeOf(row.check.ms)}`}
+                  </td>
+                  <td>
+                    {row.check.ok
+                      ? row.details
+                      : [problemOf(row.check), row.details].filter(Boolean).join(' ')}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </section>
   );
