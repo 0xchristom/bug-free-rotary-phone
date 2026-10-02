@@ -6,19 +6,12 @@ import {
   USDC_MINT,
   checkJupiterQuote,
 } from '../../src/jupiter/quote-check.ts';
-import { fakeFetch, stepClock } from '../helpers/net-fakes.ts';
+import { QUOTE_BODY, fakeFetch, stepClock } from '../helpers/net-fakes.ts';
 
 const KEY = 'jupiterSecretKey555';
 
-/** Shape of a real keyless answer (2026-10-02), trimmed. */
-const QUOTE = {
-  transaction: null,
-  requestId: '01a0fdf3-150e-741f-8592-3aeb565794c3',
-  outAmount: '1174568',
-  router: 'metis',
-  mode: 'ultra',
-  feeBps: 2,
-};
+/** A real keyless answer without taker (2026-10-02 fixture). */
+const QUOTE = QUOTE_BODY;
 const LIMITS = {
   'x-ratelimit-remaining': '4',
   'x-ratelimit-current': '1',

@@ -462,3 +462,64 @@ Rejestr decyzji i rozbieżności z dokumentacją zewnętrzną. Nowe wpisy dopisu
 - Konsekwencje:
   - Każdy merge do `main` wdraża produkcję; inne gałęzie tworzą wdrożenia podglądowe (chronione przez Access albo wyłączone w ustawieniach gałęzi).
   - Nowe domeny w `connect-src` (np. dla watchera w sprincie 4) dopisujemy w `public/_headers` i w teście `tests/deploy/headers.test.ts`.
+
+## D-026: Klient Jupiter Swap API V2
+
+- Data: 2026-10-02
+- Zadanie: BUNNDLY-19
+- Kontekst: SPEC 0.1, 2.2 i 3.5; dokumentacja `order-and-execute.md`, `rate-limits.md`, `gasless.md` i specyfikacja OpenAPI `openapi-spec/swap/v2/swap.yaml`; spike Andy'ego (BUNNDLY-30 i komentarz w BUNNDLY-19).
+- Decyzja:
+  - **`src/jupiter/client.ts` to jedyny moduł, który zna kształt `/order` i `/execute`.** Test połączeń (D-024) używa tego samego klienta (`getOrder` bez `taker`).
+  - **Bez wyjątków:** każde wywołanie zwraca `{ ok: true, value, rateLimit }` albo `{ ok: false, code, httpStatus, rateLimit, signature }`. Kody: `RATE_LIMITED`, `SERVER_ERROR`, `TIMEOUT`, `NETWORK`, `NO_ROUTE`, `BAD_REQUEST`, `UNAUTHORIZED`, `FORBIDDEN`, `HTTP_ERROR`, `INVALID_RESPONSE`. W wyniku nie ma URL-a, klucza ani tekstu błędu od Jupitera; polskie komunikaty są w `src/jupiter/messages.ts`. Decyzje o ponowieniu podejmuje executor (BUNNDLY-23).
+  - **`/order` tylko w trybie ultra:** `inputMint` (wrapped SOL), `outputMint`, `amount` (lamporty), `taker`; żadnych parametrów opcjonalnych. `x-api-key` tylko z kluczem. Kwota ≤ 0 daje `BAD_REQUEST` bez zapytania. Limit czasu 10 s.
+  - **Walidacja odpowiedzi `/order`:** wymagane `requestId`, `router`, `inputMint`, `outputMint`, `inAmount`, `outAmount` i obecne `signatureFeePayer` (może być `null`). Kwoty, `otherAmountThreshold` i `lastValidBlockHeight` to stringi dziesiętne zamieniane na `bigint`; `expireAt` (RFQ) to sekundy Unix. Zachowuję też płatników opłat, `gasless`, `feeMint`, `feeBps` i `priceImpactPct`. Nadmiarowe pola nie są błędem. `transaction` to base64 (najwyżej 4096 znaków), `null` (bez `taker`) albo `""` z `errorCode`. Pole o złym typie daje `INVALID_RESPONSE`.
+  - **`transaction: ""`** mapuję na powód według pary (`router`, `errorCode`) z dokumentacji: dla `metis`, `dflow` i `okx` kod 1 to brak środków, 2 brak SOL na opłatę, 3 kwota poniżej minimum gasless; dla `jupiterz` kod 1 to brak środków, 2 brak ATA, 3 quote, którego nie da się zbudować; inna para daje `OTHER`.
+  - **`/execute`:** POST z `signedTransaction`, `requestId` i opcjonalnym `lastValidBlockHeight` (string). Limit czasu 60 s, bo Jupiter czeka na potwierdzenie. Każdy z 14 udokumentowanych kodów ma własny wynik (`SUCCESS`, `ORDER_NOT_FOUND`, … `RFQ_SWAP_REJECTED`), nieznany kod daje `UNDOCUMENTED`. HTTP 400 z liczbowym `code` to typowany wynik `Failed`; bez kodu `BAD_REQUEST`. HTTP 500 zachowuje `signature`, jeśli Jupiter ją podał, bo transakcja może jeszcze wylądować (stan UNKNOWN w BUNNDLY-23).
+- Ustalenia z prawdziwego API (Keyless, 2026-10-02, tylko `/order`, fixtures w `tests/fixtures/jupiter-order.mainnet.json`):
+  - **„brak trasy”** to HTTP 400 z `{"requestId": …, "error": "Failed to get quotes"}`: dla mintu bez płynności (wrapped SOL w Token-2022) i dla kwoty 1 lamport. Rozpoznaję go po tekście błędu (`failed to get quotes` albo `no route`), bo innego sygnału nie ma. Pozostałe 400 to `BAD_REQUEST`: zły mint daje `"Invalid outputMint"`, kwota 0 daje `"Invalid amount"`. Adres portfela zamiast mintu dał HTTP 500 (`SERVER_ERROR`).
+  - **Nagłówki `x-ratelimit-*` przychodzą także przy 400 i 500**, wbrew `rate-limits.md` (tylko 200 i 429). Klient czyta je przy każdej odpowiedzi.
+  - **Router:** dla 0,01 SOL wygrał `metis`, dla 1 SOL i 20 SOL `jupiterz`. Odpowiedź `jupiterz` ma `gasless: true`, `signatureFeePayer` równe adresowi market makera (inne niż `taker`) i `expireAt` zamiast `lastValidBlockHeight`. To trzeba uwzględnić w kontrolach przed podpisem (BUNNDLY-22).
+  - **Pusty portfel:** `transaction: ""`, `errorCode: 1`, `gasless: true`, `signatureFeePayer: null`.
+  - Przy szukaniu publicznego adresu z SOL `getBlock` na Helius odrzucił `maxSupportedTransactionVersion: 0`, bo w bloku były **transakcje w wersji 1**. Jupiter dokumentuje transakcje v0; dekoder przed podpisem (BUNNDLY-22) powinien sprawdzać wersję.
+  - Fixtures `/execute` (`tests/fixtures/jupiter-execute.docs.json`) są zbudowane z dokumentacji, bo `/execute` na prawdziwym API nie wołamy.
+- Konsekwencje: limiter (BUNNDLY-20) dostaje `rateLimit` z każdej odpowiedzi, a executor (BUNNDLY-21, 23) kody błędów, powody `buildError` i wyniki `/execute`.
+
+## D-027: Limiter `/order` i `/execute`
+
+- Data: 2026-10-02
+- Zadanie: BUNNDLY-20
+- Kontekst: SPEC 3.5 mówi o token buckecie z tempem `ORDER_RPS` (ok. 1/s z marginesem). Dokumentacja Jupitera (`rate-limits.md`) opisuje okno przesuwne 60 s, a spike Andy'ego (BUNNDLY-30) pokazał, że nagłówki bez klucza opisują okno 10 s z 5 zapytaniami, liczniki są niespójne, a serie 8 i 12 zapytań przeszły bez 429. Krystian zdecydował 2026-10-02 („tak”, komentarz w BUNNDLY-20): budżet okna z 10% zapasu i seria na start.
+- Decyzja:
+  - **Odstępstwo od SPEC 3.5:** zamiast równego tempa ~1/s limiter `/order` daje **budżet 90% limitu planu na 60 s**: Keyless 27, Free 54, Developer 540, Launch 2700, Pro 8100, plan własny 90% `orderRpm` (co najmniej 1). Dokumentacja Jupitera wygrywa ze SPEC (SPEC 0.1).
+  - **Seria na start:** pierwsze min(budżet, N) wywołań rusza od razu; potem w żadnym przesuwnym oknie 60 s nie ma więcej startów niż budżet. Kolejne ruszają, gdy najstarszy start wypada z okna.
+  - **Korekta z nagłówków, nie podstawa:**
+    - `x-ratelimit-remaining ≤ 0` (przy dowolnym statusie) albo 429 wstrzymuje nowe `/order` do `x-ratelimit-reset`;
+    - bez użytecznego resetu (brak nagłówka, reset w przeszłości) backoff 1 s → 2 s → 4 s → 8 s → maks. 10 s; odpowiedź bez błędu (status < 400) zeruje backoff;
+    - reset dalej niż 60 s od teraz przycinam do 60 s (przesunięcie zegara albo zły nagłówek);
+    - brak nagłówków nie zmienia budżetu; po pauzie limiter dalej pilnuje okna.
+  - **`/execute`:** osobny limiter, 90% puli na sekundę: Keyless 18, Free 45, plany płatne 90. Plan własny przypisuję według `orderRpm` (do 30 Keyless, do 60 Free, wyżej płatny). Nie zużywa budżetu `/order`.
+  - **Tryb równego tempa** (`steady`): jeden start co 60 s / budżet. Opcja konstruktora bez UI, na wypadek gdyby test BUNNDLY-30 pokazał 429 przy seriach.
+  - **Przerwanie:** `acquire(signal)` zwraca `false` po `abort` (STOP) i zwalnia miejsce w kolejce; nigdy nie rzuca.
+  - **Czysta logika** w `src/executor/limiter.ts` ze wstrzykiwanym zegarem (`now`, `sleep`), bez DOM. Kolejność oczekujących FIFO.
+- Konsekwencje: executor (BUNNDLY-21) woła `acquire` przed każdym `/order` i `/execute` oraz `report` z `httpStatus` i `rateLimit` z wyniku klienta (D-026). Jeśli nagłówki okażą się wiarygodne (BUNNDLY-30), korektę można rozszerzyć bez zmiany budżetu.
+
+## D-028: Podpis transakcji z `/order` w sejfie i kontrole przed podpisem
+
+- Data: 2026-10-02
+- Zadanie: BUNNDLY-22
+- Kontekst: SPEC 2.3, 6.1 i 6.2, D-013 (sejf ma tylko operacje domenowe, nie ma „podpisz bajty”), D-026 (klient Jupitera), `order-and-execute.md` („Sign the transaction”: podpis częściowy) i `gasless.md`.
+- Decyzja:
+  - **`VaultHandler.signOrder(walletIndex, { outputMint, amount }, order)`** to metoda dla executora, który działa w tym samym workerze. Nie ma jej w `handle` ani w protokole wiadomości; żądania `signOrder`, `sign` i `signTransaction` z UI dają `INTERNAL_ERROR` (test). Nigdy nie rzuca: zwraca podpisaną transakcję albo kod problemu.
+  - **Kontrole są osobną, czystą funkcją bez klucza** (`src/executor/order-check.ts`), więc da się je uruchomić na prawdziwych transakcjach bez żadnego klucza (BUNNDLY-30 część B). Kolejność i kody:
+    - `/order` dał transakcję (`NO_TRANSACTION`);
+    - `taker` odpowiedzi to adres portfela (`TAKER_MISMATCH`), `inputMint` to SOL, `outputMint` to zlecony mint;
+    - `inAmount` nie przekracza max spend portfela, który sejf bierze **z własnych ustawień**, nie od wywołującego (`OVER_MAX_SPEND`), i równa się zleconej kwocie (`AMOUNT_MISMATCH`);
+    - bajty dają się zdekodować przez `@solana/kit` (`UNDECODABLE`), liczba podpisów zgadza się z nagłówkiem;
+    - wersja wiadomości to 0 (`NOT_V0`: legacy i v1 są odrzucane, choć na mainnecie są już transakcje v1, D-026);
+    - najwyżej 2 wymagane podpisy (`TOO_MANY_SIGNERS`): taker oraz ewentualnie market maker JupiterZ albo sponsor gasless;
+    - portfel jest sygnatariuszem, a jego miejsce na podpis jest puste;
+    - pierwszy klucz (płatnik opłaty) to `signatureFeePayer`, a gdy go nie ma, taker (`FEE_PAYER_MISMATCH`).
+  - **Podpis:** `createKeyPairFromBytes` z 64-bajtowego klucza sejfu (sprawdza też zgodność połówek), `getAddressFromPublicKey` musi dać adres takera, `signBytes` na `messageBytes`. Wypełniam tylko miejsce takera; pozostałe podpisy zostają bajt w bajt (przy JupiterZ market maker podpisuje w `/execute`). Wynik: transakcja w base64 i sygnatura transakcji, gdy taker płaci opłatę (pierwszy podpis), a w przeciwnym razie `null`.
+  - **Blokada w trakcie podpisu** zeruje klucz; wynik jest wtedy odrzucany (`VAULT_LOCKED`), a niespodziewany błąd daje `SIGNING_FAILED` bez szczegółów.
+  - **Granica zaufania:** API Jupitera (HTTPS do `api.jup.ag`) jest zaufane. Kontrole chronią przed pomyłkami (inny portfel, inne zlecenie, inna kwota, uszkodzone dane), a nie przed złośliwym Jupiterem: nie interpretują instrukcji swapu. Twardą granicę wydatku daje max spend z sejfu.
+- Konsekwencje: executor (BUNNDLY-21) woła `signOrder` po każdym `/order` z transakcją; sygnatura z wyniku (albo z `/execute` przy JupiterZ) służy do śledzenia stanu UNKNOWN (BUNNDLY-23). Test „brak sekretów w odpowiedziach” obejmuje wynik `signOrder`.

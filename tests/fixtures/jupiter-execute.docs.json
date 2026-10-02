@@ -1,0 +1,110 @@
+{
+  "source": "Zbudowane z dokumentacji, nie z prawdziwego API (nie wołamy /execute): pola i kody z https://developers.jup.ag/docs/openapi-spec/swap/v2/swap.yaml (POST /execute) i z tabeli '/execute error codes' w https://developers.jup.ag/docs/swap/order-and-execute.md; kwoty wyjścia z przykładu w sekcji o opłatach (outputAmountResult 2103, totalOutputAmount 2101). Sygnatura to losowy ciąg base58 (placeholder).",
+  "builtAt": "2026-10-02",
+  "success": {
+    "status": "Success",
+    "signature": "k3sza8ZDSPaKeAfH7HTMJv7rMzL2dgDy5D8bWRxo5t7T27eoUqwSVjLdZvBshTFrbdo7tERD99hY7cnW1WzXf8aX",
+    "slot": "452713600",
+    "code": 0,
+    "totalInputAmount": "10000000",
+    "totalOutputAmount": "2101",
+    "inputAmountResult": "10000000",
+    "outputAmountResult": "2103",
+    "swapEvents": [
+      {
+        "inputMint": "So11111111111111111111111111111111111111112",
+        "inputAmount": "10000000",
+        "outputMint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+        "outputAmount": "2103"
+      }
+    ]
+  },
+  "failed": {
+    "-1": {
+      "status": "Failed",
+      "signature": "k3sza8ZDSPaKeAfH7HTMJv7rMzL2dgDy5D8bWRxo5t7T27eoUqwSVjLdZvBshTFrbdo7tERD99hY7cnW1WzXf8aX",
+      "code": -1,
+      "error": "Missing cached order"
+    },
+    "-2": {
+      "status": "Failed",
+      "signature": "k3sza8ZDSPaKeAfH7HTMJv7rMzL2dgDy5D8bWRxo5t7T27eoUqwSVjLdZvBshTFrbdo7tERD99hY7cnW1WzXf8aX",
+      "code": -2,
+      "error": "Invalid signed transaction"
+    },
+    "-3": {
+      "status": "Failed",
+      "signature": "k3sza8ZDSPaKeAfH7HTMJv7rMzL2dgDy5D8bWRxo5t7T27eoUqwSVjLdZvBshTFrbdo7tERD99hY7cnW1WzXf8aX",
+      "code": -3,
+      "error": "Invalid message bytes"
+    },
+    "-1000": {
+      "status": "Failed",
+      "signature": "k3sza8ZDSPaKeAfH7HTMJv7rMzL2dgDy5D8bWRxo5t7T27eoUqwSVjLdZvBshTFrbdo7tERD99hY7cnW1WzXf8aX",
+      "code": -1000,
+      "error": "Failed to land"
+    },
+    "-1001": {
+      "status": "Failed",
+      "signature": "k3sza8ZDSPaKeAfH7HTMJv7rMzL2dgDy5D8bWRxo5t7T27eoUqwSVjLdZvBshTFrbdo7tERD99hY7cnW1WzXf8aX",
+      "code": -1001,
+      "error": "Unknown error"
+    },
+    "-1002": {
+      "status": "Failed",
+      "signature": "k3sza8ZDSPaKeAfH7HTMJv7rMzL2dgDy5D8bWRxo5t7T27eoUqwSVjLdZvBshTFrbdo7tERD99hY7cnW1WzXf8aX",
+      "code": -1002,
+      "error": "Invalid transaction"
+    },
+    "-1003": {
+      "status": "Failed",
+      "signature": "k3sza8ZDSPaKeAfH7HTMJv7rMzL2dgDy5D8bWRxo5t7T27eoUqwSVjLdZvBshTFrbdo7tERD99hY7cnW1WzXf8aX",
+      "code": -1003,
+      "error": "Transaction not fully signed"
+    },
+    "-1004": {
+      "status": "Failed",
+      "signature": "k3sza8ZDSPaKeAfH7HTMJv7rMzL2dgDy5D8bWRxo5t7T27eoUqwSVjLdZvBshTFrbdo7tERD99hY7cnW1WzXf8aX",
+      "code": -1004,
+      "error": "Invalid block height"
+    },
+    "-2000": {
+      "status": "Failed",
+      "signature": "k3sza8ZDSPaKeAfH7HTMJv7rMzL2dgDy5D8bWRxo5t7T27eoUqwSVjLdZvBshTFrbdo7tERD99hY7cnW1WzXf8aX",
+      "code": -2000,
+      "error": "Failed to land"
+    },
+    "-2001": {
+      "status": "Failed",
+      "signature": "k3sza8ZDSPaKeAfH7HTMJv7rMzL2dgDy5D8bWRxo5t7T27eoUqwSVjLdZvBshTFrbdo7tERD99hY7cnW1WzXf8aX",
+      "code": -2001,
+      "error": "Unknown error"
+    },
+    "-2002": {
+      "status": "Failed",
+      "signature": "k3sza8ZDSPaKeAfH7HTMJv7rMzL2dgDy5D8bWRxo5t7T27eoUqwSVjLdZvBshTFrbdo7tERD99hY7cnW1WzXf8aX",
+      "code": -2002,
+      "error": "Invalid payload"
+    },
+    "-2003": {
+      "status": "Failed",
+      "signature": "k3sza8ZDSPaKeAfH7HTMJv7rMzL2dgDy5D8bWRxo5t7T27eoUqwSVjLdZvBshTFrbdo7tERD99hY7cnW1WzXf8aX",
+      "code": -2003,
+      "error": "Quote expired"
+    },
+    "-2004": {
+      "status": "Failed",
+      "signature": "k3sza8ZDSPaKeAfH7HTMJv7rMzL2dgDy5D8bWRxo5t7T27eoUqwSVjLdZvBshTFrbdo7tERD99hY7cnW1WzXf8aX",
+      "code": -2004,
+      "error": "Swap rejected"
+    }
+  },
+  "badRequest400": {
+    "error": "Missing cached order",
+    "code": -1
+  },
+  "serverError500": {
+    "signature": "k3sza8ZDSPaKeAfH7HTMJv7rMzL2dgDy5D8bWRxo5t7T27eoUqwSVjLdZvBshTFrbdo7tERD99hY7cnW1WzXf8aX",
+    "error": "Internal server error"
+  }
+}

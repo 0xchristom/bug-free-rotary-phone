@@ -1,4 +1,5 @@
 /** Mock fetch and WebSocket for the connection test (BUNNDLY-16). No real network. */
+import { readFileSync } from 'node:fs';
 import type { FetchLike } from '../../src/core/connection.ts';
 import type { WebSocketLike } from '../../src/chain/connection-test.ts';
 
@@ -95,3 +96,17 @@ export function heliusSocket(socket: FakeSocket, slot = 452_700_000): void {
 }
 
 export const flush = (): Promise<void> => new Promise((r) => setTimeout(r, 0));
+
+/**
+ * A real keyless `/order` answer without taker (tests/fixtures/jupiter-order.mainnet.json),
+ * with the amount and router the older connection tests expect.
+ */
+export const QUOTE_BODY: Record<string, unknown> = {
+  ...(
+    JSON.parse(readFileSync('tests/fixtures/jupiter-order.mainnet.json', 'utf8')) as {
+      cases: { noTaker: { response: { body: Record<string, unknown> } } };
+    }
+  ).cases.noTaker.response.body,
+  outAmount: '1174568',
+  router: 'metis',
+};

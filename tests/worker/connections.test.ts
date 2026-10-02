@@ -4,6 +4,7 @@ import { AppError, defaultFleetSettings, type ConnectionReport } from '../../src
 import { createVaultHandler, type VaultHandler } from '../../src/worker/vault.ts';
 import {
   FakeSocket,
+  QUOTE_BODY,
   fakeFetch,
   heliusSocket,
   stepClock,
@@ -15,7 +16,7 @@ const PASSWORD = 'correct horse battery staple';
 const HELIUS = 'heliusSecretKey777';
 const JUPITER = 'jupiterSecretKey555';
 
-const QUOTE = { transaction: null, outAmount: '1174568', router: 'metis' };
+const QUOTE = QUOTE_BODY;
 const LIMITS = {
   'x-ratelimit-remaining': '58',
   'x-ratelimit-current': '2',
