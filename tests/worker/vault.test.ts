@@ -573,6 +573,44 @@ describe('settings and write-only API keys (BUNNDLY-15)', () => {
     expect(h.checkAutoLock()).toBe(true);
   });
 
+  it('a reset setting is reported in VaultInfo until the next save', async () => {
+    const { fileText } = await fresh();
+    const opened = await reopen(fileText);
+    const json = JSON.parse(secretsToJson(opened.secrets)) as {
+      settings: { global: Record<string, unknown> };
+    };
+    json.settings.global.minReserveLamports = '1000000'; // 0.001 SOL, now below the floor
+    const encrypted = await encryptSecrets(
+      new TextEncoder().encode(JSON.stringify(json)),
+      PASSWORD,
+    );
+    const h = createVaultHandler();
+    const status = await call<VaultStatus>(h, {
+      type: 'unlock',
+      fileText: serializeKeystoreFile({ ...opened.file, ...encrypted }),
+      password: PASSWORD,
+    });
+    expect(status.info?.settings.resetFields).toEqual(['minReserveLamports']);
+    expect(status.info?.settings.global).toEqual(DEFAULT_GLOBAL_SETTINGS);
+    // saving 0.001 again is refused with the new floor
+    await expectCode(
+      h.handle({
+        type: 'saveSettings',
+        settings: {
+          ...defaultFleetSettings(),
+          global: { ...DEFAULT_GLOBAL_SETTINGS, minReserveLamports: 1_000_000n },
+        },
+      }),
+      'INVALID_SETTINGS',
+    );
+    const res = await call<VaultFileResult>(h, {
+      type: 'saveSettings',
+      settings: defaultFleetSettings(),
+    });
+    expect('resetFields' in res.info.settings).toBe(false);
+    expect((await reopen(res.fileText)).secrets.settings.resetFields).toBeUndefined();
+  });
+
   it('VaultInfo carries only flags for API keys', async () => {
     const { h } = await fresh();
     await call(h, {

@@ -96,13 +96,13 @@ describe('form', () => {
     ['Maks. liczba prób na portfel', 'trzy', 'Liczba prób musi być liczbą całkowitą od 1 do 10.'],
     [
       'Minimalna rezerwa (MIN_RESERVE_SOL)',
-      '0,0001',
-      'Minimalna rezerwa musi wynosić od 0,001 do 1 SOL.',
+      '0,004',
+      'Minimalna rezerwa musi wynosić od 0,005 do 1 SOL.',
     ],
     [
       'Minimalna rezerwa (MIN_RESERVE_SOL)',
       'abc',
-      'Minimalna rezerwa musi wynosić od 0,001 do 1 SOL.',
+      'Minimalna rezerwa musi wynosić od 0,005 do 1 SOL.',
     ],
     ['Okno ponawiania „no route”', '500', 'Okno „no route” musi wynosić od 1 do 120 s.'],
     [

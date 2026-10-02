@@ -22,6 +22,7 @@ import {
 } from '../../storage/keystore-file.ts';
 import type { ApiKeyChanges, ApiKeyFlags, VaultInfo } from '../../worker/protocol.ts';
 import { formatSol, parseSol } from '../sol.ts';
+import { SettingsResetNotice } from '../SettingsResetNotice.tsx';
 import { useVault } from '../vault-state.ts';
 
 type KeyName = keyof ApiKeyFlags;
@@ -279,6 +280,7 @@ export function SettingsScreen({ info, storage, onUnsavedChange }: SettingsScree
         Ustawienia i klucze API są zapisywane w zaszyfrowanym pliku floty. Klucze nie są nigdy
         pokazywane: wpisany klucz zastępuje zapisany.
       </p>
+      <SettingsResetNotice fields={info.settings.resetFields} />
       {error && (
         <p className="notice error" role="alert">
           {error}
