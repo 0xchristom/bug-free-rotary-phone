@@ -14,6 +14,7 @@ import {
   type RunSummary,
   type WalletEvent,
 } from '../../src/executor/index.ts';
+import { FakeChain } from '../helpers/fake-chain.ts';
 import { FakeClock, T0 } from '../helpers/fake-clock.ts';
 import { FakeJupiter, seeded, type FakeJupiterScript } from '../helpers/fake-jupiter.ts';
 
@@ -44,11 +45,14 @@ interface Setup {
   readonly dryRun?: boolean;
   readonly maxAttempts?: number;
   readonly sign?: OrderSigner;
+  readonly priceCeilingPercent?: number;
+  readonly noRouteWindowMs?: number;
 }
 
 function setup(o: Setup = {}) {
   const clock = new FakeClock();
-  const jupiter = new FakeJupiter(clock, o.script);
+  const chain = new FakeChain(clock);
+  const jupiter = new FakeJupiter(clock, { chain, ...o.script });
   const plan = o.plan ?? 'free';
   const events: ExecutorEvent[] = [];
   const run = startRun(
@@ -57,6 +61,7 @@ function setup(o: Setup = {}) {
       orderLimiter: new OrderLimiter({ orderRpm: JUPITER_PLAN_RPM[plan], clock }),
       executeLimiter: new ExecuteLimiter({ plan, orderRpm: JUPITER_PLAN_RPM[plan], clock }),
       sign: o.sign ?? signer,
+      landing: chain.checker,
       clock,
       emit: (e) => events.push(e),
     },
@@ -67,6 +72,10 @@ function setup(o: Setup = {}) {
       dryRun: o.dryRun ?? false,
       maxAttempts: o.maxAttempts ?? 3,
       minReserveLamports: 15_000_000n,
+      priceCeilingPercent: o.priceCeilingPercent ?? 50,
+      noRouteWindowMs: o.noRouteWindowMs ?? 20_000,
+      noRouteBackoffMinMs: 500,
+      noRouteBackoffMaxMs: 2_000,
     },
   );
   let summary: RunSummary | null = null;
@@ -78,7 +87,7 @@ function setup(o: Setup = {}) {
     if (summary === null) throw new Error('run did not finish');
     return summary;
   };
-  return { clock, jupiter, events, run, finish };
+  return { clock, chain, jupiter, events, run, finish };
 }
 
 const walletEvents = (events: ExecutorEvent[]): WalletEvent[] =>
@@ -107,7 +116,7 @@ describe('live run with the fake Jupiter', () => {
     expect(jupiter.executions()).toHaveLength(30);
     const confirmed = walletEvents(events).filter((e) => e.state === 'CONFIRMED');
     expect(confirmed).toHaveLength(30);
-    expect(confirmed[0]?.result?.totalOutputAmount).toBe(1_180_000n);
+    expect(confirmed[0]?.result?.totalOutputAmount).toBe(1_000_000_000n);
     expect(confirmed[0]?.times.orderMs).toBe(100);
     expect(confirmed[0]?.times.executeMs).toBe(300);
     // every wallet went through the whole pipeline, in order
@@ -195,28 +204,23 @@ describe('live run with the fake Jupiter', () => {
     expect(jupiter.ordersOf('Wallet000')).toBe(4);
   });
 
-  it('no answer from /execute is UNKNOWN (never retried here); a refused check FAILS', async () => {
+  it('a refused pre-sign check FAILS without /execute', async () => {
     const { jupiter, events, finish } = setup({
       n: 2,
-      script: { execute: () => ({ fail: 'TIMEOUT' }) },
       sign: (index, request, order) =>
         index === 1
           ? Promise.resolve({ ok: false, problem: 'TAKER_MISMATCH' })
           : signer(index, request, order),
     });
     const s = await finish();
-    expect(s.counts.UNKNOWN).toBe(1);
+    expect(s.counts.CONFIRMED).toBe(1);
     expect(s.counts.FAILED).toBe(1);
     expect(jupiter.executions()).toHaveLength(1);
-    const reasons = walletEvents(events)
-      .filter((e) => e.state === 'UNKNOWN' || e.state === 'FAILED')
-      .map((e) => e.reason);
-    expect(reasons).toEqual(
-      expect.arrayContaining([
-        { kind: 'UNKNOWN', code: 'EXECUTE_NO_ANSWER', detail: 'TIMEOUT' },
-        { kind: 'FAILED', code: 'CHECK_FAILED', detail: 'TAKER_MISMATCH' },
-      ]),
-    );
+    expect(walletEvents(events).find((e) => e.state === 'FAILED')?.reason).toEqual({
+      kind: 'FAILED',
+      code: 'CHECK_FAILED',
+      detail: 'TAKER_MISMATCH',
+    });
   });
 });
 

@@ -1,5 +1,5 @@
 /**
- * Wallet state machine of the executor (SPEC 3.5, BUNNDLY-21, D-029):
+ * Wallet state machine of the executor (SPEC 3.5, BUNNDLY-21 and 23, D-029, D-030):
  * IDLE → QUEUED → QUOTING → SIGNING → SUBMITTED → CONFIRMED | FAILED | UNKNOWN | SKIPPED.
  * The table lists every allowed move; anything else is a programming error.
  */
@@ -29,13 +29,17 @@ export const TRANSITIONS: Readonly<Record<WalletState, readonly WalletState[]>> 
   QUOTING: ['SIGNING', 'QUEUED', 'SKIPPED', 'FAILED'],
   SIGNING: ['SUBMITTED', 'SKIPPED', 'FAILED'],
   SUBMITTED: ['CONFIRMED', 'QUEUED', 'FAILED', 'UNKNOWN'],
-  UNKNOWN: ['CONFIRMED', 'QUEUED', 'FAILED'],
+  // UNKNOWN → UNKNOWN: the chain check gave up (LANDING_UNRESOLVED), now final.
+  UNKNOWN: ['UNKNOWN', 'CONFIRMED', 'QUEUED', 'FAILED'],
   CONFIRMED: [],
   FAILED: [],
   SKIPPED: [],
 };
 
-/** States a run can end in. UNKNOWN ends a run until BUNNDLY-23 resolves it. */
+/**
+ * States a run can end in. UNKNOWN is also the state while the chain is checked
+ * (`EXECUTE_NO_ANSWER`); it is final only with `LANDING_UNRESOLVED` (D-030).
+ */
 export const FINAL_STATES: ReadonlySet<WalletState> = new Set([
   'CONFIRMED',
   'FAILED',
@@ -67,7 +71,9 @@ export type SkipReason =
   /** DRY-RUN: signed, then thrown away; `/execute` is never called. */
   | 'DRY_RUN'
   /** STOP before this wallet's transaction was sent. */
-  | 'STOPPED';
+  | 'STOPPED'
+  /** The quote is above the fleet's first fill by more than the price ceiling. */
+  | 'PRICE_CEILING';
 
 /** Why a wallet failed. Always present on FAILED, with a detail code when there is one. */
 export type FailReason =
@@ -78,10 +84,16 @@ export type FailReason =
   /** `/execute` refused the transaction for good (detail: the outcome). */
   | 'EXECUTE_FAILED'
   /** Transient failures used up all attempts (detail: the last one). */
-  | 'MAX_ATTEMPTS';
+  | 'MAX_ATTEMPTS'
+  /** Still no route after the "no route" window. */
+  | 'NO_ROUTE';
 
 /** Why the outcome is not known (detail: what happened to `/execute`). */
-export type UnknownReason = 'EXECUTE_NO_ANSWER';
+export type UnknownReason =
+  /** Sent, no clear answer: the chain is being checked (not final yet). */
+  | 'EXECUTE_NO_ANSWER'
+  /** The chain check could not tell within its time limit; never retried (final). */
+  | 'LANDING_UNRESOLVED';
 
 export type WalletReason =
   | { readonly kind: 'SKIPPED'; readonly code: SkipReason; readonly detail: string | null }
@@ -95,6 +107,7 @@ export const SKIP_MESSAGES: Record<SkipReason, string> = {
   INSUFFICIENT_SOL_FOR_GAS: 'Jupiter: za mało SOL na opłatę transakcyjną.',
   DRY_RUN: 'DRY-RUN: transakcja podpisana i odrzucona, nic nie zostało wysłane.',
   STOPPED: 'Zatrzymane przyciskiem STOP przed wysłaniem.',
+  PRICE_CEILING: 'Cena powyżej sufitu względem pierwszego zakupu floty.',
 };
 
 export const FAIL_MESSAGES: Record<FailReason, string> = {
@@ -102,9 +115,12 @@ export const FAIL_MESSAGES: Record<FailReason, string> = {
   CHECK_FAILED: 'Transakcja nie przeszła kontroli przed podpisem.',
   EXECUTE_FAILED: 'Jupiter odrzucił transakcję.',
   MAX_ATTEMPTS: 'Wyczerpany limit prób.',
+  NO_ROUTE: 'Brak trasy dla tego tokena po upływie okna „no route”.',
 };
 
 export const UNKNOWN_MESSAGES: Record<UnknownReason, string> = {
   EXECUTE_NO_ANSWER:
-    'Transakcja została wysłana, ale wynik nie jest znany (brak odpowiedzi). Może jeszcze wylądować.',
+    'Transakcja została wysłana, ale wynik nie jest znany. Sprawdzam łańcuch, zanim portfel spróbuje ponownie.',
+  LANDING_UNRESOLVED:
+    'Nie udało się ustalić, czy transakcja wylądowała. Portfel nie próbuje ponownie; sprawdź go w eksploratorze.',
 };

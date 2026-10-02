@@ -2,7 +2,12 @@
  * Fake Jupiter for executor tests (BUNNDLY-21, used by 23 and 25 too): answers shaped like
  * the real `/order` and `/execute` fixtures, with injected delays and failures on a fake
  * clock. Records every call, and how many calls each wallet has open at once.
+ *
+ * With a fake chain (BUNNDLY-23), a successful `/execute` lands its transaction, and a
+ * scripted outcome can land it too (also after the answer, or after a timeout), so the
+ * executor's chain check is tested against what really happened.
  */
+import { executeOutcome } from '../../src/jupiter/client.ts';
 import type {
   ExecuteRequest,
   JupiterClient,
@@ -13,6 +18,7 @@ import type {
   OrderBuildReason,
   OrderRequest,
 } from '../../src/jupiter/client.ts';
+import type { FakeChain } from './fake-chain.ts';
 import type { FakeClock } from './fake-clock.ts';
 import { realOrder } from './tx-fakes.ts';
 
@@ -27,13 +33,20 @@ export type OrderOutcome =
   | { readonly fail: JupiterFailureCode; readonly httpStatus?: number }
   | { readonly build: OrderBuildReason; readonly errorCode?: number };
 
+/** The transaction lands on the fake chain `afterMs` after `/execute` started. */
+export interface LandSpec {
+  readonly ok?: boolean;
+  readonly afterMs?: number;
+}
+
 export type ExecuteOutcome =
   | 'ok'
-  | { readonly code: number }
+  | { readonly code: number; readonly lands?: LandSpec }
   | {
       readonly fail: JupiterFailureCode;
       readonly httpStatus?: number;
       readonly signature?: string;
+      readonly lands?: LandSpec;
     };
 
 export interface FakeJupiterScript {
@@ -43,6 +56,11 @@ export interface FakeJupiterScript {
   readonly execute?: (c: CallContext) => ExecuteOutcome;
   /** Real transaction for the taker (for the vault's signer); a placeholder otherwise. */
   readonly transaction?: (taker: string) => string;
+  /** JupiterZ quote: no block height, `expireAt` 30 s ahead, signature unknown. */
+  readonly rfq?: (c: CallContext) => boolean;
+  /** Tokens out for the quote (default `amount × 100`). */
+  readonly outAmount?: (c: CallContext & { readonly amount: bigint }) => bigint;
+  readonly chain?: FakeChain;
 }
 
 export interface FakeCall {
@@ -65,8 +83,8 @@ export class FakeJupiter implements JupiterClient {
   maxOpenPerWallet = 0;
   private readonly open = new Map<string, number>();
   private readonly counts = new Map<string, number>();
-  /** Taker of each requestId, so /execute knows the wallet. */
-  private readonly requests = new Map<string, string>();
+  /** Each requestId's order, so /execute knows the wallet and the amounts. */
+  private readonly requests = new Map<string, JupiterOrder>();
 
   constructor(
     private readonly clock: FakeClock,
@@ -107,32 +125,62 @@ export class FakeJupiter implements JupiterClient {
       };
     }
     const requestId = `req-${taker}-${String(ctx.nth)}`;
-    this.requests.set(requestId, taker);
     const base = realOrder('metisSuccess');
+    const rfq = this.script.rfq?.(ctx) ?? false;
+    const chain = this.script.chain;
     const order: JupiterOrder = {
       ...base,
       requestId,
       taker,
-      signatureFeePayer: taker,
+      router: rfq ? 'jupiterz' : base.router,
+      signatureFeePayer: rfq ? 'MarketMaker1111111111111111111111111111111' : taker,
+      lastValidBlockHeight: rfq ? null : chain ? chain.height() + 150n : base.lastValidBlockHeight,
+      expireAt: rfq ? Math.floor(this.clock.now() / 1000) + 30 : null,
       outputMint: request.outputMint,
       inAmount: request.amount,
-      outAmount: request.amount * 100n,
+      outAmount:
+        this.script.outAmount?.({ ...ctx, amount: request.amount }) ?? request.amount * 100n,
       transaction:
         outcome === 'ok' ? (this.script.transaction?.(taker) ?? `tx-${requestId}`) : null,
       buildError:
         outcome === 'ok' ? null : { errorCode: outcome.errorCode ?? 1, reason: outcome.build },
     };
+    this.requests.set(requestId, order);
     return { ok: true, value: order, rateLimit: null };
   }
 
   async execute(request: ExecuteRequest): Promise<JupiterResult<JupiterExecution>> {
-    const taker = this.requests.get(request.requestId) ?? '';
+    const order = this.requests.get(request.requestId);
+    const taker = order?.taker ?? '';
     const { ctx, end } = this.begin('execute', taker, {
       signedTransaction: request.signedTransaction,
     });
+    const start = this.clock.now();
+    const outcome = this.script.execute?.(ctx) ?? 'ok';
+    const signature = fakeSignature(taker, ctx.nth);
+    const land = (spec: LandSpec, at: number): boolean =>
+      order !== undefined &&
+      this.script.chain !== undefined &&
+      this.script.chain.land({
+        taker,
+        signedTransaction: request.signedTransaction,
+        signature,
+        ok: spec.ok ?? true,
+        at,
+        spent: order.inAmount,
+        lastValidBlockHeight: order.lastValidBlockHeight,
+        expireAt: order.expireAt,
+      });
     await this.clock.sleep(this.script.executeDelayMs?.(ctx) ?? 300);
     end();
-    const outcome = this.script.execute?.(ctx) ?? 'ok';
+    if (outcome === 'ok') {
+      // Success means it landed; an expired transaction cannot, so it fails to land.
+      if (this.script.chain && !land({ ok: true }, this.clock.now())) {
+        return this.answer(taker, ctx.nth, -1000, order);
+      }
+    } else if (outcome.lands) {
+      land(outcome.lands, start + (outcome.lands.afterMs ?? 0));
+    }
     if (outcome !== 'ok' && 'fail' in outcome) {
       return {
         ok: false,
@@ -142,17 +190,27 @@ export class FakeJupiter implements JupiterClient {
         signature: outcome.signature ?? null,
       };
     }
-    const code = outcome === 'ok' ? 0 : outcome.code;
+    return this.answer(taker, ctx.nth, outcome === 'ok' ? 0 : outcome.code, order);
+  }
+
+  private answer(
+    taker: string,
+    nth: number,
+    code: number,
+    order: JupiterOrder | undefined,
+  ): JupiterResult<JupiterExecution> {
+    const ok = code === 0;
     const execution: JupiterExecution = {
-      status: code === 0 ? 'Success' : 'Failed',
+      status: ok ? 'Success' : 'Failed',
       code,
-      outcome: code === 0 ? 'SUCCESS' : 'UNDOCUMENTED',
-      signature: fakeSignature(taker, ctx.nth),
-      slot: code === 0 ? 452_713_600n : null,
-      totalInputAmount: code === 0 ? 10_000_000n : null,
-      totalOutputAmount: code === 0 ? 1_180_000n : null,
-      inputAmountResult: code === 0 ? 10_000_000n : null,
-      outputAmountResult: code === 0 ? 1_180_200n : null,
+      outcome: executeOutcome(code),
+      // RFQ: the market maker's signature is not known to the taker.
+      signature: order?.router === 'jupiterz' && !ok ? null : fakeSignature(taker, nth),
+      slot: ok ? 452_713_600n : null,
+      totalInputAmount: ok ? (order?.inAmount ?? null) : null,
+      totalOutputAmount: ok ? (order?.outAmount ?? null) : null,
+      inputAmountResult: ok ? (order?.inAmount ?? null) : null,
+      outputAmountResult: ok ? (order?.outAmount ?? null) : null,
     };
     return { ok: true, value: execution, rateLimit: null };
   }

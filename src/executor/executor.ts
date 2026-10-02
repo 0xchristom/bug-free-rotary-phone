@@ -1,6 +1,6 @@
 /**
- * Executor (SPEC 3.5, BUNNDLY-21, D-029): every active wallet buys, wallets never block
- * each other, nobody buys twice.
+ * Executor (SPEC 3.5, BUNNDLY-21 and 23, D-029, D-030): every active wallet buys, wallets
+ * never block each other, nobody buys twice.
  *
  * - A FIFO queue of wallets. A dispatcher takes the next wallet as soon as the `/order`
  *   limiter grants a slot and starts its attempt without waiting for others.
@@ -9,11 +9,23 @@
  *   calls of different wallets run in parallel. A wallet is in at most one attempt.
  * - DRY-RUN runs real `/order`, checks and signing, then throws the signed transaction
  *   away: `/execute` is never called, on any path.
+ * - Idempotency: after `/execute` a wallet is retried only when Jupiter said nothing was
+ *   sent, or after the chain showed the transaction did not land and can no longer land.
+ *   Until then the wallet is UNKNOWN and checked every 2 s (`landing.ts`).
+ * - "No route" is retried inside a time window with backoff, without using attempts.
+ * - Price ceiling: after the first fill, a quote above it by more than the ceiling skips.
  *
  * Pure logic with injected Jupiter client, signer, limiters and clock; no DOM, no keys.
  * Events carry no keys and no signed transactions.
  */
 import type { JupiterClient, JupiterExecution, JupiterOrder } from '../jupiter/client.ts';
+import {
+  LANDING_POLL_MS,
+  LANDING_TIMEOUT_MS,
+  type Landing,
+  type LandingChecker,
+  type LandingQuery,
+} from './landing.ts';
 import type { ExecuteLimiter, LimiterClock, OrderLimiter } from './limiter.ts';
 import {
   afterBuildError,
@@ -109,6 +121,8 @@ export interface ExecutorDeps {
   readonly orderLimiter: OrderLimiter;
   readonly executeLimiter: ExecuteLimiter;
   readonly sign: OrderSigner;
+  /** Chain check before any retry of a wallet whose transaction may have been sent. */
+  readonly landing: LandingChecker;
   readonly clock: LimiterClock;
   readonly emit: (event: ExecutorEvent) => void;
 }
@@ -120,6 +134,15 @@ export interface RunOptions {
   readonly dryRun: boolean;
   readonly maxAttempts: number;
   readonly minReserveLamports: bigint;
+  /** Max price above the fleet's first fill, in percent. */
+  readonly priceCeilingPercent: number;
+  /** "No route" is retried this long after a wallet first saw it. */
+  readonly noRouteWindowMs: number;
+  readonly noRouteBackoffMinMs: number;
+  readonly noRouteBackoffMaxMs: number;
+  /** Defaults: `LANDING_POLL_MS`, `LANDING_TIMEOUT_MS`. */
+  readonly landingPollMs?: number;
+  readonly landingTimeoutMs?: number;
 }
 
 export interface WalletSnapshot {
@@ -153,6 +176,27 @@ interface Slot {
   orderMs: number | null;
   signMs: number | null;
   executeMs: number | null;
+  /** First "no route" of this wallet, and how many followed. */
+  noRouteSince: number | null;
+  noRoutes: number;
+}
+
+/** Price of the fleet's first fill: `input / output` lamports per token unit. */
+interface EntryPrice {
+  readonly input: bigint;
+  readonly output: bigint;
+}
+
+/** `quote` costs more than `entry` × (100 + percent) / 100. Cross-multiplied, no floats. */
+export function aboveCeiling(
+  entry: EntryPrice,
+  quote: { readonly inAmount: bigint; readonly outAmount: bigint },
+  percent: number,
+): boolean {
+  if (quote.outAmount <= 0n) return true;
+  return (
+    quote.inAmount * entry.output * 100n > entry.input * quote.outAmount * BigInt(100 + percent)
+  );
 }
 
 function emptyCounts(): Record<WalletState, number> {
@@ -175,9 +219,16 @@ export function startRun(deps: ExecutorDeps, options: RunOptions): ExecutorRun {
         orderMs: null,
         signMs: null,
         executeMs: null,
+        noRouteSince: null,
+        noRoutes: 0,
       },
     ]),
   );
+  const pollMs = options.landingPollMs ?? LANDING_POLL_MS;
+  const landingTimeoutMs = options.landingTimeoutMs ?? LANDING_TIMEOUT_MS;
+  let entry: EntryPrice | null = null;
+  /** Wallets waiting out a "no route" backoff before going back to the queue. */
+  const delayed = new Set<number>();
   const queue: number[] = [];
   const stopSignal = new AbortController();
   let stopped = false;
@@ -281,6 +332,35 @@ export function startRun(deps: ExecutorDeps, options: RunOptions): ExecutorRun {
     nudge();
   };
 
+  /** "No route": back to the queue after a backoff while the window lasts; then FAILED. */
+  const noRoute = (index: number, detail: string): void => {
+    const slot = slotOf(index);
+    const now = clock.now();
+    slot.noRouteSince ??= now;
+    if (now - slot.noRouteSince >= options.noRouteWindowMs) {
+      fail(index, 'NO_ROUTE', detail);
+      return;
+    }
+    const delay = Math.min(
+      options.noRouteBackoffMinMs * 2 ** slot.noRoutes,
+      options.noRouteBackoffMaxMs,
+    );
+    slot.noRoutes += 1;
+    move(index, 'QUEUED');
+    slot.attempt -= 1; // inside the window "no route" does not use attempts
+    if (stopped) {
+      skip(index, 'STOPPED');
+      return;
+    }
+    delayed.add(index);
+    void clock.sleep(delay).then(() => {
+      // STOP may have skipped it meanwhile.
+      if (!delayed.delete(index)) return;
+      queue.push(index);
+      nudge();
+    });
+  };
+
   const apply = (index: number, decision: Decision): void => {
     switch (decision.action) {
       case 'requeue':
@@ -292,9 +372,12 @@ export function startRun(deps: ExecutorDeps, options: RunOptions): ExecutorRun {
       case 'skip':
         skip(index, decision.reason, decision.detail);
         return;
-      case 'unknown':
-        unknown(index, decision.reason, decision.detail);
+      case 'noRoute':
+        noRoute(index, decision.detail);
         return;
+      case 'check':
+        // Only reachable after /execute: the caller runs the chain check.
+        throw new Error('check outside /execute');
     }
   };
 
@@ -306,7 +389,59 @@ export function startRun(deps: ExecutorDeps, options: RunOptions): ExecutorRun {
       totalInputAmount: execution.totalInputAmount,
       totalOutputAmount: execution.totalOutputAmount,
     };
+    const { totalInputAmount: input, totalOutputAmount: output } = execution;
+    if (entry === null && input !== null && output !== null && input > 0n && output > 0n) {
+      entry = { input, output };
+    }
     move(index, 'CONFIRMED');
+  };
+
+  /**
+   * The transaction may be on the chain: the wallet is UNKNOWN until the chain decides.
+   * Never retried before the chain shows it did not land and cannot land any more.
+   */
+  const resolve = async (index: number, query: LandingQuery, detail: string): Promise<void> => {
+    const slot = slotOf(index);
+    unknown(index, 'EXECUTE_NO_ANSWER', detail);
+    const deadline = clock.now() + landingTimeoutMs;
+    for (;;) {
+      let landing: Landing;
+      try {
+        landing = await deps.landing(query);
+      } catch {
+        landing = { status: 'pending' };
+      }
+      switch (landing.status) {
+        case 'landed':
+          slot.result = {
+            signature: landing.signature,
+            slot: landing.slot,
+            totalInputAmount: slot.result?.totalInputAmount ?? null,
+            totalOutputAmount: slot.result?.totalOutputAmount ?? null,
+          };
+          move(index, 'CONFIRMED');
+          return;
+        case 'failed':
+          slot.result = {
+            signature: landing.signature,
+            slot: null,
+            totalInputAmount: null,
+            totalOutputAmount: null,
+          };
+          requeue(index, true, `LANDED_WITH_ERROR:${detail}`);
+          return;
+        case 'expired':
+          requeue(index, true, `NOT_LANDED:${detail}`);
+          return;
+        case 'pending':
+          break;
+      }
+      if (clock.now() >= deadline) {
+        unknown(index, 'LANDING_UNRESOLVED', detail);
+        return;
+      }
+      await clock.sleep(pollMs);
+    }
   };
 
   /** One attempt of one wallet: /order → sign → /execute. Never throws on data. */
@@ -314,6 +449,8 @@ export function startRun(deps: ExecutorDeps, options: RunOptions): ExecutorRun {
     const slot = slotOf(index);
     const { wallet } = slot;
     slot.attempt += 1;
+    // A result of an earlier attempt must never be mistaken for this one's.
+    slot.result = null;
     move(index, 'QUOTING');
 
     const orderStart = clock.now();
@@ -332,9 +469,15 @@ export function startRun(deps: ExecutorDeps, options: RunOptions): ExecutorRun {
       return;
     }
     const order = ordered.value;
+    slot.noRouteSince = null;
+    slot.noRoutes = 0;
     slot.quote = { inAmount: order.inAmount, outAmount: order.outAmount, router: order.router };
     if (order.buildError !== null) {
       apply(index, afterBuildError(order.buildError.reason));
+      return;
+    }
+    if (entry !== null && aboveCeiling(entry, order, options.priceCeilingPercent)) {
+      skip(index, 'PRICE_CEILING');
       return;
     }
 
@@ -370,6 +513,14 @@ export function startRun(deps: ExecutorDeps, options: RunOptions): ExecutorRun {
       };
     }
     const executeStart = clock.now();
+    const query: LandingQuery = {
+      taker: wallet.address,
+      signedTransaction: signed.signedTransaction,
+      signature: signed.signature,
+      lastValidBlockHeight: order.lastValidBlockHeight,
+      expireAt: order.expireAt,
+      sentAtMs: executeStart,
+    };
     const executed = await jupiter.execute({
       signedTransaction: signed.signedTransaction,
       requestId: order.requestId,
@@ -387,7 +538,14 @@ export function startRun(deps: ExecutorDeps, options: RunOptions): ExecutorRun {
           totalOutputAmount: null,
         };
       }
-      apply(index, afterExecuteFailure(executed));
+      const failure = afterExecuteFailure(executed);
+      if (failure.action === 'check') {
+        await resolve(
+          index,
+          { ...query, signature: executed.signature ?? query.signature },
+          failure.detail,
+        );
+      } else apply(index, failure);
       return;
     }
     const decision = afterExecution(executed.value);
@@ -403,7 +561,13 @@ export function startRun(deps: ExecutorDeps, options: RunOptions): ExecutorRun {
         totalOutputAmount: executed.value.totalOutputAmount,
       };
     }
-    apply(index, decision);
+    if (decision.action === 'check') {
+      await resolve(
+        index,
+        { ...query, signature: executed.value.signature ?? query.signature },
+        decision.detail,
+      );
+    } else apply(index, decision);
   };
 
   const dispatch = async (): Promise<RunSummary> => {
@@ -424,7 +588,7 @@ export function startRun(deps: ExecutorDeps, options: RunOptions): ExecutorRun {
     while (fatal === null && !stopped) {
       const index = queue.shift();
       if (index === undefined) {
-        if (inFlight === 0) break;
+        if (inFlight === 0 && delayed.size === 0) break;
         await idle();
         continue;
       }
@@ -448,6 +612,8 @@ export function startRun(deps: ExecutorDeps, options: RunOptions): ExecutorRun {
     }
     // STOP: the queue empties; attempts in flight finish on their own.
     for (const index of queue.splice(0)) skip(index, 'STOPPED');
+    for (const index of delayed) skip(index, 'STOPPED');
+    delayed.clear();
     while (inFlight > 0) await idle();
     if (fatal !== null) throw fatal instanceof Error ? fatal : new Error('executor failure');
     emitRun('finished');

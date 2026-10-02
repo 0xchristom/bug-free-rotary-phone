@@ -38,7 +38,7 @@ export {
   assertTransition,
 } from './states.ts';
 export type { FailReason, SkipReason, UnknownReason, WalletReason, WalletState } from './states.ts';
-export { startRun } from './executor.ts';
+export { aboveCeiling, startRun } from './executor.ts';
 export type {
   ExecutorDeps,
   ExecutorEvent,
@@ -62,3 +62,6 @@ export {
   afterOrderFailure,
 } from './policy.ts';
 export type { Decision } from './policy.ts';
+export { LANDING_POLL_MS, LANDING_TIMEOUT_MS } from './landing.ts';
+export type { Landing, LandingChecker, LandingQuery } from './landing.ts';
+export { EXECUTE_FATAL, EXECUTE_NOT_SENT } from './policy.ts';

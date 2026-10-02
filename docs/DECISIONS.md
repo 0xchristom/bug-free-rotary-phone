@@ -545,3 +545,46 @@ Rejestr decyzji i rozbieżności z dokumentacją zewnętrzną. Nowe wpisy dopisu
   - **Zdarzenia:** worker wysyła `{ event }` bez `id` (stan portfela, próba, powód, quote, wynik, czasy; początek, zatrzymanie i koniec zakupu). Klient przekazuje je słuchaczom `onEvent`. W zdarzeniach nie ma kluczy, mnemonika ani podpisanych transakcji (test).
   - **Testy:** fałszywy zegar (`tests/helpers/fake-clock.ts`) i fałszywy Jupiter (`tests/helpers/fake-jupiter.ts`) z opóźnieniami, wstrzykiwanymi błędami i prawdziwymi transakcjami v0, więc sejf naprawdę podpisuje.
 - Konsekwencje: BUNNDLY-23 zmienia tylko `policy.ts` i rozwiązywanie UNKNOWN; BUNNDLY-25 dopina wynik i dziennik do zdarzeń; BUNNDLY-27 (UI) słucha `onEvent` i woła `startBuy` / `stop`.
+
+## D-030: Ponowienia bez podwójnego zakupu, okno „no route” i sufit ceny
+
+- Data: 2026-10-02
+- Zadanie: BUNNDLY-23 (obejmuje dawne BUNNDLY-24 oraz niezmienniki z BUNNDLY-29)
+- Kontekst: SPEC 3.3, 3.5 i 7; dokumentacja Jupitera `order-and-execute.md` (Transaction validity, kody `/execute`) i `gasless.md`; D-026 (klient), D-029 (executor). Zastępuje tymczasową politykę z D-029.
+- Decyzja:
+  - **Zasada:** po wywołaniu `/execute` portfel wraca do kolejki tylko wtedy, gdy Jupiter powiedział na pewno, że nic nie wysłał, albo gdy łańcuch pokazał, że transakcja nie wylądowała i już nie wyląduje. Wszystko inne przechodzi przez sprawdzenie łańcucha (`src/executor/policy.ts`):
+    - FAILED bez ponowienia (nasz błąd, nic nie poszło): `-2`, `-3`, `-1002`, `-1003`, `-2002` oraz HTTP 400, 401 i 403;
+    - nowe `/order` od razu, z liczeniem próby (Jupiter odmówił przed wysłaniem): `-1`, `-1004`, `-2003`, `-2004`; 429 na `/execute` bez liczenia próby;
+    - sprawdzenie łańcucha: `-1000`, `-2000` (failed to land), `-1001`, `-2001` (unknown), `status: Failed` z kodem spoza tabeli (np. slippage po wylądowaniu), brak odpowiedzi, timeout, błąd sieci, 5xx i nieczytelna odpowiedź.
+  - **Sprawdzenie łańcucha** (`src/chain/landing.ts`, co 2 s; portfel jest w tym czasie UNKNOWN z powodem `EXECUTE_NO_ANSWER`):
+    - sygnatura znana (taker płaci opłatę albo `/execute` ją zwrócił): `getSignatureStatuses` z historią; `confirmed`/`finalized` bez błędu to CONFIRMED, z błędem to „wylądowała z błędem”, `processed` to „jeszcze nie wiadomo”;
+    - sygnatura nieznana (JupiterZ, gasless: identyfikatorem jest podpis market makera): `getSignaturesForAddress` takera (limit 25, `confirmed`) od chwili wysłania minus 120 s zapasu na zegar, a potem `getTransaction` każdego kandydata. Nasza transakcja to ta, która niesie **własny podpis takera**, który sami złożyliśmy;
+    - **odstępstwo od opisu zadania: nie używam salda tokenu.** Dopasowanie po podpisie takera jest dokładne, a wzrost salda może pochodzić od cudzego przelewu tokenów, co fałszywie zablokowałoby portfel albo, przy odwrotnej logice, pozwoliło na ponowienie;
+    - wygaśnięcie: wysokość bloku (`confirmed`) powyżej `lastValidBlockHeight` dla agregatora; dla RFQ bez wysokości bloku: po `expireAt` i dopiero gdy `isBlockhashValid` mówi, że blockhash transakcji już nie działa. Wygaśnięcie czytam **przed** wyszukaniem transakcji, więc transakcja, która zdążyła wylądować, jest już widoczna;
+    - każda wątpliwość to „jeszcze nie wiadomo”: kandydat jeszcze niewidoczny, pełna strona nowych wpisów (starsze mogły się nie zmieścić), błąd RPC. Ponowienia wtedy nie ma;
+    - wylądowała bez błędu: CONFIRMED. Wylądowała z błędem albo wygasła: ponowienie z liczeniem próby. Po 180 s bez rozstrzygnięcia (np. RPC nie działa) portfel zostaje UNKNOWN na stałe (`LANDING_UNRESOLVED`) i nigdy nie jest ponawiany; użytkownik sprawdza go w eksploratorze.
+  - **Każda próba zaczyna z czystym wynikiem:** sygnatura z poprzedniej próby nie może zostać pomylona z bieżącą.
+  - **Tryb na żywo wymaga klucza Helius** (`HELIUS_KEY_MISSING` przy `startBuy`), bo bez RPC nie ma sprawdzenia łańcucha. DRY-RUN nie woła `/execute`, więc go nie potrzebuje.
+  - **„Brak trasy”** (`NO_ROUTE`, HTTP 400 „Failed to get quotes”, D-026):
+    - okno liczy się **dla każdego portfela** od jego pierwszego „no route”, nie od startu floty. Przy Keyless (27 `/order` na minutę) późniejsze portfele dostają pierwszą odpowiedź dopiero po minucie i inaczej nie miałyby żadnego okna;
+    - w oknie portfel czeka (500 ms, potem 1 s, 2 s i dalej 2 s, z ustawień) poza kolejką, nie blokując innych, i nie zużywa prób; po oknie kończy FAILED (`NO_ROUTE`);
+    - odstępstwo od SPEC 3.5 („licznik prób +1”): limit 3 prób skończyłby się po około 2 s, a okno z ustawień ma 20 s;
+    - STOP w czasie oczekiwania od razu kończy portfel jako SKIPPED (`STOPPED`).
+  - **Sufit ceny:** cena wejścia floty to `totalInputAmount / totalOutputAmount` z pierwszego CONFIRMED, który ma te kwoty (potwierdzenie z łańcucha ich nie ma i nie ustala ceny). Każdy następny quote sprawdzam po `/order`, przed podpisem, przez mnożenie na krzyż na `bigint`: `in × wejście_out × 100 > wejście_in × out × (100 + sufit)` daje SKIPPED (`PRICE_CEILING`); `outAmount` = 0 też. Przed pierwszym zakupem sufitu nie ma.
+  - **STOP:** transakcje w trakcie sprawdzania są śledzone do końca. Wylądowała: CONFIRMED; nie wylądowała: SKIPPED (`STOPPED`), bez nowego `/order`.
+  - **Symulacja niezmienników:**
+    - fałszywy łańcuch (`tests/helpers/fake-chain.ts`) przyjmuje transakcję tylko przed jej wygaśnięciem i jest źródłem prawdy dla niezmienników;
+    - scenariusze: 50 i 100 portfeli, Keyless i Free, na żywo i DRY-RUN, losowe błędy z ziarnem, STOP w losowej chwili;
+    - sprawdzam:
+      - stan końcowy z powodem;
+      - najwyżej jeden zakup na portfel;
+      - wydatek ≤ max spend;
+      - CONFIRMED wtedy i tylko wtedy, gdy zakup jest na łańcuchu;
+      - budżet `/order` w każdym oknie 60 s;
+      - zero `/execute` w DRY-RUN;
+      - żadnego `/order` po STOP;
+      - jedno wywołanie naraz na portfel;
+    - `npm test` uruchamia 50 ziaren, a `npm run test:sim` 5000;
+    - test pokrycia pilnuje, że przebiegi przeszły przez wszystkie ścieżki;
+    - kontrola mutacją: ponowienie bez czekania na łańcuch daje 38 z 52 testów zestawu na czerwono (podwójne zakupy, przekroczony max spend).
+- Konsekwencje: tryb na żywo jest od strony logiki gotowy, ale **dalej go nie używamy**, dopóki Krystian nie zgodzi się na transakcje na mainnecie (smoke test BUNNDLY-28). BUNNDLY-25 dopisze do dziennika wynik i sygnaturę z łańcucha; BUNNDLY-27 pokaże UNKNOWN jako „sprawdzam łańcuch”, a `LANDING_UNRESOLVED` z linkiem do eksploratora.

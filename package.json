@@ -13,6 +13,7 @@
     "lint": "eslint .",
     "typecheck": "tsc -b --noEmit",
     "test": "vitest run",
+    "test:sim": "vitest run --mode sim tests/executor/invariants.test.ts",
     "format": "prettier --write .",
     "format:check": "prettier --check ."
   },

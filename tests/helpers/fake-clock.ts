@@ -8,6 +8,13 @@ export class FakeClock implements LimiterClock {
   private t = T0;
   private timers: { at: number; resolve: () => void }[] = [];
 
+  /**
+   * `fast`: settle with setImmediate, without the 1 ms minimum of setTimeout, for long
+   * simulations of pure logic. Not for tests with real WebCrypto (the vault's signing),
+   * which finishes on a thread pool and needs real time to pass.
+   */
+  constructor(private readonly fast = false) {}
+
   now(): number {
     return this.t;
   }
@@ -25,7 +32,8 @@ export class FakeClock implements LimiterClock {
   async settle(): Promise<void> {
     for (let i = 0; i < 3; i++) {
       await new Promise((resolve) => {
-        setTimeout(resolve, 0);
+        if (this.fast) setImmediate(resolve);
+        else setTimeout(resolve, 0);
       });
     }
   }

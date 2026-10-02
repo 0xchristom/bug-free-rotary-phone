@@ -16,6 +16,8 @@ import {
   PUBLIC_RPC_URL,
   createBalancesRpc,
   createHttpTransport,
+  createLandingChecker,
+  createLandingRpc,
   createResilientTransport,
   fetchSolBalances,
   checkHeliusHttp,
@@ -25,6 +27,7 @@ import {
   type WebSocketFactory,
 } from '../chain/index.ts';
 import { startRun, type ExecutorEvent, type ExecutorRun } from '../executor/executor.ts';
+import type { LandingChecker } from '../executor/landing.ts';
 import { ExecuteLimiter, OrderLimiter, realClock, type LimiterClock } from '../executor/limiter.ts';
 import { checkOrderTransaction, type OrderCheckProblem } from '../executor/order-check.ts';
 import {
@@ -105,6 +108,8 @@ export interface ExecutorOptions {
   readonly clock?: LimiterClock;
   /** Even `/order` pace instead of a burst (D-027 emergency mode). */
   readonly steady?: boolean;
+  /** Chain check before retries; by default over Helius with the public fallback. */
+  readonly landing?: LandingChecker;
 }
 
 export interface VaultOptions {
@@ -414,6 +419,9 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
 
   const createTransport = options.chain?.createTransport ?? createHttpTransport;
 
+  const rpcUrlOf = (apiKeys: UnlockedVault['apiKeys']): string | null =>
+    apiKeys.heliusRpcUrl ?? (apiKeys.helius === undefined ? null : heliusRpcUrl(apiKeys.helius));
+
   /**
    * Reads SOL balances with the Helius key, which never leaves the worker (D-016). Not
    * user activity: periodic refreshes must not keep the vault unlocked.
@@ -423,8 +431,7 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
     checkAutoLock();
     const vault = requireUnlocked();
     const { apiKeys } = vault;
-    const url =
-      apiKeys.heliusRpcUrl ?? (apiKeys.helius === undefined ? null : heliusRpcUrl(apiKeys.helius));
+    const url = rpcUrlOf(apiKeys);
     if (url === null) throw new AppError('HELIUS_KEY_MISSING');
     const wallets = [...vault.publicWallets];
     const readSession = session;
@@ -547,6 +554,20 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
         balance: balances.get(w.index) ?? null,
       }));
     if (wallets.length === 0) throw new AppError('NO_WALLETS_TO_BUY');
+    // Live mode never retries without the chain check, which needs the RPC.
+    const rpcUrl = rpcUrlOf(vault.apiKeys);
+    let landing = options.executor?.landing;
+    if (landing === undefined && !global.dryRun) {
+      if (rpcUrl === null) throw new AppError('HELIUS_KEY_MISSING');
+      const transport = createResilientTransport({
+        primary: createTransport(rpcUrl),
+        fallback: createTransport(PUBLIC_RPC_URL),
+        ...(options.chain?.sleep ? { sleep: options.chain.sleep } : {}),
+      });
+      landing = createLandingChecker(createLandingRpc(transport), { now });
+    }
+    // DRY-RUN never calls /execute, so it never checks the chain.
+    landing ??= () => Promise.resolve({ status: 'pending' });
     const net = options.net ?? {};
     const jupiter =
       options.executor?.jupiter ??
@@ -562,6 +583,7 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
         orderLimiter: pair.order,
         executeLimiter: pair.execute,
         sign: signOrder,
+        landing,
         clock: options.executor?.clock ?? realClock,
         emit,
       },
@@ -572,6 +594,10 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
         dryRun: global.dryRun,
         maxAttempts: global.maxAttempts,
         minReserveLamports: global.minReserveLamports,
+        priceCeilingPercent: global.priceCeilingPercent,
+        noRouteWindowMs: global.noRouteWindowMs,
+        noRouteBackoffMinMs: global.noRouteBackoffMinMs,
+        noRouteBackoffMaxMs: global.noRouteBackoffMaxMs,
       },
     );
     const current = {

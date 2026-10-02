@@ -15,6 +15,7 @@ import {
   type VaultHandler,
 } from '../../src/worker/vault.ts';
 import { createVaultClient } from '../../src/worker/vault-client.ts';
+import { FakeChain } from '../helpers/fake-chain.ts';
 import { FakeClock } from '../helpers/fake-clock.ts';
 import { FakeJupiter, type FakeJupiterScript } from '../helpers/fake-jupiter.ts';
 import { USDC, buildTransaction } from '../helpers/tx-fakes.ts';
@@ -55,17 +56,21 @@ interface Setup {
   readonly script?: FakeJupiterScript;
   readonly refresh?: boolean;
   readonly settings?: Partial<FleetSettingsV1>;
+  readonly withChain?: boolean;
+  readonly heliusKey?: boolean;
 }
 
 async function setup(o: Setup = {}) {
   const clock = new FakeClock();
+  const fakeChain = new FakeChain(clock);
   const jupiter = new FakeJupiter(clock, {
     transaction: (taker) => buildTransaction({ feePayer: taker }),
+    ...(o.withChain ? { chain: fakeChain } : {}),
     ...o.script,
   });
   const h = createVaultHandler({
     chain,
-    executor: { jupiter, clock },
+    executor: { jupiter, clock, ...(o.withChain ? { landing: fakeChain.checker } : {}) },
     now: () => clock.now(),
     autoLockMs: 60_000,
   });
@@ -88,7 +93,11 @@ async function setup(o: Setup = {}) {
     global: { ...base.global, ...(o.dryRun === false ? { dryRun: false } : {}) },
     ...o.settings,
   };
-  await h.handle({ type: 'saveSettings', settings, apiKeys: { helius: 'heliusBuyKey' } });
+  await h.handle({
+    type: 'saveSettings',
+    settings,
+    ...(o.heliusKey === false ? {} : { apiKeys: { helius: 'heliusBuyKey' } }),
+  });
   if (o.refresh !== false) await h.handle({ type: 'refreshBalances' });
   const status = async () => (await h.handle({ type: 'status' })) as VaultStatus;
   const secrets = (): string[] => {
@@ -102,14 +111,35 @@ async function setup(o: Setup = {}) {
       ]),
     ];
   };
-  return { clock, jupiter, h, events, status, secrets };
+  return { clock, jupiter, fakeChain, h, events, status, secrets };
 }
 
 const finals = (events: ExecutorEvent[]): WalletEvent[] =>
   events.filter(
     (e): e is WalletEvent =>
-      e.kind === 'wallet' && ['CONFIRMED', 'FAILED', 'UNKNOWN', 'SKIPPED'].includes(e.state),
+      e.kind === 'wallet' &&
+      ['CONFIRMED', 'FAILED', 'UNKNOWN', 'SKIPPED'].includes(e.state) &&
+      // UNKNOWN while the chain is checked is not final
+      e.reason?.code !== 'EXECUTE_NO_ANSWER',
   );
+
+/**
+ * Runs the fake clock until the run's `finished` event. The vault signs with real
+ * WebCrypto, which completes on a thread pool: under load it can need more real time
+ * than the clock's settle turns, so wait for the event instead of counting turns.
+ */
+async function runToEnd(clock: FakeClock, events: readonly ExecutorEvent[]): Promise<void> {
+  const finished = () => events.some((e) => e.kind === 'run' && e.phase === 'finished');
+  for (let i = 0; i < 400 && !finished(); i++) {
+    await clock.runUntil();
+    if (!finished()) {
+      await new Promise((resolve) => {
+        setTimeout(resolve, 5);
+      });
+    }
+  }
+  if (!finished()) throw new Error('the run did not finish');
+}
 
 async function codeOf(p: Promise<unknown>): Promise<string> {
   return p.then(
@@ -124,7 +154,7 @@ describe('startBuy', () => {
     const started = (await h.handle({ type: 'startBuy', mint: USDC })) as BuyStatus;
     expect(started).toMatchObject({ dryRun: true, wallets: 2, mint: USDC, accepting: true });
     expect(await status()).toMatchObject({ armed: true, buy: { runId: started.runId } });
-    await clock.runUntil();
+    await runToEnd(clock, events);
     expect(jupiter.executions()).toHaveLength(0);
     expect(finals(events).map((e) => [e.index, e.state, e.reason?.code])).toEqual([
       [0, 'SKIPPED', 'DRY_RUN'],
@@ -136,7 +166,7 @@ describe('startBuy', () => {
   it('live mode: real signatures go to /execute and every wallet is CONFIRMED', async () => {
     const { clock, jupiter, h, events } = await setup({ dryRun: false });
     await h.handle({ type: 'startBuy', mint: USDC });
-    await clock.runUntil();
+    await runToEnd(clock, events);
     expect(finals(events).map((e) => e.state)).toEqual(['CONFIRMED', 'CONFIRMED']);
     const sent = jupiter.executions();
     expect(sent).toHaveLength(2);
@@ -148,10 +178,34 @@ describe('startBuy', () => {
     }
   });
 
+  it('live mode needs the Helius key for the chain check; DRY-RUN does not', async () => {
+    const live = await setup({ dryRun: false, refresh: false, heliusKey: false });
+    expect(await codeOf(live.h.handle({ type: 'startBuy', mint: USDC }))).toBe(
+      'HELIUS_KEY_MISSING',
+    );
+    const dry = await setup({ refresh: false, heliusKey: false });
+    expect(await codeOf(dry.h.handle({ type: 'startBuy', mint: USDC }))).toBe('ok');
+    await runToEnd(dry.clock, dry.events);
+  });
+
+  it('timeout after a real signed send that landed: the chain check confirms, one buy', async () => {
+    const { clock, jupiter, fakeChain, h, events } = await setup({
+      dryRun: false,
+      withChain: true,
+      script: { execute: () => ({ fail: 'TIMEOUT', lands: { afterMs: 1_000 } }) },
+    });
+    await h.handle({ type: 'startBuy', mint: USDC });
+    await runToEnd(clock, events);
+    expect(finals(events).map((e) => e.state)).toEqual(['CONFIRMED', 'CONFIRMED']);
+    expect(jupiter.calls.filter((c) => c.kind === 'order')).toHaveLength(2);
+    const takers = new Set(jupiter.executions().map((c) => c.taker));
+    for (const taker of takers) expect(fakeChain.successfulBuys(taker)).toHaveLength(1);
+  });
+
   it('wallets without a balance read are skipped before /order', async () => {
     const { clock, jupiter, h, events } = await setup({ refresh: false });
     await h.handle({ type: 'startBuy', mint: USDC });
-    await clock.runUntil();
+    await runToEnd(clock, events);
     expect(jupiter.calls).toHaveLength(0);
     expect(finals(events).map((e) => e.reason?.code)).toEqual([
       'BALANCE_UNKNOWN',
@@ -163,7 +217,7 @@ describe('startBuy', () => {
     const { clock, jupiter, h, events, secrets } = await setup({ dryRun: false });
     const held = secrets();
     await h.handle({ type: 'startBuy', mint: USDC });
-    await clock.runUntil();
+    await runToEnd(clock, events);
     const text = JSON.stringify(events, (_k, v: unknown) =>
       typeof v === 'bigint' ? v.toString() : v,
     );
@@ -185,11 +239,13 @@ describe('startBuy', () => {
     const busy = await setup();
     await busy.h.handle({ type: 'startBuy', mint: USDC });
     expect(await codeOf(busy.h.handle({ type: 'startBuy', mint: USDC }))).toBe('BUY_RUNNING');
-    await busy.clock.runUntil();
+    await runToEnd(busy.clock, busy.events);
   });
 
   it('armed while running: no auto-lock, no lock, no other fleet; normal again after', async () => {
-    const { clock, h, status } = await setup({ script: { orderDelayMs: () => 600_000 } });
+    const { clock, h, events, status } = await setup({
+      script: { orderDelayMs: () => 600_000 },
+    });
     await h.handle({ type: 'startBuy', mint: USDC });
     await clock.runUntil(clock.now() + 300_000);
     expect(h.checkAutoLock()).toBe(false);
@@ -198,7 +254,7 @@ describe('startBuy', () => {
       'BUY_RUNNING',
     );
     expect((await status()).locked).toBe(false);
-    await clock.runUntil();
+    await runToEnd(clock, events);
     expect((await status()).armed).toBe(false);
     expect(await codeOf(h.handle({ type: 'lock' }))).toBe('ok');
   });
@@ -212,7 +268,7 @@ describe('startBuy', () => {
     await clock.runUntil(clock.now() + 100); // both sent, executing
     const stopped = (await h.handle({ type: 'stop' })) as VaultStatus;
     expect(stopped).toMatchObject({ armed: true, buy: { accepting: false } });
-    await clock.runUntil();
+    await runToEnd(clock, events);
     expect(jupiter.calls.filter((c) => c.kind === 'order')).toHaveLength(2);
     expect(finals(events).map((e) => e.state)).toEqual(['CONFIRMED', 'CONFIRMED']);
     expect(await status()).toMatchObject({ armed: false, buy: null });
@@ -252,7 +308,7 @@ describe('events over the message port', () => {
     });
     await client.request({ type: 'refreshBalances' });
     await client.request({ type: 'startBuy', mint: USDC });
-    await clock.runUntil();
+    await runToEnd(clock, received);
     expect(received.map((e) => (e.kind === 'run' ? e.phase : e.state))).toEqual([
       'started',
       'QUEUED',
