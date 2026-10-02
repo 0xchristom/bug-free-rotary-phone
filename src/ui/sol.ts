@@ -38,7 +38,7 @@ export function parseSolAmount(text: string): SolInput {
     : { ok: true, lamports };
 }
 
-/** Token amount (raw u64) with its decimals → "1 234,5" style text with a decimal comma. */
+/** Token amount (raw u64) with its decimals → "1234,5" style text: decimal comma, no thousands grouping. */
 export function formatUnits(amount: bigint, decimals: number): string {
   if (decimals === 0) return amount.toString();
   const base = 10n ** BigInt(decimals);
