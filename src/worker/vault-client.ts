@@ -15,11 +15,20 @@ export interface VaultClientOptions {
   readonly slowTimeoutMs?: number;
 }
 
+export interface VaultRequestOptions {
+  /** Progress 0..1 of long requests (scrypt in create and unlock). */
+  readonly onProgress?: (progress: number) => void;
+}
+
 export interface VaultClient {
-  request<T extends VaultRequestType>(request: VaultRequestOf<T>): Promise<VaultResultMap[T]>;
+  request<T extends VaultRequestType>(
+    request: VaultRequestOf<T>,
+    options?: VaultRequestOptions,
+  ): Promise<VaultResultMap[T]>;
 }
 
 interface Pending {
+  readonly onProgress: ((progress: number) => void) | undefined;
   readonly resolve: (value: unknown) => void;
   readonly reject: (error: AppError) => void;
   readonly timer: ReturnType<typeof setTimeout>;
@@ -46,6 +55,10 @@ export function createVaultClient(port: VaultPort, options: VaultClientOptions =
     if (!isRecord(data) || typeof data.id !== 'number') return;
     const entry = pending.get(data.id);
     if (!entry) return; // late reply after a timeout
+    if (!('ok' in data)) {
+      if (typeof data.progress === 'number') entry.onProgress?.(data.progress);
+      return;
+    }
     pending.delete(data.id);
     clearTimeout(entry.timer);
     if (data.ok === true) {
@@ -66,7 +79,10 @@ export function createVaultClient(port: VaultPort, options: VaultClientOptions =
   });
 
   return {
-    request<T extends VaultRequestType>(request: VaultRequestOf<T>): Promise<VaultResultMap[T]> {
+    request<T extends VaultRequestType>(
+      request: VaultRequestOf<T>,
+      options: VaultRequestOptions = {},
+    ): Promise<VaultResultMap[T]> {
       const id = nextId++;
       const limit = SLOW_REQUESTS.has(request.type) ? slowTimeoutMs : timeoutMs;
       return new Promise<VaultResultMap[T]>((resolve, reject) => {
@@ -75,6 +91,7 @@ export function createVaultClient(port: VaultPort, options: VaultClientOptions =
           reject(new AppError('VAULT_TIMEOUT'));
         }, limit);
         pending.set(id, {
+          onProgress: options.onProgress,
           resolve: (value) => {
             resolve(value as VaultResultMap[T]);
           },

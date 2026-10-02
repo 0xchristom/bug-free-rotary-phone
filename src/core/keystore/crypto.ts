@@ -8,8 +8,9 @@
 import { scryptAsync } from '@noble/hashes/scrypt.js';
 import { base64 } from '@scure/base';
 import { AppError } from '../errors.ts';
+import { MIN_PASSWORD_LENGTH, passwordLength } from './limits.ts';
 
-export const MIN_PASSWORD_LENGTH = 12;
+export { MIN_PASSWORD_LENGTH, passwordLength } from './limits.ts';
 
 export const DEFAULT_SCRYPT_N = 2 ** 17;
 export const MIN_SCRYPT_N = 2 ** 17;
@@ -130,11 +131,6 @@ function validateCipher(cipher: unknown): Uint8Array<ArrayBuffer> {
   const iv = decodeBase64(c.iv);
   if (iv?.length !== IV_LENGTH) return unsupported();
   return new Uint8Array(iv);
-}
-
-/** User-perceived characters (grapheme clusters) after NFKC. */
-export function passwordLength(password: string): number {
-  return Array.from(new Intl.Segmenter().segment(password.normalize('NFKC'))).length;
 }
 
 /** NFKC, then UTF-8 (SPEC 3.1). */

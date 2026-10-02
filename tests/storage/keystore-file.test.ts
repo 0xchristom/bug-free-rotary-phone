@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { AppError, MAX_KEYSTORE_FILE_BYTES } from '../../src/core/index.ts';
 import {
+  DOWNLOAD_URL_TTL_MS,
   keystoreFileName,
   openKeystoreFile,
   readKeystoreFile,
@@ -77,6 +78,10 @@ function env(overrides: Partial<StorageEnv> = {}): StorageEnv & {
     createObjectURL: vi.fn(() => 'blob:fake-url'),
     revokeObjectURL: vi.fn(),
     clickDownload: vi.fn(),
+    // real timers by default; tests that check the delay use vi.useFakeTimers()
+    setTimeout: (callback: () => void, ms: number) => {
+      setTimeout(callback, ms);
+    },
     ...overrides,
   } as ReturnType<typeof env>;
 }
@@ -255,7 +260,8 @@ describe('saveKeystoreFile with the File System Access API', () => {
 });
 
 describe('saveKeystoreFile fallback (no File System Access API)', () => {
-  it('downloads the file and revokes the object URL', async () => {
+  it('downloads the file and revokes the object URL only after the delay', async () => {
+    vi.useFakeTimers();
     const e = env();
     expect(supportsDirectoryPicker(e)).toBe(false);
     const result = await saveKeystoreFile(FILE_TEXT, 'Flota', e, { confirmOverwrite: () => true });
@@ -265,14 +271,18 @@ describe('saveKeystoreFile fallback (no File System Access API)', () => {
     expect(blob.type).toBe('application/json');
     expect(await blob.text()).toBe(FILE_TEXT);
     expect(e.clickDownload).toHaveBeenCalledWith('blob:fake-url', 'Flota.keystore.json');
+    // the URL stays valid while the browser downloads it
+    expect(e.revokeObjectURL).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(DOWNLOAD_URL_TTL_MS - 1);
+    expect(e.revokeObjectURL).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(1);
+    expect(e.revokeObjectURL).toHaveBeenCalledTimes(1);
     expect(e.revokeObjectURL).toHaveBeenCalledWith('blob:fake-url');
-    // revoked right after the click
-    expect(e.revokeObjectURL.mock.invocationCallOrder[0]).toBeGreaterThan(
-      e.clickDownload.mock.invocationCallOrder[0] ?? Infinity,
-    );
+    expect(DOWNLOAD_URL_TTL_MS).toBe(60_000);
+    vi.useRealTimers();
   });
 
-  it('revokes the URL even if the click throws', async () => {
+  it('revokes the URL at once if the click throws', async () => {
     const e = env({
       clickDownload: vi.fn(() => {
         throw new Error('blocked');

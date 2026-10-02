@@ -4,55 +4,9 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AppError } from '../../src/core/errors.ts';
 import { App } from '../../src/ui/App.tsx';
-import type { VaultPort, VaultRequest, VaultStatus } from '../../src/worker/protocol.ts';
-import { createVaultClient, type VaultClient } from '../../src/worker/vault-client.ts';
-
-const LOCKED: VaultStatus = { locked: true, armed: false, info: null };
-
-function unlocked(armed = false): VaultStatus {
-  return {
-    locked: false,
-    armed,
-    info: {
-      fleetName: 'Flota testowa',
-      createdAt: '2026-10-02T00:00:00.000Z',
-      wallets: [0, 1, 2].map((index) => ({
-        index,
-        address: `Address${String(index)}`,
-        derivationPath: `m/44'/501'/${String(index)}'/0'`,
-        label: `W0${String(index + 1)}`,
-      })),
-      settings: { maxSpend: [] },
-      apiKeys: {},
-    },
-  };
-}
-
-/** Fake vault worker client; `status` can be changed to simulate auto-lock. */
-function mockVault(initial: VaultStatus) {
-  let status = initial;
-  const request = vi.fn((req: VaultRequest): Promise<unknown> => {
-    switch (req.type) {
-      case 'status':
-      case 'activity':
-        return Promise.resolve(status);
-      case 'lock':
-        status = LOCKED;
-        return Promise.resolve(status);
-      default:
-        return Promise.reject(new AppError('INTERNAL_ERROR'));
-    }
-  });
-  return {
-    client: { request } as unknown as VaultClient,
-    request,
-    setStatus: (next: VaultStatus) => {
-      status = next;
-    },
-    calls: (type: VaultRequest['type']) =>
-      request.mock.calls.filter(([r]) => r.type === type).length,
-  };
-}
+import type { VaultPort } from '../../src/worker/protocol.ts';
+import { createVaultClient } from '../../src/worker/vault-client.ts';
+import { LOCKED, mockStorage, mockVault, unlocked } from './fakes.ts';
 
 function renderApp(
   vault: ReturnType<typeof mockVault>,
@@ -62,6 +16,7 @@ function renderApp(
   return render(
     <App
       vault={vault.client}
+      storage={mockStorage().env}
       statusPollMs={statusPollMs}
       activityThrottleMs={activityThrottleMs}
     />,
@@ -129,7 +84,7 @@ describe('vault status changes', () => {
   it('auto-lock shows on the start screen within one poll (5 s, fake clock)', async () => {
     vi.useFakeTimers();
     const vault = mockVault(unlocked());
-    render(<App vault={vault.client} />); // default poll interval
+    render(<App vault={vault.client} storage={mockStorage().env} />); // default poll interval
     await act(() => vi.advanceTimersByTimeAsync(0));
     expect(screen.getByRole('heading', { name: 'Flota' })).toBeTruthy();
 
@@ -152,7 +107,9 @@ describe('vault status changes', () => {
         fail = listener;
       },
     };
-    render(<App vault={createVaultClient(port)} statusPollMs={60_000} />);
+    render(
+      <App vault={createVaultClient(port)} storage={mockStorage().env} statusPollMs={60_000} />,
+    );
     expect(screen.getByText('Łączenie z sejfem…')).toBeTruthy();
     expect(screen.queryByRole('alert')).toBeNull();
     act(() => {

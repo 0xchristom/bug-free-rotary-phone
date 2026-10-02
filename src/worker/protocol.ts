@@ -74,6 +74,12 @@ export interface VaultRequestEnvelope {
   readonly request: VaultRequest;
 }
 
+/** Progress of a long request (scrypt in create/unlock), 0..1, sent before the response. */
+export interface VaultProgressEnvelope {
+  readonly id: number;
+  readonly progress: number;
+}
+
 export type VaultResponseEnvelope =
   | { readonly id: number; readonly ok: true; readonly result: VaultResultMap[VaultRequestType] }
   | { readonly id: number; readonly ok: false; readonly code: ErrorCode };

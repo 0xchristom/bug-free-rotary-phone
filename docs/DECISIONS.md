@@ -204,3 +204,20 @@ Rejestr decyzji i rozbieżności z dokumentacją zewnętrzną. Nowe wpisy dopisu
   - **`@testing-library/dom` 10.4.2** jest wymaganym peerem `@testing-library/react` od wersji 16 i nie instaluje się sam. To jedyna paczka spoza listy w zadaniu.
   - **`@testing-library/user-event` 14.6.7** symuluje klik i klawiaturę realistyczniej niż `fireEvent`.
   - **`jsdom` 29.1.1, a nie najnowszy 30.x:** 30.x wymaga Node `^22.22.2 || ^24.15`, a nasze `engines` to `>=22.13`. 29.1.1 ma `engines` `^22.13 || >=24`, czyli dokładnie nasz zakres.
+
+## D-017: Kreator floty i niezapisany plik
+
+- Data: 2026-10-02
+- Zadanie: BUNNDLY-9
+- Kontekst: SPEC 3.1, 5 i 6.1. D-016 jest zarezerwowane dla decyzji o kluczach API (BUNNDLY-15).
+- Decyzja:
+  - **Sekrety w formularzu:** hasło, powtórzenie hasła i mnemonik są w stanie React tylko do wysłania żądania `create`. Zaraz potem formularz je czyści. Nic nie trafia do storage, URL ani konsoli.
+  - **Długość hasła:** liczona w grafemach po NFKC (`passwordLength` w bezzależnościowym `core/keystore/limits.ts`), tak samo w UI i w `crypto.ts`. UI nie importuje kryptografii.
+  - **Wskaźnik siły hasła:** prosta heurystyka (`ui/password-strength.ts`): długość, klasy znaków, kary za powtórzenia, sekwencje i popularne słowa. Bez zewnętrznej biblioteki (zxcvbn ma ok. 800 kB). Blokuje tylko hasło krótsze niż 12 znaków, resztę opisuje.
+  - **Postęp scrypt:** worker wysyła `{ id, progress }` tylko przy zmianie pełnego procenta. Klient przekazuje to do `onProgress` i nie kończy na tym żądania.
+  - **Zapis pliku:** dopiero po kliknięciu „Zapisz plik floty”, nigdy automatycznie. Dopóki plik nie jest zapisany:
+    - wyjście z kreatora wymaga potwierdzenia, a zamknięcie karty uruchamia ostrzeżenie przeglądarki (`beforeunload`);
+    - auto-lock nie zamyka kreatora: zaszyfrowany plik zostaje w pamięci UI i nadal można go zapisać (nie zawiera jawnych sekretów);
+    - po utworzeniu floty aplikacja nie przechodzi sama na ekran Flota.
+  - **Pobieranie:** `revokeObjectURL` po 60 s (`DOWNLOAD_URL_TTL_MS`), bo niektóre przeglądarki zaczynają pobieranie asynchronicznie. Od razu tylko wtedy, gdy kliknięcie rzuci wyjątek.
+- Konsekwencje: zaszyfrowany plik może zostać w pamięci karty po auto-locku, dopóki użytkownik go nie zapisze albo nie opuści kreatora.

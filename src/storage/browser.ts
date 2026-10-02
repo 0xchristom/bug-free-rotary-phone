@@ -63,5 +63,8 @@ export function browserStorageEnv(): StorageEnv {
       URL.revokeObjectURL(url);
     },
     clickDownload,
+    setTimeout: (callback, ms) => {
+      window.setTimeout(callback, ms);
+    },
   };
 }

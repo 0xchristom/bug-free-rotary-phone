@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { toUserMessage } from '../core/errors.ts';
 import { DEFAULT_AUTO_LOCK_MS, type VaultStatus } from '../worker/protocol.ts';
+import type { StorageEnv } from '../storage/keystore-file.ts';
 import type { VaultClient } from '../worker/vault-client.ts';
 import { AppHeader } from './AppHeader.tsx';
 import { FleetScreen } from './screens/FleetScreen.tsx';
@@ -11,6 +12,8 @@ import { UNLOCKED_SCREENS, VaultContext, type Screen, type VaultState } from './
 
 export interface AppProps {
   readonly vault: VaultClient;
+  /** Where the keystore file is saved (File System Access API or download). */
+  readonly storage: StorageEnv;
   /** How often the UI re-reads the vault status (to notice auto-lock). */
   readonly statusPollMs?: number;
   /** Minimum gap between `activity` reports to the vault. */
@@ -27,6 +30,7 @@ const ACTIVITY_EVENTS = ['pointerdown', 'keydown'] as const;
  */
 export function App({
   vault,
+  storage,
   statusPollMs = DEFAULT_STATUS_POLL_MS,
   activityThrottleMs = DEFAULT_ACTIVITY_THROTTLE_MS,
 }: AppProps) {
@@ -35,12 +39,15 @@ export function App({
   const [notice, setNotice] = useState<string | null>(null);
   const wasUnlocked = useRef(false);
   const lastActivity = useRef(0);
+  /** A created fleet whose file is not saved yet: never leave the wizard silently. */
+  const [unsavedFile, setUnsavedFile] = useState(false);
 
   const applyStatus = useCallback((next: VaultStatus, reason: 'auto' | 'user') => {
     setStatus(next);
     if (next.locked) {
       if (wasUnlocked.current) {
-        setScreen('start');
+        // The wizard keeps its encrypted, not yet saved file; other screens go to Start.
+        setScreen((s) => (UNLOCKED_SCREENS.has(s) ? 'start' : s));
         setNotice(
           reason === 'user'
             ? 'Flota została zablokowana.'
@@ -49,7 +56,8 @@ export function App({
       }
       wasUnlocked.current = false;
     } else {
-      if (!wasUnlocked.current) setScreen((s) => (UNLOCKED_SCREENS.has(s) ? s : 'fleet'));
+      // Opening a fleet from Start shows it; the wizard stays until its file is saved.
+      if (!wasUnlocked.current) setScreen((s) => (s === 'start' ? 'fleet' : s));
       wasUnlocked.current = true;
     }
   }, []);
@@ -106,10 +114,34 @@ export function App({
     }
   }, [vault, applyStatus]);
 
-  const navigate = useCallback((next: Screen) => {
-    setNotice(null);
-    setScreen(next);
-  }, []);
+  const navigate = useCallback(
+    (next: Screen) => {
+      if (
+        unsavedFile &&
+        !window.confirm(
+          'Plik floty nie został zapisany. Bez niego nie otworzysz tej floty ponownie. Opuścić kreator?',
+        )
+      ) {
+        return;
+      }
+      setUnsavedFile(false);
+      setNotice(null);
+      setScreen(next);
+    },
+    [unsavedFile],
+  );
+
+  // Closing the tab with an unsaved fleet file asks the browser to confirm.
+  useEffect(() => {
+    if (!unsavedFile) return;
+    const onBeforeUnload = (event: BeforeUnloadEvent): void => {
+      event.preventDefault();
+    };
+    window.addEventListener('beforeunload', onBeforeUnload);
+    return () => {
+      window.removeEventListener('beforeunload', onBeforeUnload);
+    };
+  }, [unsavedFile]);
 
   const context = useMemo<VaultState>(
     () => ({ client: vault, status, refresh }),
@@ -154,9 +186,14 @@ export function App({
               )}
               {visible === 'wizard' && (
                 <WizardScreen
+                  storage={storage}
                   onBack={() => {
                     navigate(unlocked ? 'fleet' : 'start');
                   }}
+                  onDone={() => {
+                    navigate('fleet');
+                  }}
+                  onUnsavedChange={setUnsavedFile}
                 />
               )}
               {visible === 'fleet' && status.info && <FleetScreen info={status.info} />}

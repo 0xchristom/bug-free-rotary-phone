@@ -35,6 +35,7 @@ import type {
   VaultFileResult,
   VaultInfo,
   VaultPort,
+  VaultProgressEnvelope,
   VaultRequest,
   VaultRequestType,
   VaultResponseEnvelope,
@@ -76,9 +77,14 @@ export interface VaultState {
   readonly lastActivity: number;
 }
 
+export interface VaultHandleOptions {
+  /** scrypt progress (0..1) for create and unlock. */
+  readonly onProgress?: (progress: number) => void;
+}
+
 export interface VaultHandler {
   /** Handles one request; requests run strictly one after another. */
-  handle(request: unknown): Promise<VaultResultMap[VaultRequestType]>;
+  handle(request: unknown, options?: VaultHandleOptions): Promise<VaultResultMap[VaultRequestType]>;
   /** Locks if idle for longer than the auto-lock time and not armed. Returns true if it locked. */
   checkAutoLock(): boolean;
   /** For tests only. */
@@ -233,7 +239,11 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
     return false;
   };
 
-  const dispatch = async (raw: unknown): Promise<VaultResultMap[VaultRequestType]> => {
+  const dispatch = async (
+    raw: unknown,
+    options: VaultHandleOptions,
+  ): Promise<VaultResultMap[VaultRequestType]> => {
+    const progress = options.onProgress ? { onProgress: options.onProgress } : {};
     if (!isRecord(raw)) return badRequest();
     const request = raw as VaultRequest;
     checkAutoLock();
@@ -246,6 +256,7 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
           walletCount: int(request.walletCount),
           password: str(request.password),
           ...(request.mnemonic === undefined ? {} : { mnemonic: str(request.mnemonic) }),
+          ...progress,
         });
         install(opened);
         touch();
@@ -257,7 +268,7 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
       case 'unlock': {
         const fileText = str(request.fileText);
         const password = str(request.password);
-        install(await openKeystore(parseKeystoreFile(fileText), password));
+        install(await openKeystore(parseKeystoreFile(fileText), password, progress));
         touch();
         return status();
       }
@@ -303,8 +314,8 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
   };
 
   return {
-    handle(request: unknown) {
-      const run = tail.then(() => dispatch(request));
+    handle(request: unknown, options: VaultHandleOptions = {}) {
+      const run = tail.then(() => dispatch(request, options));
       tail = run.then(
         () => undefined,
         () => undefined,
@@ -322,7 +333,16 @@ export function attachVaultHandler(port: VaultPort, handler: VaultHandler): void
     const data = event.data;
     if (!isRecord(data) || typeof data.id !== 'number') return;
     const id = data.id;
-    handler.handle(data.request).then(
+    // Report progress in whole percent so a long scrypt does not flood the port.
+    let lastPercent = -1;
+    const onProgress = (p: number): void => {
+      const percent = Math.floor(p * 100);
+      if (percent === lastPercent) return;
+      lastPercent = percent;
+      const message: VaultProgressEnvelope = { id, progress: percent / 100 };
+      port.postMessage(message);
+    };
+    handler.handle(data.request, { onProgress }).then(
       (result) => {
         const reply: VaultResponseEnvelope = { id, ok: true, result };
         port.postMessage(reply);
