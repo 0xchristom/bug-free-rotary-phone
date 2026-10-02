@@ -1,0 +1,359 @@
+{
+  "source": "GET https://api.jup.ag/swap/v2/order, Keyless (bez klucza API), bez /execute. Nic nie zostało podpisane ani wysłane.",
+  "fetchedAt": "2026-10-02T20:11:33.574Z",
+  "fundedTaker": "sp1nLqqjVZ1kTusFjJmHp1xHDpH6M4F7KXCr1iJ3xpX (publiczny adres z SOL, płatnik opłaty w niedawnym bloku)",
+  "emptyTaker": "losowy nowy adres bez SOL (klucz wygenerowany jednorazowo i porzucony)",
+  "notes": {
+    "noRoute": "mint wrapped SOL w Token-2022 (9pan9bMn5HatX4EJdBwg9VgCa7Uz5HL8N1m5D3NdXejP) nie ma płynności; ta sama odpowiedź dla kwoty 1 lamport",
+    "rateLimitHeaders": "nagłówki x-ratelimit-* przychodzą także przy 400 (i 500 w osobnej próbie), wbrew rate-limits.md"
+  },
+  "cases": {
+    "metisSuccess": {
+      "request": {
+        "method": "GET",
+        "path": "/swap/v2/order",
+        "query": {
+          "inputMint": "So11111111111111111111111111111111111111112",
+          "outputMint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+          "amount": "10000000",
+          "taker": "sp1nLqqjVZ1kTusFjJmHp1xHDpH6M4F7KXCr1iJ3xpX"
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json",
+          "x-ratelimit-remaining": "4",
+          "x-ratelimit-current": "1",
+          "x-ratelimit-reset": "1790971887"
+        },
+        "body": {
+          "swapType": "aggregator",
+          "inAmount": "10000000",
+          "outAmount": "1180880",
+          "otherAmountThreshold": "1171432",
+          "swapMode": "ExactIn",
+          "slippageBps": 80,
+          "priceImpactPct": "-0.00009876404550980216",
+          "routePlan": [
+            {
+              "percent": 100,
+              "bps": 10000,
+              "usdValue": 1.1808063810186786,
+              "swapInfo": {
+                "ammKey": "GMCJvYGf5Ex2ARiMquaBDqU6iKM8uiEQkB8jCnoNfHpC",
+                "label": "GoonFi V2",
+                "inputMint": "So11111111111111111111111111111111111111112",
+                "outputMint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+                "inAmount": "10000000",
+                "outAmount": "1181116"
+              }
+            }
+          ],
+          "feeMint": "So11111111111111111111111111111111111111112",
+          "feeBps": 2,
+          "platformFee": {
+            "feeBps": 2,
+            "feeMint": "So11111111111111111111111111111111111111112"
+          },
+          "taker": "sp1nLqqjVZ1kTusFjJmHp1xHDpH6M4F7KXCr1iJ3xpX",
+          "gasless": false,
+          "jitOptimized": false,
+          "signatureFeeLamports": 5000,
+          "signatureFeePayer": "sp1nLqqjVZ1kTusFjJmHp1xHDpH6M4F7KXCr1iJ3xpX",
+          "prioritizationFeeLamports": 1854,
+          "prioritizationFeePayer": "sp1nLqqjVZ1kTusFjJmHp1xHDpH6M4F7KXCr1iJ3xpX",
+          "rentFeeLamports": 1488440,
+          "rentFeePayer": "sp1nLqqjVZ1kTusFjJmHp1xHDpH6M4F7KXCr1iJ3xpX",
+          "transaction": "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAQAGCQ0EMuIqT3w5910wcec0MVu4z2Dq2ljZ0F1QI7K+J3gAeyCbqmNnvUtDGamcUxAGBvY2TDL+kSx4eWsdDJfUrqyckQrhA3wZrhlVst73bRUGNY9vro7dM3wKOY+iCQV+aQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAjJclj04kifG7PRApFI4NgwtaE5na/xCEBI572Nvp+FkDBkZv5SEXMv/srbpyw5vnvIzlu8X3EmssQ5s6QAAAAPzRPaBBVZATz0rroahO1wI61P8hqEdH/zsFqzD6ggfDBHnVW/IxwG7udMVuzmgVB/2xst6j9I5RArHNola8E48G3fbh12Whk9nL4UbO63msHLSF7V9bN5E6jPWFfv8AqeHFtxkMNPxY37wxlCUc4Ib9eS+paSmiRwLlQ1wOykdlBwUABQLHBAIABQAJA7k2AAAAAAAABAYAAgAQAwgBAQMCAAIMAgAAAICWmAAAAAAACAECAREHGwACARAOCAgHDQcJEwAMAgEKCxAOERIUCAgGDyi7ZPrMMcSvFICWmAAAAAAA0AQSAAAAAABQAAIAAAABAAAAlwAQJwABCAMCAAABCQIpv5UHKk+/BN9xdZPnOLzMIScoFcJHGoDZ+fVVsNSEJQElBAAoARe1Dh+3xL8b+dTiI1DcM69hfXHQaeljCtwigIUwexkpUQPq7/EE8jGFLg==",
+          "lastValidBlockHeight": "430752662",
+          "inputMint": "So11111111111111111111111111111111111111112",
+          "outputMint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+          "router": "metis",
+          "guaranteedPrice": false,
+          "requestId": "01a0fe3e-16d8-7059-b815-36cd2a98c836",
+          "inUsdValue": 1.1809230137529525,
+          "outUsdValue": 1.1808063810186786,
+          "swapUsdValue": 1.1808063810186786,
+          "priceImpact": -0.009876404550980216,
+          "mode": "ultra",
+          "transactionVersion": 0,
+          "totalTime": 250
+        }
+      }
+    },
+    "jupiterzSuccess": {
+      "request": {
+        "method": "GET",
+        "path": "/swap/v2/order",
+        "query": {
+          "inputMint": "So11111111111111111111111111111111111111112",
+          "outputMint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+          "amount": "1000000000",
+          "taker": "sp1nLqqjVZ1kTusFjJmHp1xHDpH6M4F7KXCr1iJ3xpX"
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json",
+          "x-ratelimit-remaining": "3",
+          "x-ratelimit-current": "2",
+          "x-ratelimit-reset": "1790971887"
+        },
+        "body": {
+          "inputMint": "So11111111111111111111111111111111111111112",
+          "outputMint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+          "inAmount": "1000000000",
+          "outAmount": "118074466",
+          "otherAmountThreshold": "118074466",
+          "swapMode": "ExactIn",
+          "slippageBps": 0,
+          "priceImpactPct": "-0.00035733423842950813",
+          "routePlan": [
+            {
+              "percent": 100,
+              "bps": 10000,
+              "usdValue": 118.06710494561094,
+              "swapInfo": {
+                "ammKey": "Grr9WnZdcetQywtFXog81UhqmnJyvFhb4AT3ipw44mZP",
+                "label": "JupiterZ",
+                "inputMint": "So11111111111111111111111111111111111111112",
+                "outputMint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+                "inAmount": "1000000000",
+                "outAmount": "118074466"
+              }
+            }
+          ],
+          "feeMint": "So11111111111111111111111111111111111111112",
+          "feeBps": 2,
+          "transaction": "AgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgAIABwzrpFWAL2U/uc2RUIL+toaKEFIkFJBxYx9LUebJ7hnlLg0EMuIqT3w5910wcec0MVu4z2Dq2ljZ0F1QI7K+J3gAbtledc0qE4Tk6HTSPr8Vv+DddqVu/UYArVbwiruTKsF7IJuqY2e9S0MZqZxTEAYG9jZMMv6RLHh5ax0Ml9SurKIYr6iG1xL6luDi60PdV0k00Zayw30vc4gqNZqCRnomAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADBkZv5SEXMv/srbpyw5vnvIzlu8X3EmssQ5s6QAAAAAabiFf+q4GE+2h/Y0YYwDXaxDncGus7VZig8AAAAAABBt324ddloZPZy+FGzut5rBy0he1fWzeROoz1hX7/AKlKWEn7cqO76R/cWw5qV/Y8Why0WyBnpu0MrNNjlcihAoyXJY9OJInxuz0QKRSODYMLWhOZ2v8QhASOe9jb6fhZxvp6877brTo9ZfNqq8l0MbG75MLS9uDkfKYCA0UvXWFP3JW1UVw47ZR25dfkEcjLTi+NwlD9pTjDwho12u0OogQGAAkD6pIAAAAAAAAGAAUCQUUAAAoGAQMBCwUIAQEJCwEACQQDAgcICwgFJahgt6NcCiigAMqaOwAAAABirAkHAAAAAB0QwGoAAAAAAgAAAAAA",
+          "gasless": true,
+          "jitOptimized": false,
+          "signatureFeeLamports": 10000,
+          "signatureFeePayer": "Grr9WnZdcetQywtFXog81UhqmnJyvFhb4AT3ipw44mZP",
+          "prioritizationFeeLamports": 667,
+          "prioritizationFeePayer": "Grr9WnZdcetQywtFXog81UhqmnJyvFhb4AT3ipw44mZP",
+          "rentFeeLamports": 1488440,
+          "rentFeePayer": "sp1nLqqjVZ1kTusFjJmHp1xHDpH6M4F7KXCr1iJ3xpX",
+          "requestId": "01a0fe3e-21cf-7369-939b-8c1058251ad6",
+          "swapType": "rfq",
+          "router": "jupiterz",
+          "guaranteedPrice": true,
+          "quoteId": "c3fc68cb-afdd-5d68-8c9d-d479ba1b4340",
+          "maker": "Grr9WnZdcetQywtFXog81UhqmnJyvFhb4AT3ipw44mZP",
+          "taker": "sp1nLqqjVZ1kTusFjJmHp1xHDpH6M4F7KXCr1iJ3xpX",
+          "expireAt": "1790971933",
+          "platformFee": {
+            "feeBps": 2,
+            "feeMint": "So11111111111111111111111111111111111111112"
+          },
+          "inUsdValue": 118.10930944575315,
+          "outUsdValue": 118.06710494561092,
+          "swapUsdValue": 118.06710494561092,
+          "priceImpact": -0.035733423842950814,
+          "mode": "ultra",
+          "transactionVersion": 0,
+          "totalTime": 236
+        }
+      }
+    },
+    "emptyTaker": {
+      "request": {
+        "method": "GET",
+        "path": "/swap/v2/order",
+        "query": {
+          "inputMint": "So11111111111111111111111111111111111111112",
+          "outputMint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+          "amount": "10000000",
+          "taker": "8wub8pUvV47Wfi5woE9aQUSfFb3NsmHXPDMiiq9vd9DT"
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json",
+          "x-ratelimit-remaining": "2",
+          "x-ratelimit-current": "3",
+          "x-ratelimit-reset": "1790971887"
+        },
+        "body": {
+          "swapType": "aggregator",
+          "router": "metis",
+          "guaranteedPrice": false,
+          "requestId": "01a0fe3e-2cae-716e-b5a2-48c78b9c75a7",
+          "inputMint": "So11111111111111111111111111111111111111112",
+          "outputMint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+          "inAmount": "10000000",
+          "outAmount": "1180582",
+          "otherAmountThreshold": "1171137",
+          "swapMode": "ExactIn",
+          "slippageBps": 80,
+          "priceImpactPct": "-0.0004950455332769799",
+          "routePlan": [
+            {
+              "percent": 100,
+              "bps": 10000,
+              "usdValue": 1.180508399596736,
+              "swapInfo": {
+                "ammKey": "8FnX3xo2yYw3EUE6w3nQA4GfXGS9wpK6oj3veJpbFzLo",
+                "label": "BisonFi",
+                "inputMint": "So11111111111111111111111111111111111111112",
+                "outputMint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+                "inAmount": "10000000",
+                "outAmount": "1180819"
+              }
+            }
+          ],
+          "feeMint": "So11111111111111111111111111111111111111112",
+          "feeBps": 2,
+          "platformFee": {
+            "feeBps": 2,
+            "feeMint": "So11111111111111111111111111111111111111112"
+          },
+          "taker": "8wub8pUvV47Wfi5woE9aQUSfFb3NsmHXPDMiiq9vd9DT",
+          "gasless": true,
+          "jitOptimized": false,
+          "signatureFeeLamports": 0,
+          "signatureFeePayer": null,
+          "prioritizationFeeLamports": 0,
+          "prioritizationFeePayer": null,
+          "rentFeeLamports": 0,
+          "rentFeePayer": null,
+          "transaction": "",
+          "errorCode": 1,
+          "errorMessage": "Insufficient funds",
+          "inUsdValue": 1.1810930944575315,
+          "outUsdValue": 1.180508399596736,
+          "swapUsdValue": 1.180508399596736,
+          "priceImpact": -0.049504553327697993,
+          "mode": "ultra",
+          "error": "Insufficient funds",
+          "totalTime": 95
+        }
+      }
+    },
+    "noTaker": {
+      "request": {
+        "method": "GET",
+        "path": "/swap/v2/order",
+        "query": {
+          "inputMint": "So11111111111111111111111111111111111111112",
+          "outputMint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+          "amount": "10000000"
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json",
+          "x-ratelimit-remaining": "1",
+          "x-ratelimit-current": "4",
+          "x-ratelimit-reset": "1790971887"
+        },
+        "body": {
+          "inputMint": "So11111111111111111111111111111111111111112",
+          "outputMint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+          "inAmount": "10000000",
+          "outAmount": "1180674",
+          "otherAmountThreshold": "1180674",
+          "swapMode": "ExactIn",
+          "slippageBps": 0,
+          "priceImpactPct": "-0.00019259226419583817",
+          "routePlan": [
+            {
+              "percent": 100,
+              "bps": 10000,
+              "usdValue": 1.1806003938612286,
+              "swapInfo": {
+                "ammKey": "7rhxnLV8C77o6d8oz26AgK8x8m5ePsdeRawjqvojbjnQ",
+                "label": "JupiterZ",
+                "inputMint": "So11111111111111111111111111111111111111112",
+                "outputMint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+                "inAmount": "10000000",
+                "outAmount": "1180674"
+              }
+            }
+          ],
+          "feeMint": "So11111111111111111111111111111111111111112",
+          "feeBps": 2,
+          "transaction": null,
+          "gasless": true,
+          "jitOptimized": false,
+          "signatureFeeLamports": 0,
+          "signatureFeePayer": null,
+          "prioritizationFeeLamports": 0,
+          "prioritizationFeePayer": null,
+          "rentFeeLamports": 0,
+          "rentFeePayer": null,
+          "requestId": "01a0fe3e-3706-777e-af9d-5fc93d3d6f3d",
+          "swapType": "rfq",
+          "router": "jupiterz",
+          "guaranteedPrice": true,
+          "quoteId": "04ea5216-83fd-510d-92c8-4efdd9e0f37c",
+          "maker": "7rhxnLV8C77o6d8oz26AgK8x8m5ePsdeRawjqvojbjnQ",
+          "taker": null,
+          "platformFee": {
+            "feeBps": 2,
+            "feeMint": "So11111111111111111111111111111111111111112"
+          },
+          "inUsdValue": 1.1808278121631985,
+          "outUsdValue": 1.1806003938612286,
+          "swapUsdValue": 1.1806003938612286,
+          "priceImpact": -0.019259226419583816,
+          "mode": "ultra",
+          "totalTime": 152
+        }
+      }
+    },
+    "noRoute": {
+      "request": {
+        "method": "GET",
+        "path": "/swap/v2/order",
+        "query": {
+          "inputMint": "So11111111111111111111111111111111111111112",
+          "outputMint": "9pan9bMn5HatX4EJdBwg9VgCa7Uz5HL8N1m5D3NdXejP",
+          "amount": "10000000",
+          "taker": "sp1nLqqjVZ1kTusFjJmHp1xHDpH6M4F7KXCr1iJ3xpX"
+        }
+      },
+      "response": {
+        "status": 400,
+        "headers": {
+          "content-type": "application/json",
+          "x-ratelimit-remaining": "1",
+          "x-ratelimit-current": "4",
+          "x-ratelimit-reset": "1790971889"
+        },
+        "body": {
+          "requestId": "01a0fe3e-41cf-7229-9593-d9465e3b8990",
+          "error": "Failed to get quotes"
+        }
+      }
+    },
+    "badMint": {
+      "request": {
+        "method": "GET",
+        "path": "/swap/v2/order",
+        "query": {
+          "inputMint": "So11111111111111111111111111111111111111112",
+          "outputMint": "notamint",
+          "amount": "10000000",
+          "taker": "sp1nLqqjVZ1kTusFjJmHp1xHDpH6M4F7KXCr1iJ3xpX"
+        }
+      },
+      "response": {
+        "status": 400,
+        "headers": {
+          "content-type": "application/json",
+          "x-ratelimit-remaining": "1",
+          "x-ratelimit-current": "4",
+          "x-ratelimit-reset": "1790971892"
+        },
+        "body": {
+          "error": "Invalid outputMint"
+        }
+      }
+    }
+  }
+}

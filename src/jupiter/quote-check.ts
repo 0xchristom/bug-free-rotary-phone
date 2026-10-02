@@ -2,26 +2,25 @@
  * Jupiter check for the connection test (SPEC 3.3, BUNNDLY-16): `GET /swap/v2/order`
  * SOL → USDC for a small amount WITHOUT `taker`, so the answer is a quote only
  * (`transaction: null`) and nothing can be signed or executed. Never calls `/execute`.
+ * Uses the same client as the executor (BUNNDLY-19).
  * Docs: https://developers.jup.ag/docs/swap/order-and-execute.md
  */
-import {
-  isRecord,
-  parseRateLimit,
-  requestJson,
-  statusProblem,
-  type ConnectionProblem,
-  type FetchLike,
-  type JupiterCheck,
-  type RateLimitHeaders,
+import type {
+  ConnectionProblem,
+  FetchLike,
+  JupiterCheck,
+  RateLimitHeaders,
 } from '../core/connection.ts';
+import {
+  JUPITER_SWAP_URL,
+  createJupiterClient,
+  orderUrl,
+  type JupiterFailureCode,
+} from './client.ts';
 
-export const JUPITER_ORDER_URL = 'https://api.jup.ag/swap/v2/order';
+export { SOL_MINT } from './client.ts';
 
-/**
- * Wrapped SOL (native mint), Jupiter's input mint for SOL.
- * Source: `declare_id!` in https://github.com/solana-program/token/blob/main/interface/src/native_mint.rs
- */
-export const SOL_MINT = 'So11111111111111111111111111111111111111112';
+export const JUPITER_ORDER_URL = `${JUPITER_SWAP_URL}/order`;
 
 /**
  * USDC on Solana (6 decimals). Source: Circle,
@@ -43,17 +42,21 @@ export interface QuoteCheckOptions {
 }
 
 export function quoteUrl(): string {
-  const params = new URLSearchParams({
-    inputMint: SOL_MINT,
-    outputMint: USDC_MINT,
-    amount: TEST_QUOTE_LAMPORTS.toString(),
-  });
-  return `${JUPITER_ORDER_URL}?${params.toString()}`;
+  return orderUrl({ outputMint: USDC_MINT, amount: TEST_QUOTE_LAMPORTS });
 }
 
-/** Router names are short identifiers (`metis`, `jupiterz`, `dflow`, `okx`). */
-const ROUTER = /^[a-z0-9_-]{1,32}$/iu;
-const AMOUNT = /^\d{1,30}$/u;
+const PROBLEMS: Record<JupiterFailureCode, ConnectionProblem> = {
+  RATE_LIMITED: 'RATE_LIMITED',
+  SERVER_ERROR: 'SERVER_ERROR',
+  TIMEOUT: 'TIMEOUT',
+  NETWORK: 'NETWORK',
+  UNAUTHORIZED: 'UNAUTHORIZED',
+  FORBIDDEN: 'FORBIDDEN',
+  INVALID_RESPONSE: 'INVALID_RESPONSE',
+  NO_ROUTE: 'HTTP_ERROR',
+  BAD_REQUEST: 'HTTP_ERROR',
+  HTTP_ERROR: 'HTTP_ERROR',
+};
 
 export async function checkJupiterQuote(options: QuoteCheckOptions): Promise<JupiterCheck> {
   const keyless = options.apiKey === null;
@@ -62,7 +65,7 @@ export async function checkJupiterQuote(options: QuoteCheckOptions): Promise<Jup
   const fail = (
     problem: ConnectionProblem,
     httpStatus: number | null,
-    rateLimit: RateLimitHeaders | null = null,
+    rateLimit: RateLimitHeaders | null,
   ): JupiterCheck => ({
     ok: false,
     ms: elapsed(),
@@ -74,26 +77,21 @@ export async function checkJupiterQuote(options: QuoteCheckOptions): Promise<Jup
     rateLimit,
   });
 
-  const outcome = await requestJson(
-    options.fetch,
-    quoteUrl(),
-    { method: 'GET', headers: options.apiKey === null ? {} : { 'x-api-key': options.apiKey } },
-    options.timeoutMs,
-  );
-  if (outcome.kind === 'failed') return fail(outcome.problem, null);
-  // Present on 200 and 429 only (rate-limits.md).
-  const rateLimit = parseRateLimit(outcome.headers);
-  if (outcome.status !== 200) return fail(statusProblem(outcome.status), outcome.status, rateLimit);
-  const body = outcome.json;
-  if (
-    !isRecord(body) ||
-    body.transaction !== null || // without taker the docs promise no transaction
-    typeof body.outAmount !== 'string' ||
-    !AMOUNT.test(body.outAmount) ||
-    typeof body.router !== 'string' ||
-    !ROUTER.test(body.router)
-  ) {
-    return fail('INVALID_RESPONSE', null, rateLimit);
+  const client = createJupiterClient({
+    apiKey: options.apiKey,
+    fetch: options.fetch,
+    orderTimeoutMs: options.timeoutMs,
+  });
+  const result = await client.getOrder({ outputMint: USDC_MINT, amount: TEST_QUOTE_LAMPORTS });
+  if (!result.ok) {
+    // Statuses of failed answers are shown only for HTTP errors, as before.
+    const status = result.code === 'INVALID_RESPONSE' ? null : result.httpStatus;
+    return fail(PROBLEMS[result.code], status, result.rateLimit);
+  }
+  const order = result.value;
+  // Without taker the docs promise a quote only: a transaction here is unexpected.
+  if (order.transaction !== null || order.buildError !== null) {
+    return fail('INVALID_RESPONSE', null, result.rateLimit);
   }
   return {
     ok: true,
@@ -101,8 +99,8 @@ export async function checkJupiterQuote(options: QuoteCheckOptions): Promise<Jup
     problem: null,
     httpStatus: null,
     keyless,
-    outAmount: body.outAmount,
-    router: body.router,
-    rateLimit,
+    outAmount: order.outAmount.toString(),
+    router: order.router,
+    rateLimit: result.rateLimit,
   };
 }

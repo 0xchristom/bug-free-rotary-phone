@@ -9,6 +9,7 @@ import { createVaultHandler } from '../../src/worker/vault.ts';
 import type { VaultClient } from '../../src/worker/vault-client.ts';
 import {
   FakeSocket,
+  QUOTE_BODY,
   fakeFetch,
   heliusSocket,
   stepClock,
@@ -26,7 +27,7 @@ async function setup(helius: (body: { id: number; method: string }) => FetchRepl
     call.url.startsWith('https://api.jup.ag/')
       ? {
           status: 200,
-          json: { transaction: null, outAmount: '1174568', router: 'metis' },
+          json: QUOTE_BODY,
           headers: {
             'x-ratelimit-remaining': '58',
             'x-ratelimit-current': '2',
