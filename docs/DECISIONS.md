@@ -387,4 +387,10 @@ Rejestr decyzji i rozbieżności z dokumentacją zewnętrzną. Nowe wpisy dopisu
     - wiersz to `React.memo` z prostymi propsami (`bigint` porównuje się po wartości) i stabilnymi callbackami;
     - odświeżenie sald przerysowuje tylko wiersze, których liczby się zmieniły;
     - test liczy rendery każdego wiersza przez testowy hook `rowProbe`.
+  - **Akcje zbiorcze (część 2):**
+    - „Max spend dla wszystkich” ustawia tę samą kwotę w każdym wierszu;
+    - „Max spend jako % salda” daje `floor(saldo × bp / 10 000)`, więc zaokrąglenie nigdy nie przekracza udziału. Procent ma zakres 0,01–100 i najwyżej 2 miejsca po przecinku. Portfele bez odczytanego salda są pomijane, z informacją ile;
+    - „Zaznacz/Odznacz wszystkie” zmienia flagi aktywności;
+    - akcje zmieniają tylko szkic tabeli. Zapis do sejfu i pliku zostaje osobnym krokiem.
+  - **Pasek podsumowania (część 2):** łącznie SOL (znane salda), łącznie do wydania (max spend gotowych portfeli), liczba gotowych portfeli i łącznie tokenów (z `decimals`). Wszystko na `bigint`, ze szkicu tabeli, więc widać skutek zmian przed zapisem. Średnia cena wejścia dojdzie w sprincie 3.
 - Konsekwencje: kolumny zakupu (status, Tx) dojdą w sprincie 3. Akcje zbiorcze i pasek podsumowania są w drugim PR tego zadania.

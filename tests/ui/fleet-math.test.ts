@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { rowState } from '../../src/ui/fleet-math.ts';
+import { parsePercent, rowState, shareOf, summarize } from '../../src/ui/fleet-math.ts';
 import { formatUnits, parseSolAmount } from '../../src/ui/sol.ts';
 
 const SOL = 1_000_000_000n;
@@ -84,5 +84,70 @@ describe('rowState (bigint)', () => {
   it('works above 2^53 lamports without losing precision', () => {
     const huge = 2n ** 60n;
     expect(rowState({ ...base, balance: huge, maxSpend: huge - MIN }).reserve).toBe(MIN);
+  });
+});
+
+describe('bulk actions: parsePercent and shareOf', () => {
+  it.each([
+    ['50', 5000],
+    ['12,5', 1250],
+    ['0.01', 1],
+    ['100', 10_000],
+    [' 33,33 ', 3333],
+  ])('parsePercent(%j) = %i bp', (text, bp) => {
+    expect(parsePercent(text)).toBe(bp);
+  });
+
+  it.each(['0', '100,01', '101', '-5', '1,234', 'abc', ''])('parsePercent(%j) = null', (text) => {
+    expect(parsePercent(text)).toBeNull();
+  });
+
+  it('shareOf rounds down, so max spend never exceeds the share', () => {
+    expect(shareOf(SOL, 5000)).toBe(SOL / 2n);
+    expect(shareOf(3n, 5000)).toBe(1n); // 1.5 → 1
+    expect(shareOf(999n, 3333)).toBe(332n); // 332.9667 → 332
+    expect(shareOf(2n ** 62n, 10_000)).toBe(2n ** 62n);
+    expect(shareOf(2n ** 62n + 1n, 1)).toBe((2n ** 62n + 1n) / 10_000n);
+  });
+});
+
+describe('summarize', () => {
+  const row = (
+    balance: bigint | null,
+    maxSpend: bigint | null,
+    active = true,
+    token: bigint | null = null,
+  ) => ({
+    balance,
+    maxSpend,
+    minReserve: MIN,
+    active,
+    token,
+  });
+
+  it('sums balances, ready max spend, ready count and tokens on bigint', () => {
+    const s = summarize([
+      row(SOL, SOL - MIN, true, 5n), // ready (reserve = min)
+      row(SOL, SOL - MIN + 1n, true, 7n), // reserve too low
+      row(2n * SOL, SOL, false, 1n), // inactive
+      row(null, SOL), // unknown balance
+      row(3n * SOL, SOL), // ready
+    ]);
+    expect(s).toEqual({
+      totalLamports: 7n * SOL,
+      toSpendLamports: SOL - MIN + SOL,
+      readyCount: 2,
+      totalToken: 13n,
+    });
+  });
+
+  it('no token shown → totalToken null; empty fleet → zeros', () => {
+    expect(summarize([row(SOL, null)]).totalToken).toBeNull();
+    expect(summarize([])).toEqual({
+      totalLamports: 0n,
+      toSpendLamports: 0n,
+      readyCount: 0,
+      totalToken: null,
+    });
   });
 });

@@ -269,3 +269,76 @@ describe('100 wallets', () => {
     expect(changed).toEqual([42]);
   });
 });
+
+describe('bulk actions and summary', () => {
+  function summaryValue(term: string): string {
+    const dl = screen.getByLabelText('Podsumowanie floty');
+    const dt = within(dl).getByText(term);
+    return dt.nextElementSibling?.textContent ?? '';
+  }
+
+  it('sets the same max spend on all wallets (drafts only, saved on click)', async () => {
+    const { user, saved } = setup();
+    await ready();
+    await user.type(screen.getByLabelText('Max spend dla wszystkich (SOL)'), '0,5');
+    await user.click(screen.getByRole('button', { name: 'Ustaw kwotę' }));
+    for (const label of ['W01', 'W02', 'W03']) {
+      expect(within(row(label)).getByLabelText<HTMLInputElement>(`Max spend ${label}`).value).toBe(
+        '0,5',
+      );
+    }
+    expect(saved).toHaveLength(0);
+    expect(summaryValue('Gotowe portfele')).toBe('3 / 3');
+    expect(summaryValue('Łącznie do wydania')).toBe('1,5 SOL');
+    expect(summaryValue('Łącznie SOL')).toBe('3');
+  });
+
+  it('a wrong amount or percent gives a Polish message and changes nothing', async () => {
+    const { user } = setup();
+    await ready();
+    await user.type(screen.getByLabelText('Max spend dla wszystkich (SOL)'), '-1');
+    await user.click(screen.getByRole('button', { name: 'Ustaw kwotę' }));
+    expect(screen.getByText('Kwota nie może być ujemna.')).toBeTruthy();
+    await user.type(screen.getByLabelText('Max spend jako % salda'), '150');
+    await user.click(screen.getByRole('button', { name: 'Ustaw procent' }));
+    expect(screen.getByText(/Podaj procent salda od 0,01 do 100/u)).toBeTruthy();
+    expect(within(row('W01')).getByLabelText<HTMLInputElement>('Max spend W01').value).toBe('');
+  });
+
+  it('sets max spend as a % of each balance (rounded down)', async () => {
+    const { user } = setup({ lamports: (i) => SOL + BigInt(i) * 333n });
+    await ready();
+    await user.type(screen.getByLabelText('Max spend jako % salda'), '90');
+    await user.click(screen.getByRole('button', { name: 'Ustaw procent' }));
+    expect(within(row('W01')).getByLabelText<HTMLInputElement>('Max spend W01').value).toBe('0,9');
+    // (1 000 000 333 × 9000) / 10 000 = 900 000 299.7 → 900 000 299 lamports
+    expect(within(row('W02')).getByLabelText<HTMLInputElement>('Max spend W02').value).toBe(
+      '0,900000299',
+    );
+    // reserve = balance − 90 % ≥ 0.015 SOL, so every wallet is ready
+    expect(summaryValue('Gotowe portfele')).toBe('3 / 3');
+  });
+
+  it('select and deselect all', async () => {
+    const { user } = setup();
+    await ready();
+    await user.click(screen.getByRole('button', { name: 'Odznacz wszystkie' }));
+    for (const label of ['W01', 'W02', 'W03']) {
+      expect(within(row(label)).getByLabelText<HTMLInputElement>(`Aktywny ${label}`).checked).toBe(
+        false,
+      );
+    }
+    await user.click(screen.getByRole('button', { name: 'Zaznacz wszystkie' }));
+    expect(within(row('W02')).getByLabelText<HTMLInputElement>('Aktywny W02').checked).toBe(true);
+  });
+
+  it('the summary sums token balances with decimals', async () => {
+    const { user } = setup();
+    await ready();
+    expect(summaryValue('Łącznie tokenów')).toBe('–');
+    await user.type(screen.getByLabelText('Adres tokenu (mint)'), 'SomeMint111');
+    await user.click(screen.getByRole('button', { name: 'Pokaż saldo tokenu' }));
+    await screen.findByRole('columnheader', { name: 'Token (Token-2022)' });
+    expect(summaryValue('Łącznie tokenów')).toBe('4,5'); // 0 + 1.5 + 3
+  });
+});
