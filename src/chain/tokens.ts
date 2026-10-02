@@ -22,6 +22,8 @@ export const TOKEN_PROGRAM_ADDRESS = 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5D
 export const TOKEN_2022_PROGRAM_ADDRESS = 'TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb';
 /** https://spl.solana.com/associated-token-account (program id). */
 export const ASSOCIATED_TOKEN_PROGRAM_ADDRESS = 'ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL';
+/** https://docs.solana.com/developing/runtime-facilities/programs#system-program */
+export const SYSTEM_PROGRAM_ADDRESS = '11111111111111111111111111111111';
 
 export type TokenProgram = 'spl-token' | 'token-2022';
 
@@ -154,13 +156,22 @@ export async function fetchTokenBalances(
         continue;
       }
       const data = decodeData(account.data);
-      // An ATA address can only hold that mint's account of that program; check anyway.
+      // Anyone can send SOL to an ATA address before the token account exists: it is then
+      // a System Program account without data. The ATA program handles this when it creates
+      // the account (program/src/tools/account.rs, `new_pda_account.lamports() > 0`), so it
+      // is simply a balance of 0 (D-021).
+      if (account.owner === SYSTEM_PROGRAM_ADDRESS && data.length === 0) {
+        amounts.push(0n);
+        continue;
+      }
+      // Any other account at an ATA address cannot happen; refuse it, but not as a
+      // network error.
       if (
         account.owner !== tokenProgram ||
         data.length < TOKEN_ACCOUNT_PREFIX ||
         !sameBytes(data.subarray(0, 32), mintBytes)
       ) {
-        throw new Error('unexpected account at an ATA address');
+        throw new AppError('INTERNAL_ERROR');
       }
       amounts.push(readU64LE(data, AMOUNT_OFFSET));
     }

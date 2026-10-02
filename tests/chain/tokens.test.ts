@@ -9,6 +9,7 @@ import type { RpcTransport } from '@solana/kit';
 import { describe, expect, it } from 'vitest';
 import {
   MINT_SIZE,
+  SYSTEM_PROGRAM_ADDRESS,
   TOKEN_2022_PROGRAM_ADDRESS,
   TOKEN_PROGRAM_ADDRESS,
   createBalancesRpc,
@@ -32,6 +33,7 @@ interface Fixture {
   readonly spl: { mint: string; owner: string; ata: string };
   readonly token2022: { mint: string; owner: string; ata: string };
   readonly missing: { owner: string; mint: string; ata: string };
+  readonly fundedBeforeCreation: { slot: number; owner: string; mint: string; ata: string };
   readonly accounts: Record<string, StoredAccount | null>;
   readonly expected: {
     splDecimals: number;
@@ -205,6 +207,44 @@ describe('fetchTokenBalances', () => {
     expect(res.program).toBe('token-2022');
     expect(res.decimals).toBe(6);
     expect(res.amounts).toEqual([BigInt(F.expected.token2022AtaAmount)]);
+  });
+
+  it('an ATA funded with SOL before creation (System account, no data) is 0n, in order', async () => {
+    const funded = F.fundedBeforeCreation;
+    const state = stored(funded.ata);
+    expect(state.owner).toBe(SYSTEM_PROGRAM_ADDRESS);
+    expect(state.space).toBe(0);
+    expect(BigInt(state.lamports)).toBeGreaterThan(0n);
+    expect(await findAssociatedTokenAddress(funded.owner, funded.mint, 'token-2022')).toBe(
+      funded.ata,
+    );
+
+    const { rpc, calls } = fixtureTransport();
+    const res = await fetchTokenBalances(rpc, F.token2022.mint, [
+      F.token2022.owner, // existing ATA
+      funded.owner, // funded before creation
+      F.missing.owner, // no account at all
+    ]);
+    expect(res.amounts).toEqual([BigInt(F.expected.token2022AtaAmount), 0n, 0n]);
+    expect(calls).toHaveLength(2); // mint + one ATA batch
+    expect(calls[1]?.params[0][1]).toBe(funded.ata);
+  });
+
+  it.each<[string, StoredAccount]>([
+    [
+      'a System account with data',
+      { owner: SYSTEM_PROGRAM_ADDRESS, lamports: '1', data: 'AAAA', executable: false, space: 3 },
+    ],
+    [
+      'an account of another program',
+      { ...stored(F.spl.mint), owner: 'Vote111111111111111111111111111111111111111' },
+    ],
+    ['a token account of another mint', stored(F.spl.ata)],
+  ])('%s at an ATA address → INTERNAL_ERROR (not a network error)', async (_label, account) => {
+    const { rpc } = fixtureTransport({ [F.token2022.ata]: account });
+    expect(await codeOf(fetchTokenBalances(rpc, F.token2022.mint, [F.token2022.owner]))).toBe(
+      'INTERNAL_ERROR',
+    );
   });
 
   it('250 owners: ATAs in 3 batches, order kept', async () => {
