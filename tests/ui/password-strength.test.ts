@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { MIN_PASSWORD_LENGTH, passwordLength } from '../../src/core/index.ts';
-import { passwordStrength } from '../../src/ui/password-strength.ts';
+import { COMMON_WORDS, passwordStrength } from '../../src/ui/password-strength.ts';
 
 describe('passwordStrength', () => {
   it('counts length exactly like core and blocks below 12 characters', () => {
@@ -57,5 +57,27 @@ describe('passwordStrength', () => {
       labels.add(s.label);
     }
     expect([...labels].every((l) => /^[\p{L} ]+$/u.test(l))).toBe(true);
+  });
+
+  it('non-Latin passphrases are not treated as common words', () => {
+    for (const pw of ['Зелёный кот сидит на крыше', 'πράσινη γάτα στη στέγη τώρα']) {
+      const r = passwordStrength(pw);
+      expect(r.score).toBeGreaterThanOrEqual(3);
+      expect(r.hints.join(' ')).not.toContain('popularne słowo');
+    }
+  });
+
+  it('digits and symbols only: weak, with its own hint', () => {
+    const r = passwordStrength('739 104 862 !! 5521');
+    expect(r.score).toBe(1);
+    expect(r.hints).toContain(
+      'Hasło ma same cyfry i symbole. Dodaj litery albo użyj frazy z kilku słów.',
+    );
+    expect(r.hints.join(' ')).not.toContain('popularne słowo');
+  });
+
+  it('every common word can match (at least 4 letters, Latin lower case)', () => {
+    for (const word of COMMON_WORDS) expect(word).toMatch(/^[a-z]{4,}$/u);
+    expect(passwordStrength('Zielony-Test-Kot-42!').hints.join(' ')).toContain('popularne słowo');
   });
 });

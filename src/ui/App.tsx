@@ -164,7 +164,9 @@ export function App({
             <AppHeader
               status={status}
               screen={visible}
-              autoLockMinutes={DEFAULT_AUTO_LOCK_MS / 60_000}
+              autoLockMinutes={
+                status.info?.settings.global.autoLockMinutes ?? DEFAULT_AUTO_LOCK_MS / 60_000
+              }
               onNavigate={navigate}
               onLock={() => void lock()}
             />
@@ -220,7 +222,13 @@ export function App({
                   onUnsavedChange={setUnsavedFile}
                 />
               )}
-              {visible === 'settings' && <SettingsScreen />}
+              {visible === 'settings' && status.info && (
+                <SettingsScreen
+                  info={status.info}
+                  storage={storage}
+                  onUnsavedChange={setUnsavedFile}
+                />
+              )}
             </>
           )}
         </main>

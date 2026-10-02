@@ -2,12 +2,23 @@ import { base58, base64 } from '@scure/base';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import {
   AppError,
+  DEFAULT_GLOBAL_SETTINGS,
   MAX_FLEET_SIZE,
+  buildKeystore,
+  defaultFleetSettings,
+  encryptSecrets,
   openKeystore,
+  secretsToJson,
+  serializeKeystoreFile,
   parseKeystoreFile,
   type KeystoreFileV1,
 } from '../../src/core/index.ts';
-import type { VaultFileResult, VaultPreview, VaultStatus } from '../../src/worker/protocol.ts';
+import type {
+  VaultFileResult,
+  VaultInfo,
+  VaultPreview,
+  VaultStatus,
+} from '../../src/worker/protocol.ts';
 import { createVaultHandler, type VaultHandler } from '../../src/worker/vault.ts';
 import { valueWords } from '../helpers/words.ts';
 
@@ -17,6 +28,12 @@ vi.setConfig({ testTimeout: 60_000, hookTimeout: 60_000 });
 const PASSWORD = 'correct horse battery staple';
 const MNEMONIC_12 = `${'abandon '.repeat(11)}about`;
 const AUTO_LOCK_MS = 60_000;
+const HELIUS_KEY = 'heliusApiKeyAbc123';
+const JUPITER_KEY = 'jupiterApiKeyXyz789';
+const RPC_URL = 'https://rpc.example.com/?api-key=customRpcKey42';
+const WS_URL = 'wss://ws.example.com/?api-key=customWsKey42';
+/** API secrets that must never appear in a worker response (D-016). */
+const API_SECRETS = [HELIUS_KEY, JUPITER_KEY, RPC_URL, WS_URL, 'customRpcKey42', 'customWsKey42'];
 
 /** Every response the vault ever returned, for the leak scan at the end. */
 const responses: unknown[] = [];
@@ -133,12 +150,13 @@ describe('saveSettings', () => {
     const res = await call<VaultFileResult>(main, {
       type: 'saveSettings',
       settings: {
+        ...defaultFleetSettings(),
         maxSpend: [
           { index: 0, lamports: 25_000_000n },
           { index: 4, lamports: 1n },
         ],
       },
-      apiKeys: { helius: 'heliusapikey1', jupiter: 'jupiterapikey2' },
+      apiKeys: { helius: HELIUS_KEY, jupiter: JUPITER_KEY },
     });
     const before = parseKeystoreFile(created.fileText);
     const after = parseKeystoreFile(res.fileText);
@@ -153,7 +171,13 @@ describe('saveSettings', () => {
       { index: 0, lamports: 25_000_000n },
       { index: 4, lamports: 1n },
     ]);
-    expect(opened.secrets.apiKeys).toEqual({ helius: 'heliusapikey1', jupiter: 'jupiterapikey2' });
+    expect(opened.secrets.apiKeys).toEqual({ helius: HELIUS_KEY, jupiter: JUPITER_KEY });
+    expect(res.info.apiKeys).toEqual({
+      helius: true,
+      jupiter: true,
+      heliusRpcUrl: false,
+      heliusWsUrl: false,
+    });
   });
 
   it('rejects settings for wallets outside the fleet and keeps the old state', async () => {
@@ -161,10 +185,10 @@ describe('saveSettings', () => {
     await expectCode(
       main.handle({
         type: 'saveSettings',
-        settings: { maxSpend: [{ index: 50, lamports: 1n }] },
+        settings: { ...defaultFleetSettings(), maxSpend: [{ index: 50, lamports: 1n }] },
         apiKeys: {},
       }),
-      'KEYSTORE_INVALID_FORMAT',
+      'INVALID_SETTINGS',
     );
     expect((await call<VaultStatus>(main, { type: 'status' })).info?.settings).toEqual(before);
   });
@@ -174,8 +198,7 @@ describe('addWallets', () => {
   it('appends the next indices; the file opens and the IV changes', async () => {
     const prev = await call<VaultFileResult>(main, {
       type: 'saveSettings',
-      settings: { maxSpend: [] },
-      apiKeys: {},
+      settings: defaultFleetSettings(),
     });
     const res = await call<VaultFileResult>(main, { type: 'addWallets', count: 3 });
     collectSecrets(main);
@@ -363,16 +386,250 @@ describe('lock and auto-lock', () => {
   });
 });
 
+describe('settings and write-only API keys (BUNNDLY-15)', () => {
+  const custom = {
+    ...DEFAULT_GLOBAL_SETTINGS,
+    minReserveLamports: 20_000_000n,
+    maxAttempts: 5,
+    priceCeilingPercent: 120,
+    noRouteWindowMs: 30_000,
+    noRouteBackoffMinMs: 250,
+    noRouteBackoffMaxMs: 4_000,
+    mode: 'continuous' as const,
+    explorer: 'orb' as const,
+    autoLockMinutes: 30,
+    jupiterPlan: 'custom' as const,
+    orderRpm: 1_200,
+  };
+
+  async function fresh(): Promise<{ h: VaultHandler; fileText: string }> {
+    const h = createVaultHandler();
+    const res = await call<VaultFileResult>(h, {
+      type: 'create',
+      fleetName: 'Ustawienia',
+      walletCount: 3,
+      password: PASSWORD,
+      mnemonic: MNEMONIC_12,
+    });
+    return { h, fileText: res.fileText };
+  }
+
+  it('global settings, maxSpend and active round-trip through the file', async () => {
+    const { h } = await fresh();
+    const settings = {
+      global: custom,
+      maxSpend: [{ index: 2, lamports: 7_000_000n }],
+      active: [
+        { index: 0, active: false },
+        { index: 2, active: true },
+      ],
+    };
+    const res = await call<VaultFileResult>(h, { type: 'saveSettings', settings });
+    expect(res.info.settings).toEqual(settings);
+
+    const other = createVaultHandler();
+    const status = await call<VaultStatus>(other, {
+      type: 'unlock',
+      fileText: res.fileText,
+      password: PASSWORD,
+    });
+    expect(status.info?.settings).toEqual(settings);
+  });
+
+  it('a file without the new fields (older core) opens with the defaults', async () => {
+    const { fileText } = await fresh();
+    const opened = await reopen(fileText);
+    const legacy = JSON.parse(secretsToJson(opened.secrets)) as {
+      settings: Record<string, unknown>;
+    };
+    legacy.settings = { maxSpend: [] };
+    const encrypted = await encryptSecrets(
+      new TextEncoder().encode(JSON.stringify(legacy)),
+      PASSWORD,
+    );
+    const file = serializeKeystoreFile({ ...opened.file, ...encrypted });
+    expect(file).not.toContain('global');
+
+    const h = createVaultHandler();
+    const status = await call<VaultStatus>(h, {
+      type: 'unlock',
+      fileText: file,
+      password: PASSWORD,
+    });
+    expect(status.info?.settings).toEqual({
+      maxSpend: [],
+      active: [],
+      global: DEFAULT_GLOBAL_SETTINGS,
+    });
+  });
+
+  it('a missing key field keeps the key, null removes it, a string replaces it', async () => {
+    const { h } = await fresh();
+    const save = (apiKeys?: Record<string, string | null>): Promise<VaultFileResult> =>
+      call<VaultFileResult>(h, {
+        type: 'saveSettings',
+        settings: defaultFleetSettings(),
+        ...(apiKeys ? { apiKeys } : {}),
+      });
+    const keysIn = async (r: VaultFileResult): Promise<unknown> =>
+      (await reopen(r.fileText)).secrets.apiKeys;
+
+    let r = await save({ helius: HELIUS_KEY, jupiter: JUPITER_KEY, heliusRpcUrl: RPC_URL });
+    expect(await keysIn(r)).toEqual({
+      helius: HELIUS_KEY,
+      jupiter: JUPITER_KEY,
+      heliusRpcUrl: RPC_URL,
+    });
+    expect(r.info.apiKeys).toEqual({
+      helius: true,
+      jupiter: true,
+      heliusRpcUrl: true,
+      heliusWsUrl: false,
+    });
+
+    r = await save(); // no apiKeys at all
+    expect(await keysIn(r)).toEqual({
+      helius: HELIUS_KEY,
+      jupiter: JUPITER_KEY,
+      heliusRpcUrl: RPC_URL,
+    });
+
+    r = await save({ jupiter: null, heliusWsUrl: WS_URL }); // helius untouched
+    expect(await keysIn(r)).toEqual({
+      helius: HELIUS_KEY,
+      heliusRpcUrl: RPC_URL,
+      heliusWsUrl: WS_URL,
+    });
+
+    r = await save({ helius: 'newHeliusKey99' });
+    expect(await keysIn(r)).toEqual({
+      helius: 'newHeliusKey99',
+      heliusRpcUrl: RPC_URL,
+      heliusWsUrl: WS_URL,
+    });
+    expect(r.info.apiKeys).toEqual({
+      helius: true,
+      jupiter: false,
+      heliusRpcUrl: true,
+      heliusWsUrl: true,
+    });
+  });
+
+  it.each<[string, unknown]>([
+    [
+      'price ceiling 0%',
+      { ...defaultFleetSettings(), global: { ...custom, priceCeilingPercent: 0 } },
+    ],
+    ['11 attempts', { ...defaultFleetSettings(), global: { ...custom, maxAttempts: 11 } }],
+    [
+      'reserve as number',
+      { ...defaultFleetSettings(), global: { ...custom, minReserveLamports: 15_000_000 } },
+    ],
+    [
+      'plan rpm mismatch',
+      { ...defaultFleetSettings(), global: { ...custom, jupiterPlan: 'pro', orderRpm: 60 } },
+    ],
+    ['unknown explorer', { ...defaultFleetSettings(), global: { ...custom, explorer: 'x' } }],
+    [
+      'active for a missing wallet',
+      { ...defaultFleetSettings(), active: [{ index: 9, active: true }] },
+    ],
+    ['lamports as number', { ...defaultFleetSettings(), maxSpend: [{ index: 0, lamports: 5 }] }],
+    ['no global', { maxSpend: [], active: [] }],
+  ])('invalid settings (%s) → INVALID_SETTINGS, nothing changes', async (_label, settings) => {
+    const { h } = await fresh();
+    const before = (await call<VaultStatus>(h, { type: 'status' })).info;
+    await expectCode(h.handle({ type: 'saveSettings', settings }), 'INVALID_SETTINGS');
+    expect((await call<VaultStatus>(h, { type: 'status' })).info).toEqual(before);
+  });
+
+  it.each<[string, unknown]>([
+    ['empty key', { helius: '' }],
+    ['key with a space', { jupiter: 'a b' }],
+    ['http RPC URL', { heliusRpcUrl: 'http://rpc.example.com/?api-key=x' }],
+    ['https WS URL', { heliusWsUrl: 'https://ws.example.com' }],
+    ['unknown key', { other: 'x' }],
+    ['number', { helius: 5 }],
+  ])('invalid key change (%s) → INVALID_SETTINGS', async (_label, apiKeys) => {
+    const { h } = await fresh();
+    await expectCode(
+      h.handle({ type: 'saveSettings', settings: defaultFleetSettings(), apiKeys }),
+      'INVALID_SETTINGS',
+    );
+  });
+
+  it('auto-lock follows the autoLockMinutes setting', async () => {
+    const c = clock();
+    const h = createVaultHandler({ now: c.now });
+    await call(h, { type: 'create', fleetName: 'Zegar', walletCount: 1, password: PASSWORD });
+    const settings = {
+      ...defaultFleetSettings(),
+      global: { ...DEFAULT_GLOBAL_SETTINGS, autoLockMinutes: 2 },
+    };
+    await call(h, { type: 'saveSettings', settings });
+    c.advance(2 * 60_000 - 1);
+    expect(h.checkAutoLock()).toBe(false);
+    c.advance(1);
+    expect(h.checkAutoLock()).toBe(true);
+  });
+
+  it('VaultInfo carries only flags for API keys', async () => {
+    const { h } = await fresh();
+    await call(h, {
+      type: 'saveSettings',
+      settings: defaultFleetSettings(),
+      apiKeys: {
+        helius: HELIUS_KEY,
+        jupiter: JUPITER_KEY,
+        heliusRpcUrl: RPC_URL,
+        heliusWsUrl: WS_URL,
+      },
+    });
+    const info = (await call<VaultStatus>(h, { type: 'status' })).info as VaultInfo;
+    expect(info.apiKeys).toEqual({
+      helius: true,
+      jupiter: true,
+      heliusRpcUrl: true,
+      heliusWsUrl: true,
+    });
+    // every later response of this handler is scanned by "no secrets in any response"
+    await call(h, { type: 'addWallets', count: 1 });
+    await call(h, { type: 'activity' });
+    await call(h, { type: 'setArmed', armed: false });
+    await call(h, { type: 'lock' });
+    const reopened = await call<VaultFileResult>(createVaultHandler(), {
+      type: 'unlock',
+      fileText: (await buildFileWithKeys()).text,
+      password: PASSWORD,
+    });
+    expect(reopened).toBeTruthy();
+  });
+
+  async function buildFileWithKeys(): Promise<{ text: string }> {
+    const opened = await reopen((await fresh()).fileText);
+    const file = await buildKeystore(
+      {
+        ...opened.secrets,
+        apiKeys: {
+          helius: HELIUS_KEY,
+          jupiter: JUPITER_KEY,
+          heliusRpcUrl: RPC_URL,
+          heliusWsUrl: WS_URL,
+        },
+      },
+      { fleetName: opened.file.fleetName },
+      PASSWORD,
+    );
+    return { text: serializeKeystoreFile(file) };
+  }
+});
+
 describe('request validation', () => {
   it.each([
     ['null', null],
     ['unknown type', { type: 'signBytes', bytes: [1, 2, 3] }],
     ['exportKeys', { type: 'exportKeys' }],
     ['count as string', { type: 'addWallets', count: '3' }],
-    [
-      'lamports as number',
-      { type: 'saveSettings', settings: { maxSpend: [{ index: 0, lamports: 5 }] }, apiKeys: {} },
-    ],
     ['armed as string', { type: 'setArmed', armed: 'yes' }],
     ['password as number', { type: 'unlock', fileText: '{}', password: 1 }],
   ])('%s → INTERNAL_ERROR', async (_label, request) => {
@@ -390,10 +647,13 @@ describe('no secrets in any response', () => {
     for (const secret of secretsSeen) {
       expect(text).not.toContain(secret);
     }
+    // API keys never leave the worker (D-016); fileText is encrypted, so scan it too.
+    for (const key of API_SECRETS) expect(text).not.toContain(key);
     // Mnemonic words in any string value outside the encrypted file text.
     // Addresses are skipped: base58 fragments can be BIP39 words by chance (e.g. "van");
     // keys are covered by the exact-match check above.
-    const words = valueWords(responses, ['fileText', 'address']);
+    // `global` holds fixed setting names ("free", "custom", …) that are BIP39 words too.
+    const words = valueWords(responses, ['fileText', 'address', 'global']);
     for (const secret of secretsSeen) {
       if (!secret.includes(' ')) continue;
       for (const word of new Set(secret.split(' '))) {

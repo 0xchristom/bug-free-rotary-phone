@@ -17,6 +17,7 @@ import {
   type KeystoreFileV1,
   type KeystoreSecretsV1,
   type OpenedKeystore,
+  defaultFleetSettings,
 } from '../../../src/core/index.ts';
 import { valueWords } from '../../helpers/words.ts';
 
@@ -69,6 +70,7 @@ describe('createKeystore + parseKeystoreFile + openKeystore', () => {
     const withSettings: KeystoreSecretsV1 = {
       ...created.secrets,
       settings: {
+        ...created.secrets.settings,
         maxSpend: [
           { index: 0, lamports: 25_000_000n },
           { index: 7, lamports: 0n },
@@ -96,7 +98,7 @@ describe('createKeystore + parseKeystoreFile + openKeystore', () => {
     );
     expect(opened.secrets).toEqual(created.secrets);
     expect(created.secrets.mnemonic.split(' ')).toHaveLength(24);
-    expect(created.secrets.settings).toEqual({ maxSpend: [] });
+    expect(created.secrets.settings).toEqual(defaultFleetSettings());
     expect(created.secrets.apiKeys).toEqual({});
   });
 
@@ -498,7 +500,7 @@ describe('createKeystore / buildKeystore input checks (no scrypt)', () => {
   it('refuses invalid settings before encrypting', async () => {
     const bad: KeystoreSecretsV1 = {
       ...created.secrets,
-      settings: { maxSpend: [{ index: 99, lamports: 1n }] }, // wallet 99 is not in the fleet
+      settings: { ...created.secrets.settings, maxSpend: [{ index: 99, lamports: 1n }] }, // wallet 99 is not in the fleet
     };
     await expectCodeAsync(
       buildKeystore(bad, { fleetName: FLEET }, PASSWORD),
@@ -525,7 +527,7 @@ describe('parseSecrets / secretsToJson', () => {
   it('round-trips bigint lamports as decimal strings', () => {
     const s: KeystoreSecretsV1 = {
       ...created.secrets,
-      settings: { maxSpend: [{ index: 1, lamports: 123_456_789n }] },
+      settings: { ...created.secrets.settings, maxSpend: [{ index: 1, lamports: 123_456_789n }] },
     };
     const text = secretsToJson(s);
     expect(text).toContain('"lamports":"123456789"');

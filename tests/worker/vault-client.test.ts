@@ -1,6 +1,6 @@
 import { MessageChannel } from 'node:worker_threads';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { AppError, isAppError } from '../../src/core/index.ts';
+import { AppError, defaultFleetSettings, isAppError } from '../../src/core/index.ts';
 import type { VaultPort } from '../../src/worker/protocol.ts';
 import {
   attachVaultHandler,
@@ -106,7 +106,7 @@ describe('vault client ↔ handler', () => {
       const err = await rejection(
         client.request({
           type: 'saveSettings',
-          settings: { maxSpend: [{ index: 0, lamports: 1n }] },
+          settings: { ...defaultFleetSettings(), maxSpend: [{ index: 0, lamports: 1n }] },
           apiKeys: {},
         }),
       );

@@ -27,6 +27,7 @@ describe('ERROR_MESSAGES', () => {
         'KEYSTORE_WRONG_PASSWORD_OR_CORRUPTED',
         'PASSWORD_TOO_SHORT',
         'VAULT_LOCKED',
+        'INVALID_SETTINGS',
         'VAULT_TIMEOUT',
         'INTERNAL_ERROR',
         'STORAGE_CANCELLED',
