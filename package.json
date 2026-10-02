@@ -20,6 +20,7 @@
     "@noble/hashes": "2.4.0",
     "@scure/base": "2.4.0",
     "@scure/bip39": "2.4.0",
+    "@solana/kit": "8.4.0",
     "micro-key-producer": "0.10.2",
     "qr": "0.7.2",
     "react": "19.3.0",

@@ -43,6 +43,17 @@ export function mockVault(initial: VaultStatus, onCreate?: CreateHandler) {
         case 'lock':
           status = LOCKED;
           return Promise.resolve(status);
+        case 'refreshBalances':
+          return status.info
+            ? Promise.resolve({
+                balances: status.info.wallets.map((w) => ({
+                  index: w.index,
+                  lamports: 1_500_000_000n + BigInt(w.index),
+                })),
+                source: 'helius',
+                fetchedAt: '2026-10-02T12:00:00.000Z',
+              })
+            : Promise.reject(new AppError('VAULT_LOCKED'));
         case 'create':
           if (onCreate) {
             return onCreate(req, options).then((result) => {

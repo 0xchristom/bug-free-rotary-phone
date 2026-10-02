@@ -8,6 +8,8 @@ import {
 } from '../../storage/keystore-file.ts';
 import type { VaultInfo } from '../../worker/protocol.ts';
 import { AddressQr } from '../AddressQr.tsx';
+import { formatSol } from '../sol.ts';
+import { useBalances } from '../use-balances.ts';
 import { useVault } from '../vault-state.ts';
 
 const MAX_WALLETS = 100;
@@ -30,6 +32,8 @@ export interface FleetScreenProps {
   readonly storage: StorageEnv;
   /** True while added wallets are not saved to the file yet. */
   readonly onUnsavedChange: (unsaved: boolean) => void;
+  /** How often SOL balances are re-read while the tab is visible. */
+  readonly balanceRefreshMs?: number;
 }
 
 function confirmOverwrite(fileName: string): boolean {
@@ -42,8 +46,14 @@ function confirmOverwrite(fileName: string): boolean {
  * Unlocked fleet: wallet addresses (verified by the vault on unlock) with copy and QR,
  * and "Dodaj portfele". The full table with balances comes in BUNNDLY-14.
  */
-export function FleetScreen({ info, storage, onUnsavedChange }: FleetScreenProps) {
+export function FleetScreen({
+  info,
+  storage,
+  onUnsavedChange,
+  balanceRefreshMs,
+}: FleetScreenProps) {
   const { client, refresh } = useVault();
+  const balances = useBalances(client, balanceRefreshMs);
   const ids = useId();
   const [qrFor, setQrFor] = useState<number | null>(null);
   const [copied, setCopied] = useState<number | null>(null);
@@ -117,6 +127,26 @@ export function FleetScreen({ info, storage, onUnsavedChange }: FleetScreenProps
       <p>
         Portfele we flocie: <strong>{info.wallets.length}</strong>
       </p>
+      <div className="inline balances-bar">
+        <span className="muted" aria-live="polite">
+          {balances.fetchedAt
+            ? `Salda z ${new Date(balances.fetchedAt).toLocaleTimeString('pl-PL')}`
+            : 'Salda: wczytywanie…'}
+        </span>
+        <button type="button" onClick={balances.refresh}>
+          Odśwież salda
+        </button>
+      </div>
+      {balances.source === 'fallback' && (
+        <p className="notice warning">
+          Helius nie odpowiada. Salda pochodzą z publicznego RPC Solany i mogą być opóźnione.
+        </p>
+      )}
+      {balances.error && (
+        <p className="notice error" role="alert">
+          {balances.error}
+        </p>
+      )}
       {error && (
         <p className="notice error" role="alert">
           {error}
@@ -131,6 +161,7 @@ export function FleetScreen({ info, storage, onUnsavedChange }: FleetScreenProps
               <th scope="col">#</th>
               <th scope="col">Etykieta</th>
               <th scope="col">Adres depozytu</th>
+              <th scope="col">Saldo SOL</th>
               <th scope="col">Akcje</th>
             </tr>
           </thead>
@@ -146,6 +177,11 @@ export function FleetScreen({ info, storage, onUnsavedChange }: FleetScreenProps
                       <AddressQr address={w.address} />
                     </div>
                   )}
+                </td>
+                <td className="amount">
+                  {balances.lamports?.has(w.index)
+                    ? formatSol(balances.lamports.get(w.index) ?? 0n)
+                    : '–'}
                 </td>
                 <td>
                   <button

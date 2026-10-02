@@ -19,6 +19,8 @@ export interface AppProps {
   readonly statusPollMs?: number;
   /** Minimum gap between `activity` reports to the vault. */
   readonly activityThrottleMs?: number;
+  /** SOL balance refresh interval on the fleet screen (SPEC 3.2: 10–15 s). */
+  readonly balanceRefreshMs?: number;
 }
 
 const DEFAULT_STATUS_POLL_MS = 5_000;
@@ -36,6 +38,7 @@ export function App({
   storage,
   statusPollMs = DEFAULT_STATUS_POLL_MS,
   activityThrottleMs = DEFAULT_ACTIVITY_THROTTLE_MS,
+  balanceRefreshMs,
 }: AppProps) {
   const [status, setStatus] = useState<VaultStatus | null>(null);
   const [screen, setScreen] = useState<Screen>('start');
@@ -220,6 +223,7 @@ export function App({
                   info={status.info}
                   storage={storage}
                   onUnsavedChange={setUnsavedFile}
+                  {...(balanceRefreshMs === undefined ? {} : { balanceRefreshMs })}
                 />
               )}
               {visible === 'settings' && status.info && (

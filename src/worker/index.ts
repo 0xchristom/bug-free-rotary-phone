@@ -6,6 +6,8 @@ export type { VaultClient, VaultClientOptions, VaultRequestOptions } from './vau
 export type {
   ApiKeyChanges,
   ApiKeyFlags,
+  VaultBalances,
+  WalletBalance,
   VaultFileResult,
   VaultInfo,
   VaultPort,
