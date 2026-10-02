@@ -46,12 +46,7 @@ export function ExportDialog({ storage, onClose }: ExportDialogProps) {
   };
 
   return (
-    <section
-      className="dialog notice error"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby={`${ids}-title`}
-    >
+    <section className="dialog notice error" role="dialog" aria-labelledby={`${ids}-title`}>
       <h3 id={`${ids}-title`}>Eksport jawny: mnemonik i klucze prywatne</h3>
       <p>
         Plik będzie zawierał mnemonik i klucze prywatne wszystkich portfeli w czystym tekście.

@@ -69,6 +69,8 @@ describe('plain export dialog', () => {
   it('the export button stays disabled without the confirmation (and without a password)', async () => {
     const { user, dialog } = await fleetScreen();
     expect(within(dialog).getByRole('heading').textContent).toContain('Eksport jawny');
+    // inline dialog, the rest of the page stays usable: not announced as modal
+    expect(dialog.hasAttribute('aria-modal')).toBe(false);
     expect(exportButton(dialog).disabled).toBe(true);
     await typePassword(user, dialog, PASSWORD);
     expect(exportButton(dialog).disabled).toBe(true); // password alone is not enough
