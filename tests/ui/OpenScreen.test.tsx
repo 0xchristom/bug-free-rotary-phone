@@ -9,6 +9,9 @@ import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { ERROR_MESSAGES } from '../../src/core/errors.ts';
 import {
   buildKeystore,
+  encryptSecrets,
+  openKeystore as openForTest,
+  secretsToJson,
   createKeystore,
   openKeystore,
   parseKeystoreFile,
@@ -194,6 +197,28 @@ describe('error messages (files built by core)', () => {
   });
 });
 
+describe('settings out of the current range (D-019)', () => {
+  it('a file with a 0.001 SOL reserve opens with the default and an explanation', async () => {
+    // What the current version could have written before the floor became 0.005 SOL.
+    const opened = await openForTest(fixture, PASSWORD);
+    const json = JSON.parse(secretsToJson(opened.secrets)) as {
+      settings: { global: Record<string, unknown> };
+    };
+    json.settings.global.minReserveLamports = '1000000';
+    const encrypted = await encryptSecrets(
+      new TextEncoder().encode(JSON.stringify(json)),
+      PASSWORD,
+    );
+    const { handler, user } = setup(serializeKeystoreFile({ ...fixture, ...encrypted }));
+    await openPreview(user);
+    await unlockWith(user, PASSWORD);
+    await findFleet();
+    expect(screen.getByText(/przyjęły wartości domyślne: minimalna rezerwa/u)).toBeTruthy();
+    expect(handler.inspect().unlocked?.settings.global.minReserveLamports).toBe(15_000_000n);
+    expect(screen.getByText(/minimum 0,015 SOL/u)).toBeTruthy();
+  });
+});
+
 describe('unlock', () => {
   it('shows the fleet with verified addresses; copy and QR work', async () => {
     const { handler, user } = setup();
@@ -201,7 +226,7 @@ describe('unlock', () => {
     await unlockWith(user, PASSWORD);
     expect(await findFleet()).toBeTruthy();
     expect(handler.inspect().unlocked).not.toBeNull();
-    expect(screen.getByText('Adresy depozytu (zweryfikowane)')).toBeTruthy();
+    expect(screen.getByText(/Portfele \(adresy zweryfikowane/u)).toBeTruthy();
     expect(screen.queryByText('niezweryfikowany')).toBeNull();
 
     const first = fixture.public.wallets[0];

@@ -1,4 +1,4 @@
-import { useEffect, useId, useState, type SyntheticEvent } from 'react';
+import { useCallback, useEffect, useId, useMemo, useState, type SyntheticEvent } from 'react';
 import { toUserMessage } from '../../core/errors.ts';
 import {
   saveKeystoreFile,
@@ -7,8 +7,9 @@ import {
   type StorageEnv,
 } from '../../storage/keystore-file.ts';
 import type { VaultInfo } from '../../worker/protocol.ts';
-import { AddressQr } from '../AddressQr.tsx';
-import { formatSol } from '../sol.ts';
+import { FleetTable } from '../FleetTable.tsx';
+import { SettingsResetNotice } from '../SettingsResetNotice.tsx';
+import { formatSol, formatUnits, parseSolAmount } from '../sol.ts';
 import { useBalances } from '../use-balances.ts';
 import { useVault } from '../vault-state.ts';
 
@@ -17,23 +18,39 @@ const MAX_WALLETS = 100;
 type AddPhase =
   | { readonly kind: 'idle' }
   | { readonly kind: 'adding' }
-  /** Wallets added in the vault; the updated file is not saved yet. */
+  /** Wallets added or table changes saved in the vault; the file is not written yet. */
   | {
       readonly kind: 'unsaved';
       readonly fileText: string;
       readonly fleetName: string;
-      readonly added: number;
+      /** What changed, shown in the notice. */
+      readonly note: string;
+      readonly savedNote: string;
       readonly saving: boolean;
     }
-  | { readonly kind: 'saved'; readonly result: SaveResult; readonly added: number };
+  | { readonly kind: 'saved'; readonly result: SaveResult; readonly savedNote: string }
+  | { readonly kind: 'savingTable' };
 
 export interface FleetScreenProps {
   readonly info: VaultInfo;
   readonly storage: StorageEnv;
-  /** True while added wallets are not saved to the file yet. */
+  /** True while table edits or a new file are not saved yet. */
   readonly onUnsavedChange: (unsaved: boolean) => void;
   /** How often SOL balances are re-read while the tab is visible. */
   readonly balanceRefreshMs?: number;
+  /** Test hook for the row render counter (see FleetTable). */
+  readonly rowProbe?: (index: number) => void;
+}
+
+type Drafts = Readonly<Record<number, string>>;
+type ActiveDrafts = Readonly<Record<number, boolean>>;
+
+function maxSpendDrafts(info: VaultInfo): Drafts {
+  return Object.fromEntries(info.settings.maxSpend.map((m) => [m.index, formatSol(m.lamports)]));
+}
+
+function activeDrafts(info: VaultInfo): ActiveDrafts {
+  return Object.fromEntries(info.settings.active.map((a) => [a.index, a.active]));
 }
 
 function confirmOverwrite(fileName: string): boolean {
@@ -43,17 +60,29 @@ function confirmOverwrite(fileName: string): boolean {
 }
 
 /**
- * Unlocked fleet: wallet addresses (verified by the vault on unlock) with copy and QR,
- * and "Dodaj portfele". The full table with balances comes in BUNNDLY-14.
+ * Unlocked fleet (SPEC 3.2): the fleet table with balances, max spend, reserve, token
+ * balance and the active flag; table changes are saved through the vault (saveSettings)
+ * and then written to the file on click (D-017). Also "Dodaj portfele" (BUNNDLY-10).
  */
 export function FleetScreen({
   info,
   storage,
   onUnsavedChange,
   balanceRefreshMs,
+  rowProbe,
 }: FleetScreenProps) {
   const { client, refresh } = useVault();
-  const balances = useBalances(client, balanceRefreshMs);
+  const [mintText, setMintText] = useState('');
+  const [mint, setMint] = useState<string | null>(null);
+  const [mintError, setMintError] = useState<string | null>(null);
+  // A wrong mint: show the message at the field and go on refreshing SOL without it.
+  const onBadMint = useCallback((message: string) => {
+    setMint(null);
+    setMintError(message);
+  }, []);
+  const balances = useBalances(client, balanceRefreshMs, mint, onBadMint);
+  const [maxSpendText, setMaxSpendText] = useState<Drafts>(() => maxSpendDrafts(info));
+  const [active, setActive] = useState<ActiveDrafts>(() => activeDrafts(info));
   const ids = useId();
   const [qrFor, setQrFor] = useState<number | null>(null);
   const [copied, setCopied] = useState<number | null>(null);
@@ -61,7 +90,30 @@ export function FleetScreen({
   const [phase, setPhase] = useState<AddPhase>({ kind: 'idle' });
   const [error, setError] = useState<string | null>(null);
 
-  const unsaved = phase.kind === 'unsaved';
+  // Edits compared with what the vault holds, by value ("0.5" equals "0,5"); an empty
+  // field means "no max spend".
+  const savedMaxSpend = useMemo(
+    () => new Map(info.settings.maxSpend.map((m) => [m.index, m.lamports])),
+    [info],
+  );
+  const savedActive = useMemo(() => activeDrafts(info), [info]);
+  const draftLamports = (index: number): bigint | null | 'invalid' => {
+    const text = (maxSpendText[index] ?? '').trim();
+    if (text === '') return null;
+    const parsed = parseSolAmount(text);
+    return parsed.ok ? parsed.lamports : 'invalid';
+  };
+  const tableDirty = info.wallets.some(
+    (w) =>
+      draftLamports(w.index) !== (savedMaxSpend.get(w.index) ?? null) ||
+      (active[w.index] ?? true) !== (savedActive[w.index] ?? true),
+  );
+  const tableInvalid = info.wallets.some((w) => {
+    const text = (maxSpendText[w.index] ?? '').trim();
+    return text !== '' && !parseSolAmount(text).ok;
+  });
+
+  const unsaved = phase.kind === 'unsaved' || tableDirty;
   useEffect(() => {
     onUnsavedChange(unsaved);
     return () => {
@@ -85,9 +137,69 @@ export function FleetScreen({
     }
   };
 
+  const onMaxSpend = useCallback((index: number, text: string) => {
+    setMaxSpendText((d) => ({ ...d, [index]: text }));
+  }, []);
+  const onActive = useCallback((index: number, value: boolean) => {
+    setActive((d) => ({ ...d, [index]: value }));
+  }, []);
+  const onCopy = useCallback((index: number, address: string) => {
+    void copy(index, address);
+  }, []);
+  const onQr = useCallback((index: number) => {
+    setQrFor((current) => (current === index ? null : index));
+  }, []);
+
+  const tokenAmounts = useMemo(() => {
+    const token = balances.token;
+    if (!token) return null;
+    return new Map(
+      [...token.amounts].map(([index, amount]) => [index, formatUnits(amount, token.decimals)]),
+    );
+  }, [balances.token]);
+
+  const saveTable = async (): Promise<void> => {
+    if (!tableDirty || tableInvalid || phase.kind === 'unsaved' || phase.kind === 'adding') return;
+    const maxSpend = info.wallets.flatMap((w) => {
+      const parsed = parseSolAmount(maxSpendText[w.index] ?? '');
+      return parsed.ok ? [{ index: w.index, lamports: parsed.lamports }] : [];
+    });
+    // Wallets without an entry are active (D-019): store only the inactive ones.
+    const inactive = info.wallets
+      .filter((w) => active[w.index] === false)
+      .map((w) => ({ index: w.index, active: false }));
+    setError(null);
+    setPhase({ kind: 'savingTable' });
+    try {
+      const result = await client.request({
+        type: 'saveSettings',
+        settings: { maxSpend, active: inactive, global: info.settings.global },
+      });
+      setPhase({
+        kind: 'unsaved',
+        fileText: result.fileText,
+        fleetName: result.info.fleetName,
+        note: 'Zmiany w tabeli (max spend, aktywne portfele) są zapisane w sejfie.',
+        savedNote: 'z nowymi ustawieniami floty',
+        saving: false,
+      });
+      await refresh();
+    } catch (e) {
+      setError(toUserMessage(e));
+      setPhase({ kind: 'idle' });
+    }
+  };
+
+  const showToken = (event: SyntheticEvent): void => {
+    event.preventDefault();
+    const text = mintText.trim();
+    setMintError(null);
+    setMint(text === '' ? null : text);
+  };
+
   const add = async (event: SyntheticEvent): Promise<void> => {
     event.preventDefault();
-    if (!countValid || phase.kind === 'adding' || phase.kind === 'unsaved') return;
+    if (!countValid || phase.kind === 'adding' || phase.kind === 'unsaved' || tableDirty) return;
     setError(null);
     setPhase({ kind: 'adding' });
     try {
@@ -96,7 +208,8 @@ export function FleetScreen({
         kind: 'unsaved',
         fileText: result.fileText,
         fleetName: result.info.fleetName,
-        added: count,
+        note: `Nowe portfele: ${String(count)}. Stary plik otworzy flotę bez nowych portfeli.`,
+        savedNote: 'z nowymi portfelami',
         saving: false,
       });
       setAddCount('1');
@@ -114,7 +227,7 @@ export function FleetScreen({
       const result = await saveKeystoreFile(current.fileText, current.fleetName, storage, {
         confirmOverwrite,
       });
-      setPhase({ kind: 'saved', result, added: current.added });
+      setPhase({ kind: 'saved', result, savedNote: current.savedNote });
     } catch (e) {
       setError(toUserMessage(e));
       setPhase({ ...current, saving: false });
@@ -153,68 +266,73 @@ export function FleetScreen({
         </p>
       )}
 
-      <div className="table-wrap">
-        <table className="wallets">
-          <caption>Adresy depozytu (zweryfikowane)</caption>
-          <thead>
-            <tr>
-              <th scope="col">#</th>
-              <th scope="col">Etykieta</th>
-              <th scope="col">Adres depozytu</th>
-              <th scope="col">Saldo SOL</th>
-              <th scope="col">Akcje</th>
-            </tr>
-          </thead>
-          <tbody>
-            {info.wallets.map((w) => (
-              <tr key={w.index}>
-                <td>{w.index + 1}</td>
-                <td>{w.label}</td>
-                <td>
-                  <code className="address">{w.address}</code>
-                  {qrFor === w.index && (
-                    <div className="qr-box">
-                      <AddressQr address={w.address} />
-                    </div>
-                  )}
-                </td>
-                <td className="amount">
-                  {balances.lamports?.has(w.index)
-                    ? formatSol(balances.lamports.get(w.index) ?? 0n)
-                    : '–'}
-                </td>
-                <td>
-                  <button
-                    type="button"
-                    aria-label={`Kopiuj adres ${w.label}`}
-                    onClick={() => void copy(w.index, w.address)}
-                  >
-                    {copied === w.index ? 'Skopiowano' : 'Kopiuj'}
-                  </button>{' '}
-                  <button
-                    type="button"
-                    aria-label={`Kod QR ${w.label}`}
-                    aria-expanded={qrFor === w.index}
-                    onClick={() => {
-                      setQrFor((current) => (current === w.index ? null : w.index));
-                    }}
-                  >
-                    QR
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      <SettingsResetNotice fields={info.settings.resetFields} />
+
+      <form className="token-bar" onSubmit={showToken}>
+        <label htmlFor={`${ids}-mint`}>Adres tokenu (mint)</label>
+        <div className="inline">
+          <input
+            id={`${ids}-mint`}
+            type="text"
+            value={mintText}
+            spellCheck={false}
+            autoComplete="off"
+            aria-invalid={mintError !== null}
+            aria-describedby={`${ids}-mint-help`}
+            onChange={(e) => {
+              setMintText(e.target.value);
+            }}
+          />
+          <button type="submit">Pokaż saldo tokenu</button>
+        </div>
+        {mintError ? (
+          <p className="field-error" id={`${ids}-mint-help`} role="alert">
+            {mintError}
+          </p>
+        ) : (
+          <p className="hint" id={`${ids}-mint-help`}>
+            Tylko podgląd sald; adres nie jest zapisywany w pliku floty.
+          </p>
+        )}
+      </form>
+
+      <FleetTable
+        wallets={info.wallets}
+        lamports={balances.lamports}
+        tokenAmounts={tokenAmounts}
+        tokenLabel={
+          balances.token
+            ? `Token (${balances.token.program === 'token-2022' ? 'Token-2022' : 'SPL'})`
+            : null
+        }
+        maxSpendText={maxSpendText}
+        active={active}
+        minReserve={info.settings.global.minReserveLamports}
+        qrFor={qrFor}
+        copied={copied}
+        onMaxSpend={onMaxSpend}
+        onActive={onActive}
+        onCopy={onCopy}
+        onQr={onQr}
+        probe={rowProbe}
+      />
+      <div className="actions">
+        <button
+          type="button"
+          className="primary"
+          disabled={
+            !tableDirty || tableInvalid || (phase.kind !== 'idle' && phase.kind !== 'saved')
+          }
+          onClick={() => void saveTable()}
+        >
+          {phase.kind === 'savingTable' ? 'Zapisywanie…' : 'Zapisz zmiany w tabeli'}
+        </button>
+        {tableDirty && <span className="muted">Masz niezapisane zmiany w tabeli.</span>}
       </div>
 
-      <h3>Dodaj portfele</h3>
-      {phase.kind === 'unsaved' ? (
-        <>
-          <p className="notice warning" role="status">
-            Nowe portfele: {phase.added}. Zaktualizowany plik floty nie jest jeszcze zapisany. Stary
-            plik otworzy flotę bez nowych portfeli.
-          </p>
+      {phase.kind === 'unsaved' && (
+        <div className="notice warning" role="status">
+          <p>{phase.note} Zaktualizowany plik floty nie jest jeszcze zapisany.</p>
           {!supportsDirectoryPicker(storage) && (
             <p className="muted">
               Twoja przeglądarka pobierze plik. Sprawdź potem folder „Pobrane”.
@@ -230,16 +348,23 @@ export function FleetScreen({
               {phase.saving ? 'Zapisywanie…' : 'Zapisz zaktualizowany plik floty'}
             </button>
           </div>
-        </>
+        </div>
+      )}
+      {phase.kind === 'saved' && (
+        <p className="notice" role="status">
+          Zapisano plik {phase.result.fileName} {phase.savedNote}.
+        </p>
+      )}
+
+      <h3>Dodaj portfele</h3>
+      {phase.kind === 'unsaved' || tableDirty ? (
+        <p className="muted">
+          Najpierw zapisz zmiany w tabeli i zaktualizowany plik floty, potem dodaj portfele.
+        </p>
       ) : room === 0 ? (
         <p className="muted">Flota ma już maksymalnie {MAX_WALLETS} portfeli.</p>
       ) : (
         <form className="form" onSubmit={(e) => void add(e)} noValidate>
-          {phase.kind === 'saved' && (
-            <p className="notice" role="status">
-              Zapisano plik {phase.result.fileName} z nowymi portfelami.
-            </p>
-          )}
           <label htmlFor={`${ids}-add`}>Liczba nowych portfeli</label>
           <input
             id={`${ids}-add`}

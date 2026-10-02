@@ -285,6 +285,14 @@ Rejestr decyzji i rozbieżności z dokumentacją zewnętrzną. Nowe wpisy dopisu
   - **Auto-lock** w workerze korzysta z `autoLockMinutes` odblokowanej floty. Opcja `autoLockMs` handlera zostaje tylko do testów.
   - **Zapis pliku** po zmianie ustawień działa jak w D-017 i D-018: sejf ma nowe ustawienia od razu, a plik zapisuje się po kliknięciu, z ochroną przed utratą przy blokadzie i zamknięciu karty.
 - Konsekwencje: `FleetSettingsV1` zawsze zawiera wszystkie pola (domyślne uzupełnia parser), więc kod dalej nie musi sprawdzać braków.
+- Zmiany po review BUNNDLY-15 (wprowadzone w BUNNDLY-14):
+  - **Dolna granica `MIN_RESERVE_SOL` to 0,005 SOL**, a nie 0,001. Rezerwa musi pokryć rent konta tokenu (ok. 0,00204 SOL dla SPL, więcej dla Token-2022 z rozszerzeniami), priority fee i późniejszą sprzedaż. Formularz i worker odrzucają mniejszą wartość z komunikatem „Minimalna rezerwa musi wynosić od 0,005 do 1 SOL.”
+  - **Tolerancyjny odczyt ustawień globalnych z pliku.** Wartość spoza aktualnego zakresu albo złego typu przyjmuje wartość domyślną zamiast `KEYSTORE_INVALID_FORMAT`.
+    - Plik jest uwierzytelniony (AES-GCM), więc taka wartość może pochodzić tylko ze starszej wersji aplikacji, a zmiana zakresu nie może nikomu zablokować floty.
+    - Pary sprawdzane razem są resetowane razem: oba odstępy ponowień oraz plan Jupitera z limitem `/order`.
+    - Nieznane klucze dalej oznaczają uszkodzony plik.
+    - Zresetowane pola trafiają do `settings.resetFields`, nigdy nie są zapisywane i znikają po następnym zapisie ustawień.
+    - UI (ekrany Flota i Ustawienia) pokazuje informację, które ustawienia przyjęły wartości domyślne.
 
 ## D-020: Odczyty z sieci: `@solana/kit`, backoff i fallback w workerze
 
@@ -356,3 +364,27 @@ Rejestr decyzji i rozbieżności z dokumentacją zewnętrzną. Nowe wpisy dopisu
 
     Wartości kontrolne (decimals, kwoty, rozszerzenia) pochodzą z niezależnego parsera Helius (`jsonParsed`). Klucz był tylko w zmiennej środowiska `HELIUS_API_KEY` i nie trafił do repo.
 - Konsekwencje: BUNNDLY-14 pokaże salda tokenu z `decimals`. Przy pierwszym zakupie (BUNNDLY-16 i dalej) ten sam kod wyprowadzi ATA do sprawdzenia rezultatu.
+
+## D-022: Tabela floty
+
+- Data: 2026-10-02
+- Zadanie: BUNNDLY-14 (część 1: tabela; akcje zbiorcze i pasek podsumowania w osobnym PR)
+- Kontekst: SPEC 3.2. Maksymalnie 100 portfeli, salda odświeżane co 12 s (D-020).
+- Decyzja:
+  - **Kolumny:** #, etykieta, adres (kopiuj i QR, tylko po odblokowaniu, D-018), saldo SOL, max spend (edytowalny, w SOL), rezerwa, saldo tokenu (z `decimals`, po wpisaniu adresu mintu, D-021) i aktywny.
+  - **Pole „Adres tokenu (mint)” nad tabelą** (decyzja z review BUNNDLY-13): służy do podglądu sald tokenu przez `refreshBalances { mint }`. W sprincie 3 to samo pole wykorzysta „Kupuj teraz”. Mint nie jest ustawieniem i nie trafia do pliku floty. `NOT_A_TOKEN_MINT` jest pokazywany przy polu, nie zamiast tabeli, a po tym błędzie odświeżanie idzie bez mintu, więc salda SOL dalej się aktualizują, aż użytkownik poprawi adres.
+  - **Arytmetyka na `bigint`** (`ui/fleet-math.ts`):
+    - rezerwa = saldo − max spend;
+    - portfel jest gotowy do zakupu, gdy jest aktywny, ma max spend większy od 0, znane saldo i rezerwę ≥ `MIN_RESERVE_SOL` (rezerwa dokładnie równa minimum jest w porządku);
+    - zbyt mała rezerwa (także max spend większy niż saldo) daje czerwony wiersz.
+  - **Pole max spend:** przecinek albo kropka, najwyżej 9 miejsc po przecinku, bez wartości ujemnych, z osobnymi komunikatami po polsku; puste pole oznacza brak max spend. Kwota większa niż saldo jest tylko ostrzeżeniem, bo max spend często ustawia się przed wpłatą.
+  - **Zapis:**
+    - „Zapisz zmiany w tabeli” wysyła `saveSettings` z `maxSpend`, flagami `active` (zapisuję tylko nieaktywne, bo brak wpisu oznacza aktywny, D-019) i bieżącymi ustawieniami globalnymi;
+    - plik zapisuje się po kliknięciu, jak w D-017 i D-018;
+    - niezapisane zmiany w tabeli i niezapisany plik chronią przed blokadą, wyjściem i zamknięciem karty;
+    - zmiany porównuję po wartości, więc „0.5” i „0,5” to to samo.
+  - **Wydajność przy 100 wierszach:**
+    - wiersz to `React.memo` z prostymi propsami (`bigint` porównuje się po wartości) i stabilnymi callbackami;
+    - odświeżenie sald przerysowuje tylko wiersze, których liczby się zmieniły;
+    - test liczy rendery każdego wiersza przez testowy hook `rowProbe`.
+- Konsekwencje: kolumny zakupu (status, Tx) dojdą w sprincie 3. Akcje zbiorcze i pasek podsumowania są w drugim PR tego zadania.
