@@ -40,3 +40,28 @@ export type {
   KdfParams,
   ScryptCost,
 } from './keystore/crypto.ts';
+export {
+  KEYSTORE_VERSION,
+  MAX_KEYSTORE_FILE_BYTES,
+  isValidFleetName,
+  parseKeystoreFile,
+  parseSecrets,
+  secretsToJson,
+  serializeKeystoreFile,
+} from './keystore/format.ts';
+export type {
+  ApiKeysV1,
+  FleetSettingsV1,
+  KeystoreFileV1,
+  KeystoreSecretsV1,
+  MaxSpendV1,
+  PublicWalletV1,
+  SecretWalletV1,
+} from './keystore/format.ts';
+export {
+  buildKeystore,
+  createKeystore,
+  defaultWalletLabel,
+  openKeystore,
+} from './keystore/keystore.ts';
+export type { CreateKeystoreParams, KeystoreMeta, OpenedKeystore } from './keystore/keystore.ts';

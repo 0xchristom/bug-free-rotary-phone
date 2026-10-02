@@ -11,6 +11,8 @@ export const ERROR_MESSAGES = {
   INVALID_MNEMONIC: 'Nieprawidłowa fraza odzyskiwania (mnemonik). Sprawdź słowa i ich kolejność.',
   INVALID_DERIVATION_INDEX:
     'Nieprawidłowy zakres portfeli. Flota może mieć od 1 do 100 portfeli (indeksy od 0 do 99).',
+  INVALID_FLEET_NAME:
+    'Nieprawidłowa nazwa floty. Użyj od 1 do 64 znaków: liter, cyfr, spacji, kropki, myślnika lub podkreślenia.',
   PASSWORD_TOO_SHORT: 'Hasło jest za krótkie. Użyj co najmniej 12 znaków.',
   KEYSTORE_WRONG_PASSWORD_OR_CORRUPTED:
     'Nie udało się odszyfrować pliku. Hasło jest błędne albo plik jest uszkodzony.',

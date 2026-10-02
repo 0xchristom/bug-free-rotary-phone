@@ -14,10 +14,11 @@ const SECRET_MNEMONIC =
 const codes = Object.keys(ERROR_MESSAGES) as ErrorCode[];
 
 describe('ERROR_MESSAGES', () => {
-  it('contains exactly the sprint 1 codes', () => {
+  it('contains exactly the known codes', () => {
     expect([...codes].sort()).toEqual(
       [
         'INVALID_DERIVATION_INDEX',
+        'INVALID_FLEET_NAME',
         'INVALID_MNEMONIC',
         'KEYSTORE_INVALID_FORMAT',
         'KEYSTORE_TAMPERED',
