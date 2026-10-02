@@ -366,7 +366,9 @@ describe('no secrets in any response', () => {
       expect(text).not.toContain(secret);
     }
     // Mnemonic words in any string value outside the encrypted file text.
-    const words = valueWords(responses, ['fileText']);
+    // Addresses are skipped: base58 fragments can be BIP39 words by chance (e.g. "van");
+    // keys are covered by the exact-match check above.
+    const words = valueWords(responses, ['fileText', 'address']);
     for (const secret of secretsSeen) {
       if (!secret.includes(' ')) continue;
       for (const word of new Set(secret.split(' '))) {
