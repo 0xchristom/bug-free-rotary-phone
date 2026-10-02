@@ -6,21 +6,16 @@ import { base58, base64 } from '@scure/base';
 import { MAX_FLEET_SIZE, solanaDerivationPath } from '../derivation.ts';
 import { AppError } from '../errors.ts';
 import type { CipherParams, KdfParams } from './crypto.ts';
+import { MAX_KEYSTORE_FILE_BYTES, isValidFleetName } from './limits.ts';
+
+export { MAX_KEYSTORE_FILE_BYTES, isValidFleetName } from './limits.ts';
 
 export const KEYSTORE_VERSION = 1;
-/** Files above this size are rejected before JSON.parse. */
-export const MAX_KEYSTORE_FILE_BYTES = 1024 * 1024;
 export const MAX_LABEL_LENGTH = 32;
 export const MAX_API_KEY_LENGTH = 512;
 const U64_MAX = 2n ** 64n - 1n;
 const ADDRESS_BYTES = 32;
 const SECRET_KEY_BYTES = 64;
-
-/**
- * Fleet name, used as `<fleetName>.keystore.json`: 1–64 letters, digits, spaces, dots,
- * hyphens or underscores; no leading dot or space, no trailing dot or space.
- */
-const FLEET_NAME_RE = /^(?![. ])[\p{L}\p{N} ._-]{1,64}(?<![. ])$/u;
 
 export interface PublicWalletV1 {
   readonly index: number;
@@ -127,10 +122,6 @@ function expectBase58Bytes(value: unknown, length: number): string {
   const ok = bytes.length === length;
   bytes.fill(0);
   return ok ? s : invalid();
-}
-
-export function isValidFleetName(name: string): boolean {
-  return FLEET_NAME_RE.test(name);
 }
 
 function isValidLabel(label: string): boolean {
