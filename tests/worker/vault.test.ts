@@ -30,8 +30,8 @@ const MNEMONIC_12 = `${'abandon '.repeat(11)}about`;
 const AUTO_LOCK_MS = 60_000;
 const HELIUS_KEY = 'heliusApiKeyAbc123';
 const JUPITER_KEY = 'jupiterApiKeyXyz789';
-const RPC_URL = 'https://rpc.example.com/?api-key=customRpcKey42';
-const WS_URL = 'wss://ws.example.com/?api-key=customWsKey42';
+const RPC_URL = 'https://mainnet.helius-rpc.com/?api-key=customRpcKey42';
+const WS_URL = 'wss://mainnet.helius-rpc.com/?api-key=customWsKey42';
 /** API secrets that must never appear in a worker response (D-016). */
 const API_SECRETS = [HELIUS_KEY, JUPITER_KEY, RPC_URL, WS_URL, 'customRpcKey42', 'customWsKey42'];
 
@@ -547,7 +547,7 @@ describe('settings and write-only API keys (BUNNDLY-15)', () => {
     ['empty key', { helius: '' }],
     ['key with a space', { jupiter: 'a b' }],
     ['http RPC URL', { heliusRpcUrl: 'http://rpc.example.com/?api-key=x' }],
-    ['https WS URL', { heliusWsUrl: 'https://ws.example.com' }],
+    ['https WS URL', { heliusWsUrl: 'https://mainnet.helius-rpc.com' }],
     ['unknown key', { other: 'x' }],
     ['number', { helius: 5 }],
   ])('invalid key change (%s) → INVALID_SETTINGS', async (_label, apiKeys) => {

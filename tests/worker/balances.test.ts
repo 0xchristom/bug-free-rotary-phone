@@ -124,7 +124,7 @@ describe('refreshBalances in the vault worker', () => {
   });
 
   it('a custom RPC URL wins over the key', async () => {
-    const custom = 'https://rpc.example.com/?api-key=own';
+    const custom = 'https://staked.helius-rpc.com/?api-key=own';
     const net = network();
     const h = createVaultHandler({ chain: net.chain });
     await fleet(h, { helius: KEY, heliusRpcUrl: custom });

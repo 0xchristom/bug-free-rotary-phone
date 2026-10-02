@@ -6,6 +6,7 @@ import {
   JUPITER_PLANS,
   JUPITER_PLAN_RPM,
   JUPITER_RATE_LIMITS_URL,
+  endpointUrlProblem,
   orderRps,
   validateGlobalSettings,
   type BuyMode,
@@ -50,12 +51,12 @@ const KEY_FIELDS: readonly { name: KeyName; label: string; placeholder: string }
   {
     name: 'heliusRpcUrl',
     label: 'Własny URL RPC (HTTPS, opcjonalnie)',
-    placeholder: 'https://… (zawiera klucz, traktowany jak klucz)',
+    placeholder: 'https://….helius-rpc.com/?api-key=… (traktowany jak klucz)',
   },
   {
     name: 'heliusWsUrl',
     label: 'Własny URL WebSocket (WSS, opcjonalnie)',
-    placeholder: 'wss://… (zawiera klucz, traktowany jak klucz)',
+    placeholder: 'wss://….helius-rpc.com/?api-key=… (traktowany jak klucz)',
   },
   { name: 'jupiter', label: 'Klucz API Jupiter', placeholder: 'Wpisz nowy klucz, aby go zmienić' },
 ];
@@ -173,6 +174,17 @@ export function SettingsScreen({ info, storage, onUnsavedChange }: SettingsScree
   const fieldErrors = new Map<SettingsField, string>(
     validateGlobalSettings(candidate).map((p) => [p.field, p.message]),
   );
+  // Custom Helius URLs: checked here with the same rule as in the worker (CSP, D-020).
+  const urlErrors = new Map<KeyName, string>();
+  for (const [name, protocol] of [
+    ['heliusRpcUrl', 'https:'],
+    ['heliusWsUrl', 'wss:'],
+  ] as const) {
+    const text = drafts[name].text.trim();
+    const problem = text === '' ? null : endpointUrlProblem(text, protocol);
+    if (problem !== null) urlErrors.set(name, problem);
+  }
+  const invalid = fieldErrors.size > 0 || urlErrors.size > 0;
 
   const set = <K extends keyof Form>(key: K, value: Form[K]): void => {
     setForm((f) => ({ ...f, [key]: value }));
@@ -184,7 +196,7 @@ export function SettingsScreen({ info, storage, onUnsavedChange }: SettingsScree
 
   const save = async (event: SyntheticEvent): Promise<void> => {
     event.preventDefault();
-    if (fieldErrors.size > 0 || phase.kind === 'saving' || phase.kind === 'unsaved') return;
+    if (invalid || phase.kind === 'saving' || phase.kind === 'unsaved') return;
     const apiKeys: { -readonly [K in KeyName]?: string | null } = {};
     for (const { name } of KEY_FIELDS) {
       const d = drafts[name];
@@ -354,6 +366,7 @@ export function SettingsScreen({ info, storage, onUnsavedChange }: SettingsScree
                     </button>
                   )}
                 </div>
+                {urlErrors.has(name) && <p className="field-error">{urlErrors.get(name)}</p>}
               </div>
             );
           })}
@@ -469,7 +482,7 @@ export function SettingsScreen({ info, storage, onUnsavedChange }: SettingsScree
         </fieldset>
 
         <div className="actions">
-          <button type="submit" className="primary" disabled={fieldErrors.size > 0 || locked}>
+          <button type="submit" className="primary" disabled={invalid || locked}>
             {phase.kind === 'saving' ? 'Zapisywanie…' : 'Zapisz ustawienia'}
           </button>
         </div>

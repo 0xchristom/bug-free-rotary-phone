@@ -246,7 +246,7 @@ Rejestr decyzji i rozbieżności z dokumentacją zewnętrzną. Nowe wpisy dopisu
 - Decyzja:
   - **Klucze nie wychodzą z workera.** Wywołania, które ich potrzebują (Helius HTTP i WSS, Jupiter), wykona worker (BUNNDLY-12, 13, 16).
   - **`VaultInfo.apiKeys` to tylko flagi** (`ApiKeyFlags`): czy ustawiono klucz Helius, klucz Jupiter, własny URL RPC i własny URL WebSocket.
-  - **Własne URL-e Helius** zawierają klucz, więc podlegają tej samej zasadzie. Są przechowywane obok kluczy (`ApiKeysV1.heliusRpcUrl`, `heliusWsUrl`). Walidacja: RPC tylko `https:`, WebSocket tylko `wss:`, bez użytkownika i hasła w URL.
+  - **Własne URL-e Helius** zawierają klucz, więc podlegają tej samej zasadzie. Są przechowywane obok kluczy (`ApiKeysV1.heliusRpcUrl`, `heliusWsUrl`). Walidacja: RPC tylko `https:`, WebSocket tylko `wss:`, bez użytkownika i hasła w URL, host tylko `helius-rpc.com` albo jego subdomena (dopisane w BUNNDLY-12, patrz D-020).
   - **`saveSettings.apiKeys` to zmiany:** brak pola zostawia wartość, `null` ją usuwa, a tekst zastępuje. Nieprawidłowa wartość daje `INVALID_SETTINGS`.
   - **UI:**
     - puste pole oznacza brak zmian;
@@ -315,6 +315,12 @@ Rejestr decyzji i rozbieżności z dokumentacją zewnętrzną. Nowe wpisy dopisu
     - powrót karty do widoku odświeża od razu;
     - najwyżej jedno zapytanie naraz.
   - **Testy bez sieci:** plik startowy testów (`tests/helpers/no-network.ts`) podmienia `fetch` i `WebSocket` na funkcje rzucające błąd. Testy używają tylko mocków transportu.
+  - **Własne URL-e tylko w domenie Helius** (wymaganie Andy'ego z review BUNNDLY-15):
+    - host musi być dokładnie `helius-rpc.com` albo jego subdomeną (`mainnet.helius-rpc.com`, `*.helius-rpc.com`);
+    - podobne nazwy, np. `helius-rpc.com.evil.example` i `evilhelius-rpc.com`, są odrzucane;
+    - powód: CSP (SPEC 6.4) przepuści w `connect-src` tylko Helius, `api.jup.ag` i awaryjny RPC, więc inny host w buildzie z CSP po cichu by nie działał;
+    - jedna reguła (`endpointUrlProblem` w `core/settings.ts`) daje polski komunikat w formularzu, a worker i parser pliku odrzucają takie URL-e (`INVALID_SETTINGS`, `KEYSTORE_INVALID_FORMAT`);
+    - awaryjny `https://api.mainnet.solana.com` jest stałą w kodzie, nie ustawieniem.
 - Konsekwencje:
   - BUNNDLY-13 (salda tokenów) dołoży do tego samego mechanizmu kolejne zapytania.
-  - CSP aplikacji musi zezwolić w `connect-src` na `https://mainnet.helius-rpc.com` i `https://api.mainnet.solana.com`, a dla własnych URL-i RPC na ich hosty. Dziś w repo nie ma jeszcze CSP, więc to do decyzji przy zadaniu o CSP.
+  - CSP aplikacji (`connect-src`) musi obejmować `https://*.helius-rpc.com`, `wss://*.helius-rpc.com` i `https://api.mainnet.solana.com`.

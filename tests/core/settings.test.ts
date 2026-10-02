@@ -10,6 +10,8 @@ import {
   heliusRpcUrl,
   heliusWsUrl,
   isValidApiKeyValue,
+  endpointUrlProblem,
+  isHeliusHost,
   isValidEndpointUrl,
   orderRps,
   parseSecrets,
@@ -147,15 +149,52 @@ describe('Helius endpoints and API key values', () => {
   });
 
   it.each([
-    ['https://rpc.example.com/?api-key=x', 'https:', true],
-    ['wss://rpc.example.com/?api-key=x', 'wss:', true],
-    ['http://rpc.example.com', 'https:', false],
-    ['https://rpc.example.com', 'wss:', false],
-    ['https://user:pw@rpc.example.com', 'https:', false],
+    ['https://mainnet.helius-rpc.com/?api-key=x', 'https:', true],
+    ['https://staked.helius-rpc.com/?api-key=x', 'https:', true],
+    ['https://helius-rpc.com/?api-key=x', 'https:', true],
+    ['wss://mainnet.helius-rpc.com/?api-key=x', 'wss:', true],
+    ['https://MAINNET.HELIUS-RPC.COM/', 'https:', true],
+    ['http://mainnet.helius-rpc.com', 'https:', false],
+    ['https://mainnet.helius-rpc.com', 'wss:', false],
+    ['https://user:pw@mainnet.helius-rpc.com', 'https:', false],
+    ['https://helius-rpc.com.evil.example/?api-key=x', 'https:', false],
+    ['https://evilhelius-rpc.com/?api-key=x', 'https:', false],
+    ['https://rpc.example.com/?api-key=x', 'https:', false],
+    ['wss://api.mainnet.solana.com', 'wss:', false],
     ['not a url', 'https:', false],
     ['', 'https:', false],
   ] as const)('%s as %s → %s', (url, protocol, ok) => {
     expect(isValidEndpointUrl(url, protocol)).toBe(ok);
+  });
+
+  it.each([
+    [
+      'https://rpc.example.com/?api-key=x',
+      'https:',
+      'Dozwolone są tylko adresy Helius w domenie helius-rpc.com (np. https://mainnet.helius-rpc.com/?api-key=…).',
+    ],
+    [
+      'wss://helius-rpc.com.evil.example',
+      'wss:',
+      'Dozwolone są tylko adresy Helius w domenie helius-rpc.com (np. wss://mainnet.helius-rpc.com/?api-key=…).',
+    ],
+    ['http://mainnet.helius-rpc.com', 'https:', 'Adres musi zaczynać się od https://.'],
+    ['rpc', 'https:', 'To nie jest prawidłowy adres URL. Zacznij od https://.'],
+    [
+      'https://a:b@mainnet.helius-rpc.com',
+      'https:',
+      'Adres nie może zawierać nazwy użytkownika ani hasła.',
+    ],
+  ] as const)('endpointUrlProblem(%s, %s) explains in Polish', (url, protocol, message) => {
+    expect(endpointUrlProblem(url, protocol)).toBe(message);
+  });
+
+  it('isHeliusHost accepts only the exact domain or its subdomains', () => {
+    expect(isHeliusHost('helius-rpc.com')).toBe(true);
+    expect(isHeliusHost('mainnet.helius-rpc.com.')).toBe(true);
+    expect(isHeliusHost('helius-rpc.com.evil.example')).toBe(false);
+    expect(isHeliusHost('evilhelius-rpc.com')).toBe(false);
+    expect(isHeliusHost('helius-rpc.co')).toBe(false);
   });
 
   it('API keys: non-empty, at most 512 characters, no spaces or control characters', () => {
@@ -164,8 +203,9 @@ describe('Helius endpoints and API key values', () => {
     expect(isValidApiKeyValue('jupiter', 'a b')).toBe(false);
     expect(isValidApiKeyValue('jupiter', 'a\nb')).toBe(false);
     expect(isValidApiKeyValue('helius', 'x'.repeat(513))).toBe(false);
-    expect(isValidApiKeyValue('heliusRpcUrl', 'https://rpc.example.com')).toBe(true);
-    expect(isValidApiKeyValue('heliusWsUrl', 'https://rpc.example.com')).toBe(false);
+    expect(isValidApiKeyValue('heliusRpcUrl', 'https://mainnet.helius-rpc.com')).toBe(true);
+    expect(isValidApiKeyValue('heliusRpcUrl', 'https://rpc.example.com')).toBe(false);
+    expect(isValidApiKeyValue('heliusWsUrl', 'https://mainnet.helius-rpc.com')).toBe(false);
   });
 });
 
@@ -203,8 +243,8 @@ describe('settings in the keystore secrets', () => {
       apiKeys: {
         helius: 'h',
         jupiter: 'j',
-        heliusRpcUrl: 'https://rpc.example.com/?api-key=h',
-        heliusWsUrl: 'wss://rpc.example.com/?api-key=h',
+        heliusRpcUrl: 'https://mainnet.helius-rpc.com/?api-key=h',
+        heliusWsUrl: 'wss://mainnet.helius-rpc.com/?api-key=h',
       },
     };
     const text = secretsToJson(full);
