@@ -30,6 +30,7 @@ import {
   type OpenedKeystore,
   type PublicWalletV1,
 } from '../core/index.ts';
+import { DEFAULT_AUTO_LOCK_MS } from './protocol.ts';
 import type {
   VaultFileResult,
   VaultInfo,
@@ -41,7 +42,7 @@ import type {
   VaultStatus,
 } from './protocol.ts';
 
-export const DEFAULT_AUTO_LOCK_MS = 15 * 60 * 1000;
+export { DEFAULT_AUTO_LOCK_MS } from './protocol.ts';
 
 export interface VaultOptions {
   /** Clock in ms; injectable for tests. */

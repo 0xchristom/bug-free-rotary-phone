@@ -62,6 +62,12 @@ export default defineConfig(
     },
   },
   {
+    files: ['tests/ui/**/*.{ts,tsx}'],
+    languageOptions: {
+      globals: { ...globals.browser, ...globals.node },
+    },
+  },
+  {
     files: ['tests/**/*.ts', 'vite.config.ts'],
     languageOptions: {
       globals: globals.node,

@@ -7,6 +7,9 @@
  */
 import type { ApiKeysV1, ErrorCode, FleetSettingsV1, PublicWalletV1 } from '../core/index.ts';
 
+/** Default inactivity before the vault locks itself (SPEC 3.1: 15 minutes). */
+export const DEFAULT_AUTO_LOCK_MS = 15 * 60 * 1000;
+
 export type VaultRequest =
   | {
       readonly type: 'create';
@@ -79,4 +82,9 @@ export type VaultResponseEnvelope =
 export interface VaultPort {
   postMessage(message: unknown): void;
   addEventListener(type: 'message', listener: (event: { readonly data: unknown }) => void): void;
+  /**
+   * Called when the worker itself fails (`error` / `messageerror` on the Worker), so the
+   * client can reject pending requests at once instead of waiting for their timeouts.
+   */
+  addFailureListener?(listener: () => void): void;
 }

@@ -11,6 +11,10 @@ export function spawnVaultWorker(options?: VaultClientOptions): VaultClient {
       addEventListener: (type, listener) => {
         worker.addEventListener(type, listener);
       },
+      addFailureListener: (listener) => {
+        worker.addEventListener('error', listener);
+        worker.addEventListener('messageerror', listener);
+      },
     },
     options,
   );

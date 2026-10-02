@@ -55,6 +55,16 @@ export function createVaultClient(port: VaultPort, options: VaultClientOptions =
     }
   });
 
+  // A failing worker (script error, unreadable message) would otherwise leave every
+  // pending request waiting 30–120 s for its timeout.
+  port.addFailureListener?.(() => {
+    for (const [id, entry] of pending) {
+      pending.delete(id);
+      clearTimeout(entry.timer);
+      entry.reject(new AppError('INTERNAL_ERROR'));
+    }
+  });
+
   return {
     request<T extends VaultRequestType>(request: VaultRequestOf<T>): Promise<VaultResultMap[T]> {
       const id = nextId++;

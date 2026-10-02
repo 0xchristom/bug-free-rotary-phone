@@ -160,7 +160,7 @@ describe('createKeystore + parseKeystoreFile + openKeystore', () => {
     }
     // Outside base64 fields (where short words can occur by chance) no string value
     // contains a mnemonic word.
-    const words = valueWords(created.file, ['ciphertext', 'salt', 'iv']);
+    const words = valueWords(created.file, ['ciphertext', 'salt', 'iv', 'address']);
     for (const word of new Set(mnemonic.split(' '))) {
       expect(words.has(word)).toBe(false);
     }
