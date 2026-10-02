@@ -6,6 +6,7 @@ Format: `RRRR-MM-DD · BUNNDLY-<n> · <co działa>`
 
 ---
 
+- 2026-10-02 · BUNNDLY-17 · Szkielet UI: ekrany Start, Kreator, Flota i Ustawienia (bez routingu i URL), pasek z „Zablokuj” i informacją o auto-locku, odpytywanie statusu sejfu i zgłaszanie aktywności; testy UI w jsdom (Testing Library), testy core dalej w Node.
 - 2026-10-02 · BUNNDLY-8 · `src/storage`: zapis `<nazwa>.keystore.json` do wybranego folderu (File System Access API, potwierdzenie nadpisania) albo pobranie; odczyt przez `showOpenFilePicker` lub `<input type=file>`, limit 1 MB przed odczytem; kody błędów po polsku. Sprawdzone w Chromium (OPFS, pobranie, input).
 - 2026-10-02 · BUNNDLY-7 · Sejf w Web Workerze (`src/worker`): create, unlock, lock, status, saveSettings, addWallets, setArmed, activity; auto-lock 15 min (wstrzymany, gdy armed); klient z timeoutem; `KeystoreSession` w `core/keystore` (ponowne szyfrowanie bez hasła). Sprawdzone w Chromium.
 - 2026-10-02 · BUNNDLY-18 · CI wstrzymane do odwołania: `ci.yml` tylko `workflow_dispatch` (brak minut GitHub Actions), lokalne kontrole przed PR opisane w README i D-012.

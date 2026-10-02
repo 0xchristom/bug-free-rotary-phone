@@ -7,6 +7,9 @@
  */
 import type { ApiKeysV1, ErrorCode, FleetSettingsV1, PublicWalletV1 } from '../core/index.ts';
 
+/** Default inactivity before the vault locks itself (SPEC 3.1: 15 minutes). */
+export const DEFAULT_AUTO_LOCK_MS = 15 * 60 * 1000;
+
 export type VaultRequest =
   | {
       readonly type: 'create';
