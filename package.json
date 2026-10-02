@@ -21,6 +21,7 @@
     "@scure/base": "2.4.0",
     "@scure/bip39": "2.4.0",
     "micro-key-producer": "0.10.2",
+    "qr": "0.7.2",
     "react": "19.3.0",
     "react-dom": "19.3.0"
   },

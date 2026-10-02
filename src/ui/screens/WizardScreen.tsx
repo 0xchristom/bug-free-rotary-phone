@@ -68,6 +68,9 @@ export function WizardScreen({ storage, onBack, onDone, onUnsavedChange }: Wizar
   const unsaved = phase.kind === 'created';
   useEffect(() => {
     onUnsavedChange(unsaved);
+    return () => {
+      onUnsavedChange(false); // unmounted (e.g. after a lock): nothing left to protect
+    };
   }, [unsaved, onUnsavedChange]);
 
   const count = Number(walletCount);

@@ -1,8 +1,9 @@
 export interface StartScreenProps {
   readonly onCreate: () => void;
+  readonly onOpen: () => void;
 }
 
-export function StartScreen({ onCreate }: StartScreenProps) {
+export function StartScreen({ onCreate, onOpen }: StartScreenProps) {
   return (
     <section className="screen" aria-labelledby="start-title">
       <h2 id="start-title">Witaj w Bunndly</h2>
@@ -11,7 +12,7 @@ export function StartScreen({ onCreate }: StartScreenProps) {
         <button type="button" className="primary" onClick={onCreate}>
           Utwórz nową flotę
         </button>
-        <button type="button" disabled title="Otwieranie pliku będzie dostępne wkrótce">
+        <button type="button" onClick={onOpen}>
           Otwórz plik floty
         </button>
       </div>

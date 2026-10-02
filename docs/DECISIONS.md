@@ -221,3 +221,19 @@ Rejestr decyzji i rozbieżności z dokumentacją zewnętrzną. Nowe wpisy dopisu
     - po utworzeniu floty aplikacja nie przechodzi sama na ekran Flota.
   - **Pobieranie:** `revokeObjectURL` po 60 s (`DOWNLOAD_URL_TTL_MS`), bo niektóre przeglądarki zaczynają pobieranie asynchronicznie. Od razu tylko wtedy, gdy kliknięcie rzuci wyjątek.
 - Konsekwencje: zaszyfrowany plik może zostać w pamięci karty po auto-locku, dopóki użytkownik go nie zapisze albo nie opuści kreatora.
+
+## D-018: Podgląd pliku bez hasła i adresy niezweryfikowane
+
+- Data: 2026-10-02
+- Zadanie: BUNNDLY-10
+- Kontekst: SPEC 3.1 i 6.1. Jawna część pliku (`public.wallets`) nie jest podpisana i każdy może ją zmienić. Kontrola spójności adresów (BUNNDLY-6) działa dopiero po odszyfrowaniu.
+- Decyzja:
+  - **Adresy przed odblokowaniem są oznaczone jako „niezweryfikowane”.** Przyciski „Kopiuj” i „QR” są wtedy nieaktywne. Kopiowanie adresu depozytu i kod QR są dostępne tylko na ekranie Flota, który pokazuje adresy z workera po odblokowaniu i kontroli spójności. Bez tego podmieniony plik mógłby skłonić użytkownika do wpłaty na adres atakującego.
+  - **`KEYSTORE_TAMPERED` ma osobne, wyraźne ostrzeżenie** („plik floty mógł zostać podmieniony”, „Nie wysyłaj środków na adresy z tego pliku”). Pozostałe błędy pokazuję zwykłym komunikatem z `toUserMessage`.
+  - **Podgląd parsuje worker:** nowe żądanie `preview { fileText }` uruchamia `parseKeystoreFile` i zwraca tylko część publiczną (`VaultPreview`). Nie zmienia stanu sejfu i nie liczy się jako aktywność. Dzięki temu UI nie importuje `format.ts`, który ciągnie derywację i listę słów BIP39 (D-015).
+  - **Hasło** jest czyszczone z pola po każdej próbie odblokowania, udanej i nieudanej.
+  - **„Dodaj portfele”:** liczba od 1 do `100 − obecna liczba`. Worker dopisuje kolejne indeksy i szyfruje plik kluczem sesji, a UI zapisuje go dopiero po kliknięciu „Zapisz zaktualizowany plik floty” (jak w D-017). Dopóki plik nie jest zapisany:
+    - „Zablokuj”, wyjście z ekranu i zamknięcie karty wymagają potwierdzenia;
+    - auto-lock odrzuca niezapisany plik. To akceptowalne: nowe portfele wynikają deterministycznie z mnemonika, więc ponowne dodanie daje te same adresy.
+  - **Kod QR:** paczka `qr` 0.7.2 (Paul Miller, autor `@noble` i `@scure`, zero zależności). Rysuję ją jako SVG z macierzy modułów (`'raw'`), bez wstrzykiwania HTML, więc działa przy ścisłym CSP. Wybrałem ją, bo pochodzi od tego samego autora co nasze paczki kryptograficzne i nie ma zależności. Test dekoduje narysowany kod z powrotem do adresu.
+- Konsekwencje: główny pakiet urósł o ok. 24 kB (262 kB, gzip 84 kB), w tym biblioteka QR. Kryptografia dalej jest tylko w pakiecie workera.

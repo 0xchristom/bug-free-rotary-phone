@@ -7,6 +7,7 @@ export type {
   VaultFileResult,
   VaultInfo,
   VaultPort,
+  VaultPreview,
   VaultRequest,
   VaultRequestOf,
   VaultRequestType,

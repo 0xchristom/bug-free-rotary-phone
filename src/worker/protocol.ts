@@ -19,6 +19,8 @@ export type VaultRequest =
       /** Import an existing mnemonic; omit to generate a new 24-word one. */
       readonly mnemonic?: string;
     }
+  /** Validates a keystore file and returns its public part; needs no password. */
+  | { readonly type: 'preview'; readonly fileText: string }
   | { readonly type: 'unlock'; readonly fileText: string; readonly password: string }
   | { readonly type: 'lock' }
   | { readonly type: 'status' }
@@ -44,6 +46,16 @@ export interface VaultInfo {
   readonly apiKeys: ApiKeysV1;
 }
 
+/**
+ * Public part of a keystore file read without the password. The addresses are NOT
+ * verified: only unlocking checks them against the encrypted keys (D-018).
+ */
+export interface VaultPreview {
+  readonly fleetName: string;
+  readonly createdAt: string;
+  readonly wallets: readonly PublicWalletV1[];
+}
+
 export interface VaultStatus {
   readonly locked: boolean;
   readonly armed: boolean;
@@ -58,6 +70,7 @@ export interface VaultFileResult {
 
 export interface VaultResultMap {
   readonly create: VaultFileResult;
+  readonly preview: VaultPreview;
   readonly unlock: VaultStatus;
   readonly lock: VaultStatus;
   readonly status: VaultStatus;

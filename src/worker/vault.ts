@@ -247,7 +247,8 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
     if (!isRecord(raw)) return badRequest();
     const request = raw as VaultRequest;
     checkAutoLock();
-    if (request.type !== 'status') touch();
+    // Reading the status or previewing a file is not user activity on the fleet.
+    if (request.type !== 'status' && request.type !== 'preview') touch();
 
     switch (request.type) {
       case 'create': {
@@ -263,6 +264,14 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
         return {
           fileText: serializeKeystoreFile(opened.file),
           info: infoOf(requireUnlocked()),
+        };
+      }
+      case 'preview': {
+        const file = parseKeystoreFile(str(request.fileText));
+        return {
+          fleetName: file.fleetName,
+          createdAt: file.createdAt,
+          wallets: file.public.wallets,
         };
       }
       case 'unlock': {

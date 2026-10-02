@@ -7,7 +7,7 @@ import {
   parseKeystoreFile,
   type KeystoreFileV1,
 } from '../../src/core/index.ts';
-import type { VaultFileResult, VaultStatus } from '../../src/worker/protocol.ts';
+import type { VaultFileResult, VaultPreview, VaultStatus } from '../../src/worker/protocol.ts';
 import { createVaultHandler, type VaultHandler } from '../../src/worker/vault.ts';
 import { valueWords } from '../helpers/words.ts';
 
@@ -222,6 +222,31 @@ describe('unlock', () => {
   beforeAll(async () => {
     fileText = (await call<VaultFileResult>(main, { type: 'addWallets', count: 1 })).fileText;
     collectSecrets(main);
+  });
+
+  it('preview returns the public part without unlocking and is not activity', async () => {
+    const c = clock();
+    const h = createVaultHandler({ now: c.now, autoLockMs: AUTO_LOCK_MS });
+    const before = h.inspect().lastActivity;
+    c.advance(1_000);
+    const preview = await call<VaultPreview>(h, { type: 'preview', fileText });
+    const file = parseKeystoreFile(fileText);
+    expect(preview).toEqual({
+      fleetName: file.fleetName,
+      createdAt: file.createdAt,
+      wallets: file.public.wallets,
+    });
+    expect(Object.keys(preview).sort()).toEqual(['createdAt', 'fleetName', 'wallets']);
+    expect(h.inspect().unlocked).toBeNull();
+    expect(h.inspect().lastActivity).toBe(before);
+  });
+
+  it('preview rejects a broken file and does not touch an unlocked fleet', async () => {
+    const h = createVaultHandler();
+    await call<VaultStatus>(h, { type: 'unlock', fileText, password: PASSWORD });
+    await expectCode(h.handle({ type: 'preview', fileText: 'nope' }), 'KEYSTORE_INVALID_FORMAT');
+    await expectCode(h.handle({ type: 'preview', fileText: 42 }), 'INTERNAL_ERROR');
+    expect(h.inspect().unlocked).not.toBeNull();
   });
 
   it('opens the file with the right password', async () => {
