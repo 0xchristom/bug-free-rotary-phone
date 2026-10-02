@@ -59,6 +59,8 @@ export interface StorageEnv {
   readonly revokeObjectURL: (url: string) => void;
   /** Fallback writer: clicks an `<a download>` link for the URL. */
   readonly clickDownload: (url: string, fileName: string) => void;
+  /** Timer used to release the download URL later (injectable for tests). */
+  readonly setTimeout: (callback: () => void, ms: number) => void;
 }
 
 export interface SaveOptions {
@@ -76,6 +78,11 @@ export interface OpenedFile {
 }
 
 const PICKER_ID = 'bunndly-keystore';
+/**
+ * How long the download URL stays alive after the click. Safari and some Firefox versions
+ * can abort a download whose blob URL is revoked right away (FileSaver.js waits 40 s).
+ */
+export const DOWNLOAD_URL_TTL_MS = 60_000;
 const JSON_ACCEPT = '.json,application/json';
 
 /** `<fleetName>.keystore.json`; throws INVALID_FLEET_NAME for names unsafe in a path. */
@@ -149,9 +156,13 @@ function download(env: StorageEnv, fileText: string, fileName: string): SaveResu
   const url = env.createObjectURL(new Blob([fileText], { type: 'application/json' }));
   try {
     env.clickDownload(url, fileName);
-  } finally {
-    env.revokeObjectURL(url);
+  } catch (e) {
+    env.revokeObjectURL(url); // nothing started, release at once
+    throw e;
   }
+  env.setTimeout(() => {
+    env.revokeObjectURL(url);
+  }, DOWNLOAD_URL_TTL_MS);
   return { method: 'download', fileName };
 }
 

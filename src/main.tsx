@@ -1,5 +1,6 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
+import { browserStorageEnv } from './storage/browser.ts';
 import { App } from './ui/App.tsx';
 import './ui/app.css';
 import { spawnVaultWorker } from './worker/spawn.ts';
@@ -11,6 +12,6 @@ if (!container) {
 
 createRoot(container).render(
   <StrictMode>
-    <App vault={spawnVaultWorker()} />
+    <App vault={spawnVaultWorker()} storage={browserStorageEnv()} />
   </StrictMode>,
 );
