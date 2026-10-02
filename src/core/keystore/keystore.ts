@@ -27,6 +27,7 @@ import {
 } from './crypto.ts';
 import {
   KEYSTORE_VERSION,
+  defaultFleetSettings,
   isValidFleetName,
   parseSecrets,
   secretsToJson,
@@ -211,7 +212,7 @@ export async function createKeystore(params: CreateKeystoreParams): Promise<Open
   const secrets: KeystoreSecretsV1 = {
     mnemonic,
     wallets,
-    settings: { maxSpend: [] },
+    settings: defaultFleetSettings(),
     apiKeys: {},
   };
   const options = params.onProgress ? { onProgress: params.onProgress } : {};

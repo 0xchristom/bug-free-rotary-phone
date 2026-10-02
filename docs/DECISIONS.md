@@ -237,3 +237,51 @@ Rejestr decyzji i rozbieżności z dokumentacją zewnętrzną. Nowe wpisy dopisu
     - auto-lock odrzuca niezapisany plik. To akceptowalne: nowe portfele wynikają deterministycznie z mnemonika, więc ponowne dodanie daje te same adresy.
   - **Kod QR:** paczka `qr` 0.7.2 (Paul Miller, autor `@noble` i `@scure`, zero zależności). Rysuję ją jako SVG z macierzy modułów (`'raw'`), bez wstrzykiwania HTML, więc działa przy ścisłym CSP. Wybrałem ją, bo pochodzi od tego samego autora co nasze paczki kryptograficzne i nie ma zależności. Test dekoduje narysowany kod z powrotem do adresu.
 - Konsekwencje: główny pakiet urósł o ok. 24 kB (262 kB, gzip 84 kB), w tym biblioteka QR. Kryptografia dalej jest tylko w pakiecie workera.
+
+## D-016: Klucze API tylko do zapisu, poza workerem ich nie ma
+
+- Data: 2026-10-02
+- Zadanie: BUNNDLY-15 (decyzja Andy'ego z review BUNNDLY-7)
+- Kontekst: SPEC 2.1 i 6.1. Klucze Helius i Jupiter dają dostęp do płatnych usług. Do BUNNDLY-15 `VaultInfo` oddawał je do UI, więc trafiały do stanu React.
+- Decyzja:
+  - **Klucze nie wychodzą z workera.** Wywołania, które ich potrzebują (Helius HTTP i WSS, Jupiter), wykona worker (BUNNDLY-12, 13, 16).
+  - **`VaultInfo.apiKeys` to tylko flagi** (`ApiKeyFlags`): czy ustawiono klucz Helius, klucz Jupiter, własny URL RPC i własny URL WebSocket.
+  - **Własne URL-e Helius** zawierają klucz, więc podlegają tej samej zasadzie. Są przechowywane obok kluczy (`ApiKeysV1.heliusRpcUrl`, `heliusWsUrl`). Walidacja: RPC tylko `https:`, WebSocket tylko `wss:`, bez użytkownika i hasła w URL.
+  - **`saveSettings.apiKeys` to zmiany:** brak pola zostawia wartość, `null` ją usuwa, a tekst zastępuje. Nieprawidłowa wartość daje `INVALID_SETTINGS`.
+  - **UI:**
+    - puste pole oznacza brak zmian;
+    - usunięcie to osobny przycisk („Usuń” / „Cofnij usunięcie”);
+    - „Pokaż” dotyczy tylko tekstu wpisywanego teraz;
+    - po wysłaniu pola są od razu czyszczone.
+  - **Klucze nigdy nie trafiają** do zmiennych builda, `localStorage`, URL aplikacji ani logów.
+  - **Test w workerze** przeszukuje serializowane odpowiedzi wszystkich operacji pod kątem kluczy i URL-i, tak jak w BUNNDLY-7 dla mnemonika.
+- Konsekwencje: test połączeń (BUNNDLY-16) i zapytania RPC (BUNNDLY-12, 13) muszą iść przez worker.
+
+## D-019: Format ustawień w keystore i walidacja
+
+- Data: 2026-10-02
+- Zadanie: BUNNDLY-15 (decyzja z review BUNNDLY-6)
+- Kontekst: SPEC 3.1, 3.2 i 3.3.
+- Decyzja:
+  - **`settings` w `KeystoreSecretsV1`** ma teraz trzy pola:
+    - `maxSpend` bez zmian;
+    - `active: { index, active }[]` (portfel bez wpisu jest aktywny, flaga dla BUNNDLY-14);
+    - `global: GlobalSettingsV1`.
+  - **`version` zostaje 1,** bo nie ma jeszcze prawdziwych plików. Brak `active` lub `global`, a także brak pojedynczego pola w `global`, oznacza wartości domyślne. Pole obecne, ale spoza zakresu, oraz nieznany klucz oznaczają `KEYSTORE_INVALID_FORMAT`, bo plik jest wtedy uszkodzony. **Od pierwszego prawdziwego użycia każda zmiana formatu to nowa wersja i migracja.**
+  - **Pola i wartości domyślne (SPEC 3.3):**
+    - `minReserveLamports`: 0,015 SOL, zakres 0,001–1 SOL, w pliku jako tekst dziesiętny jak `lamports`;
+    - `maxAttempts`: 3, zakres 1–10;
+    - `priceCeilingPercent`: 50, zakres 1–1000;
+    - `noRouteWindowMs`: 20 s, zakres 1–120 s;
+    - backoff: 500 → 2000 ms (początkowy 100–10 000 ms, maksymalny 100–30 000 ms i nie mniejszy niż początkowy);
+    - `mode`: `one-shot` albo `continuous`; przełączenie na ciągły wymaga potwierdzenia ostrzeżenia;
+    - `explorer`: `solscan`, `orb` albo `solana-explorer`;
+    - `autoLockMinutes`: 15, zakres 1–120;
+    - `jupiterPlan` i `orderRpm`.
+  - **Plan Jupitera:** w pliku jest limit `/order` na minutę, a `ORDER_RPS = orderRpm / 60`. Tabela planów (Keyless 30, Free 60, Developer 600, Launch 3000, Pro 9000 na minutę) ma link do dokumentacji w kodzie. Dla nazwanego planu limit musi się zgadzać z tabelą, a plan „Własny” przyjmuje 1–100 000 na minutę.
+  - **Jedna walidacja dla UI i workera:** `validateGlobalSettings` w bezzależnościowym `core/settings.ts` zwraca listę `{ field, message }` z polskimi komunikatami.
+    - UI pokazuje je przy polach i blokuje przycisk „Zapisz ustawienia”.
+    - Worker odrzuca całe żądanie kodem `INVALID_SETTINGS` (nie `KEYSTORE_INVALID_FORMAT`) i nie zmienia stanu.
+  - **Auto-lock** w workerze korzysta z `autoLockMinutes` odblokowanej floty. Opcja `autoLockMs` handlera zostaje tylko do testów.
+  - **Zapis pliku** po zmianie ustawień działa jak w D-017 i D-018: sejf ma nowe ustawienia od razu, a plik zapisuje się po kliknięciu, z ochroną przed utratą przy blokadzie i zamknięciu karty.
+- Konsekwencje: `FleetSettingsV1` zawsze zawiera wszystkie pola (domyślne uzupełnia parser), więc kod dalej nie musi sprawdzać braków.
