@@ -82,4 +82,9 @@ export type VaultResponseEnvelope =
 export interface VaultPort {
   postMessage(message: unknown): void;
   addEventListener(type: 'message', listener: (event: { readonly data: unknown }) => void): void;
+  /**
+   * Called when the worker itself fails (`error` / `messageerror` on the Worker), so the
+   * client can reject pending requests at once instead of waiting for their timeouts.
+   */
+  addFailureListener?(listener: () => void): void;
 }

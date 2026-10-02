@@ -1,11 +1,11 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AppError } from '../../src/core/errors.ts';
 import { App } from '../../src/ui/App.tsx';
-import type { VaultRequest, VaultStatus } from '../../src/worker/protocol.ts';
-import type { VaultClient } from '../../src/worker/vault-client.ts';
+import type { VaultPort, VaultRequest, VaultStatus } from '../../src/worker/protocol.ts';
+import { createVaultClient, type VaultClient } from '../../src/worker/vault-client.ts';
 
 const LOCKED: VaultStatus = { locked: true, armed: false, info: null };
 
@@ -71,6 +71,7 @@ function renderApp(
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
+  vi.useRealTimers();
 });
 
 describe('navigation', () => {
@@ -123,6 +124,41 @@ describe('vault status changes', () => {
     expect(screen.getByRole('alert').textContent).toContain('zablokowana automatycznie');
     expect(screen.queryByRole('navigation')).toBeNull();
     expect(screen.queryByText('Flota testowa')).toBeNull();
+  });
+
+  it('auto-lock shows on the start screen within one poll (5 s, fake clock)', async () => {
+    vi.useFakeTimers();
+    const vault = mockVault(unlocked());
+    render(<App vault={vault.client} />); // default poll interval
+    await act(() => vi.advanceTimersByTimeAsync(0));
+    expect(screen.getByRole('heading', { name: 'Flota' })).toBeTruthy();
+
+    vault.setStatus(LOCKED);
+    await act(() => vi.advanceTimersByTimeAsync(4_999));
+    expect(screen.getByRole('heading', { name: 'Flota' })).toBeTruthy();
+    await act(() => vi.advanceTimersByTimeAsync(1));
+    expect(screen.getByRole('heading', { name: 'Witaj w Bunndly' })).toBeTruthy();
+    expect(screen.getByRole('alert').textContent).toContain('zablokowana automatycznie');
+    // the fleet data is gone from the page
+    expect(screen.queryByText('Flota testowa')).toBeNull();
+  });
+
+  it('a worker failure rejects pending requests at once and shows a Polish message', async () => {
+    let fail: (() => void) | undefined;
+    const port: VaultPort = {
+      postMessage: vi.fn(), // the "worker" never answers
+      addEventListener: () => undefined,
+      addFailureListener: (listener) => {
+        fail = listener;
+      },
+    };
+    render(<App vault={createVaultClient(port)} statusPollMs={60_000} />);
+    expect(screen.getByText('Łączenie z sejfem…')).toBeTruthy();
+    expect(screen.queryByRole('alert')).toBeNull();
+    act(() => {
+      fail?.();
+    });
+    expect((await screen.findByRole('alert')).textContent).toContain('wewnętrzny błąd');
   });
 
   it('“Zablokuj” calls lock and returns to the start screen', async () => {

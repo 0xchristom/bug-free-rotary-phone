@@ -118,6 +118,34 @@ describe('vault client ↔ handler', () => {
   });
 });
 
+describe('worker failure', () => {
+  it('rejects all pending requests at once with INTERNAL_ERROR', async () => {
+    vi.useFakeTimers();
+    const port = silentPort();
+    let fail: (() => void) | undefined;
+    const client = createVaultClient({
+      ...port,
+      addFailureListener: (listener) => {
+        fail = listener;
+      },
+    });
+    const a = rejection(client.request({ type: 'status' }));
+    const b = rejection(client.request({ type: 'unlock', fileText: '{}', password: 'x' }));
+    expect(fail).toBeDefined();
+    fail?.();
+    // no timer advanced: both settle immediately
+    const [ea, eb] = await Promise.all([a, b]);
+    expect(isAppError(ea) && ea.code).toBe('INTERNAL_ERROR');
+    expect(isAppError(eb) && eb.code).toBe('INTERNAL_ERROR');
+    // timers were cleared, so nothing fires later
+    await vi.advanceTimersByTimeAsync(DEFAULT_SLOW_TIMEOUT_MS);
+    // later requests still go out
+    const c = client.request({ type: 'status' });
+    port.reply({ id: 3, ok: true, result: { locked: true, armed: false, info: null } });
+    expect(await c).toEqual({ locked: true, armed: false, info: null });
+  });
+});
+
 describe('timeouts', () => {
   it('no reply ends with VAULT_TIMEOUT after the default timeout', async () => {
     vi.useFakeTimers();

@@ -194,7 +194,8 @@ Rejestr decyzji i rozbieżności z dokumentacją zewnętrzną. Nowe wpisy dopisu
   - **Stan sejfu:** `App` dostaje `VaultClient` jako prop (w `main.tsx` jest to `spawnVaultWorker()`, w testach mock) i udostępnia go ekranom przez kontekst (`ui/vault-state.ts`).
     - Status jest odpytywany co 5 s. `status` nie liczy się jako aktywność, więc odpytywanie nie blokuje auto-locka.
     - Aktywność użytkownika (`pointerdown`, `keydown`) zgłaszam do workera najwyżej raz na 30 s i tylko przy odblokowanej flocie.
-    - Po auto-locku UI pokazuje komunikat i wraca na Start.
+    - Po auto-locku UI pokazuje komunikat i wraca na Start w ciągu jednego cyklu odpytywania (≤ 5 s).
+    - Awaria workera (`error` / `messageerror` na obiekcie `Worker`) natychmiast odrzuca wszystkie oczekujące żądania kodem `INTERNAL_ERROR`, zamiast czekać 30–120 s na timeout. `VaultPort` ma do tego opcjonalne `addFailureListener`, podpinane w `spawn.ts`. UI pokazuje polski komunikat.
   - **Paczki w UI:** UI importuje z `core` tylko `errors.ts`, a z workera tylko `protocol.ts`, `vault-client.ts` i `spawn.ts`. `DEFAULT_AUTO_LOCK_MS` przeniosłem do `protocol.ts`, żeby nie ciągnąć `vault.ts`. Kryptografia trafia wyłącznie do pakietu workera, a główny pakiet urósł o ok. 7 kB.
   - **Style:** zwykły CSS (`ui/app.css`) z ciemnym motywem, bez frameworka UI. Układ jest elastyczny i bez przewijania w poziomie od 320 px.
   - **Testy UI:** jsdom włączany per plik przez `// @vitest-environment jsdom`, a reszta testów zostaje w Node (test dymny pilnuje, że `window` nie istnieje). Testy UI mają osobny projekt TS `tsconfig.ui-test.json` (DOM + JSX), a `tsconfig.test.json` je wyklucza.
