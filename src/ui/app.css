@@ -363,3 +363,8 @@ button.danger {
 button.danger:disabled {
   opacity: 0.5;
 }
+
+/* Connection test: long values wrap; anything wider scrolls inside .table-wrap. */
+table.connections td {
+  overflow-wrap: break-word;
+}

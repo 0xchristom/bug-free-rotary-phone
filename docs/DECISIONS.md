@@ -430,9 +430,15 @@ Rejestr decyzji i rozbieżności z dokumentacją zewnętrzną. Nowe wpisy dopisu
     - preflight `OPTIONS /swap/v2/order` z `Origin` i `Access-Control-Request-Headers: x-api-key` daje `access-control-allow-headers: x-api-key` i `access-control-allow-origin` równe origin strony;
     - `GET` Keyless (bez klucza, bez `taker`) daje 200 z `access-control-expose-headers: x-ratelimit-remaining, x-ratelimit-current, x-ratelimit-reset, x-api-gateway-request-id, server-timing`, więc `fetch` w przeglądarce i w workerze odczyta wszystkie trzy;
     - według dokumentacji nagłówki są tylko przy 200 i 429 (nie przy 401, 403, 5xx) i mogą zniknąć przy planach bez limitu; `x-ratelimit-reset` to sekundy Unix, kiedy zwalnia się jedno miejsce w oknie 60 s;
-    - wniosek dla limitera (sprint 3): można czytać `remaining` i `reset`, ale limiter nie może od nich zależeć, bo bywają nieobecne. Podstawą jest token bucket z `ORDER_RPS`.
+    - wniosek dla limitera (sprint 3): nagłówki służą do korekty, nie są podstawą, bo bywają nieobecne. Podstawą jest budżet okna z 10% zapasu (seria na start), zgodnie z decyzją Krystiana z 2026-10-02 zapisaną w BUNNDLY-20; szczegóły dopiszemy przy tamtym zadaniu.
   - **Rozbieżności z opisem zadania i SPEC (wygrywa dokumentacja):**
-    - Keyless zwrócił `x-ratelimit-current: 1` i `x-ratelimit-remaining: 4`, czyli okno 5 zapytań, a tabela planów podaje 30/min. Możliwa reguła firewalla per IP. Do sprawdzenia w teście ręcznym z kluczem Krystiana.
+    - Keyless: nagłówki nie pasują do tabeli planów (30/min). Moje zapytanie dało `x-ratelimit-current: 1` i `x-ratelimit-remaining: 4`. Spike Andy'ego (BUNNDLY-30) to wyjaśnia:
+      - `x-ratelimit-reset` wypada po ok. 10 s, czyli nagłówki opisują okno 10 s z 5 zapytaniami;
+      - serie 8 i 12 równoległych zapytań przeszły bez 429;
+      - liczniki są niespójne między odpowiedziami, a `x-ratelimit-limit` nie jest wysyłany.
+
+      Dlatego test pokazuje surowe wartości tych nagłówków, które przyszły, nie wylicza z nich planu ani okna, a brak nagłówków nie jest błędem. Test ręczny z kluczem Krystiana pokaże wartości dla planu z kluczem.
+
     - Helius WebSocket: według aktualnej dokumentacji otwarcie połączenia kosztuje 1 kredyt, a strumień 2 kredyty za 0,1 MB danych. „1 kredyt za zdarzenie” dotyczy Parsed Streams. Limit planu Free: 5 równoczesnych połączeń i 10 zapytań/s. Test trwa ułamek sekundy i używa jednego połączenia.
 - Konsekwencje:
   - CSP (`connect-src`) musi obejmować również `https://api.jup.ag` (D-020 wymienia Helius HTTPS/WSS i awaryjny RPC).

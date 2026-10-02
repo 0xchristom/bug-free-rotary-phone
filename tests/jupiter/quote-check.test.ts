@@ -126,13 +126,29 @@ describe('Jupiter quote check', () => {
     }
   });
 
-  it('partial or non-numeric rate limit headers give no rate limit', async () => {
-    const { fetch } = fakeFetch(() => ({
+  it('only the rate limit headers that came are shown; none at all is not an error', async () => {
+    const partial = fakeFetch(() => ({
       status: 200,
       json: QUOTE,
       headers: { 'x-ratelimit-remaining': '4', 'x-ratelimit-reset': 'soon' },
     }));
-    const r = await checkJupiterQuote({ apiKey: null, fetch, timeoutMs: 1000, clock: stepClock() });
-    expect(r).toMatchObject({ ok: true, rateLimit: null });
+    expect(
+      await checkJupiterQuote({
+        apiKey: null,
+        fetch: partial.fetch,
+        timeoutMs: 1000,
+        clock: stepClock(),
+      }),
+    ).toMatchObject({ ok: true, rateLimit: { remaining: 4, current: null, reset: null } });
+
+    const none = fakeFetch(() => ({ status: 200, json: QUOTE }));
+    expect(
+      await checkJupiterQuote({
+        apiKey: null,
+        fetch: none.fetch,
+        timeoutMs: 1000,
+        clock: stepClock(),
+      }),
+    ).toMatchObject({ ok: true, problem: null, rateLimit: null });
   });
 });
