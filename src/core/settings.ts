@@ -185,9 +185,12 @@ export function heliusWsUrl(apiKey: string): string {
  */
 export const HELIUS_DOMAIN = 'helius-rpc.com';
 
-/** Exactly helius-rpc.com or a subdomain of it (not helius-rpc.com.evil.example). */
+/**
+ * Exactly helius-rpc.com or a subdomain of it (not helius-rpc.com.evil.example). A
+ * trailing dot (`mainnet.helius-rpc.com.`) is refused: the CSP may not match it.
+ */
 export function isHeliusHost(hostname: string): boolean {
-  const host = hostname.toLowerCase().replace(/\.$/u, '');
+  const host = hostname.toLowerCase();
   return host === HELIUS_DOMAIN || host.endsWith(`.${HELIUS_DOMAIN}`);
 }
 

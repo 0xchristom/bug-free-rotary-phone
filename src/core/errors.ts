@@ -26,6 +26,8 @@ export const ERROR_MESSAGES = {
     'Ustawienia są nieprawidłowe. Popraw zaznaczone pola i spróbuj ponownie. Nic nie zostało zapisane.',
   RPC_UNAVAILABLE:
     'Nie udało się odczytać danych z sieci Solana (ani przez Helius, ani przez publiczny RPC). Spróbuj ponownie za chwilę.',
+  NOT_A_TOKEN_MINT:
+    'Podany adres nie jest mintem tokenu (SPL Token ani Token-2022). Sprawdź adres tokenu.',
   HELIUS_KEY_MISSING: 'Brak klucza API Helius. Dodaj go w Ustawieniach, aby odczytać salda.',
   VAULT_LOCKED: 'Plik floty jest zablokowany. Odblokuj go hasłem, aby kontynuować.',
   VAULT_TIMEOUT: 'Sejf z kluczami nie odpowiedział w wyznaczonym czasie. Spróbuj ponownie.',

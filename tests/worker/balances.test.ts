@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { base64 } from '@scure/base';
 import {
   SOLANA_ERROR__RPC__TRANSPORT_HTTP_ERROR,
   SolanaError,
@@ -218,5 +220,109 @@ describe('refreshBalances in the vault worker', () => {
     expect(status.locked).toBe(true);
     release();
     expect(await pending).toBe('VAULT_LOCKED');
+  });
+});
+
+describe('refreshBalances with a token mint (BUNNDLY-13)', () => {
+  interface Stored {
+    readonly owner: string;
+    readonly data: string;
+  }
+  const fixture = JSON.parse(
+    readFileSync(new URL('../fixtures/token-accounts.mainnet.json', import.meta.url), 'utf8'),
+  ) as {
+    spl: { mint: string };
+    token2022: { mint: string };
+    fundedBeforeCreation: { owner: string; ata: string };
+    accounts: Record<string, Stored | null>;
+  };
+
+  /** Serves the stored mainnet accounts (honouring dataSlice); everything else is missing. */
+  const fromFixture: Behaviour = (payload) => {
+    const slice = (payload.params[1] as { dataSlice?: { offset: number; length: number } })
+      .dataSlice;
+    return Promise.resolve({
+      jsonrpc: '2.0',
+      id: payload.id,
+      result: {
+        context: { slot: 1n },
+        value: payload.params[0].map((a) => {
+          const acc = fixture.accounts[a];
+          if (!acc) return null;
+          let data = base64.decode(acc.data);
+          if (slice) data = data.subarray(slice.offset, slice.offset + slice.length);
+          return {
+            lamports: 1n,
+            owner: acc.owner,
+            data: [base64.encode(data), 'base64'],
+            executable: false,
+            rentEpoch: 0n,
+            space: BigInt(data.length),
+          };
+        }),
+      },
+    });
+  };
+
+  it.each([
+    ['SPL Token', () => fixture.spl.mint, 'spl-token'],
+    ['Token-2022', () => fixture.token2022.mint, 'token-2022'],
+  ] as const)(
+    '%s mint: program, decimals and 0n for wallets without an ATA',
+    async (_l, mint, program) => {
+      const h = createVaultHandler({ chain: network({ [HELIUS_URL]: fromFixture }).chain });
+      await fleet(h);
+      const res = (await h.handle({ type: 'refreshBalances', mint: mint() })) as VaultBalances;
+      expect(res.token).toEqual({
+        mint: mint(),
+        program,
+        decimals: 6,
+        balances: [
+          { index: 0, amount: 0n },
+          { index: 1, amount: 0n },
+          { index: 2, amount: 0n },
+        ],
+      });
+      const text = JSON.stringify(res, (_k, v: unknown) =>
+        typeof v === 'bigint' ? v.toString() : v,
+      );
+      expect(text).not.toContain(KEY);
+      expect(text).not.toContain('helius-rpc');
+    },
+  );
+
+  it('an ATA funded before creation: SOL balances come back and the token is 0n', async () => {
+    const h = createVaultHandler({ chain: network({ [HELIUS_URL]: fromFixture }).chain });
+    await fleet(h); // wallet 0 of the "abandon … about" mnemonic owns that ATA
+    expect(h.inspect().unlocked?.publicWallets[0]?.address).toBe(
+      fixture.fundedBeforeCreation.owner,
+    );
+    const res = (await h.handle({
+      type: 'refreshBalances',
+      mint: fixture.token2022.mint,
+    })) as VaultBalances;
+    expect(res.balances).toHaveLength(3);
+    expect(res.token?.balances).toEqual([
+      { index: 0, amount: 0n },
+      { index: 1, amount: 0n },
+      { index: 2, amount: 0n },
+    ]);
+  });
+
+  it('a mint that is not a token mint gives NOT_A_TOKEN_MINT', async () => {
+    const h = createVaultHandler({ chain: network({ [HELIUS_URL]: fromFixture }).chain });
+    await fleet(h);
+    expect(
+      await codeOf(h.handle({ type: 'refreshBalances', mint: '11111111111111111111111111111111' })),
+    ).toBe('NOT_A_TOKEN_MINT');
+  });
+
+  it('a non-string mint is a bad request; without a mint there is no token part', async () => {
+    const net = network();
+    const h = createVaultHandler({ chain: net.chain });
+    await fleet(h);
+    expect(await codeOf(h.handle({ type: 'refreshBalances', mint: 5 }))).toBe('INTERNAL_ERROR');
+    expect(net.urls).toEqual([]);
+    expect('token' in (await refresh(h))).toBe(false);
   });
 });

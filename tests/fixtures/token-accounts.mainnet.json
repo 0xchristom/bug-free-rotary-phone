@@ -1,0 +1,84 @@
+{
+  "_comment": "Mainnet accounts read through Helius RPC (getMultipleAccounts, encoding base64, commitment confirmed) at slot 452673384 on 2026-10-02 for BUNNDLY-13. ATAs were derived with src/chain/tokens.ts. No API key in this file.",
+  "source": "https://mainnet.helius-rpc.com (getMultipleAccounts)",
+  "slot": 452673384,
+  "spl": {
+    "mint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+    "program": "spl-token",
+    "owner": "5gUuDFHswKi2QMA1qJHf6FEVhNCrHnyAdfWniMaUUPE4",
+    "ata": "3Tn7BAWv282J1sH1pqF9gtCdaorRFoVMcTpgCqwPEBvf"
+  },
+  "token2022": {
+    "mint": "2b1kV6DkPAnxd5ixfnxCpjxmKwqjjaYmCZfHsFu24GXo",
+    "program": "token-2022",
+    "owner": "5gUuDFHswKi2QMA1qJHf6FEVhNCrHnyAdfWniMaUUPE4",
+    "ata": "47od2TPRvqJipfPVWZdyenLEngPw8hC36nDxiLyvGsEP"
+  },
+  "missing": {
+    "owner": "3euCsbWSFbqgx1DbqsN99ySs2XXg4Z6Wm4Vc3ExbWstJ",
+    "mint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+    "ata": "HyPmLPSyJxtHC6f2FF4VGtTnxBmMbeENzDAWhvPjVM3Y"
+  },
+  "accounts": {
+    "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v": {
+      "owner": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+      "lamports": "535325803497",
+      "data": "AQAAAJj+huiNm+Lqi8HMpIeLKYjCQPUrhCS/tA7Rot3LXhmb8nPKGK0THgAGAQEAAABicKqKWcWUBbRShshncubNEm6bil06OFNtN/e0FOi2Zw==",
+      "executable": false,
+      "space": 82
+    },
+    "2b1kV6DkPAnxd5ixfnxCpjxmKwqjjaYmCZfHsFu24GXo": {
+      "owner": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+      "lamports": "2078412093",
+      "data": "AQAAAGyRqkllkBL4q+lh7CS2EHSSZUdTL/CU7VtpOYLbmHMTNNLxaMSjAgAGAQEAAAAXhTJh72q4Uypn8FOGWq0xKT/PB88SCrW5oVcGVI3AKwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQMAIAAXhTJh72q4Uypn8FOGWq0xKT/PB88SCrW5oVcGVI3AKwwAIAAXhTJh72q4Uypn8FOGWq0xKT/PB88SCrW5oVcGVI3AKwEAbAAXhTJh72q4Uypn8FOGWq0xKT/PB88SCrW5oVcGVI3AKxeFMmHvarhTKmfwU4ZarTEpP88HzxIKtbmhVwZUjcArAAAAAAAAAABdAgAAAAAAAAAAAAAAAAAAAABdAgAAAAAAAAAAAAAAAAAAAAAEAEEAF4UyYe9quFMqZ/BThlqtMSk/zwfPEgq1uaFXBlSNwCsAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAIEAF4UyYe9quFMqZ/BThlqtMSk/zwfPEgq1uaFXBlSNwCscN+ZDO3ME3YJzeuQNm4vzxJ9bDmxJqNUzKLPlBpAcVwEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADgBAABeFMmHvarhTKmfwU4ZarTEpP88HzxIKtbmhVwZUjcArAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAASAEAAF4UyYe9quFMqZ/BThlqtMSk/zwfPEgq1uaFXBlSNwCsXkkg7bIoqh7dHHYFPlZH5OVyECpzj2fTVun06S4p0nhMArgAXhTJh72q4Uypn8FOGWq0xKT/PB88SCrW5oVcGVI3AKxeSSDtsiiqHt0cdgU+Vkfk5XIQKnOPZ9NW6fTpLinSeCgAAAFBheVBhbCBVU0QFAAAAUFlVU0RPAAAAaHR0cHM6Ly90b2tlbi1tZXRhZGF0YS5wYXhvcy5jb20vcHl1c2RfbWV0YWRhdGEvcHJvZC9zb2xhbmEvcHl1c2RfbWV0YWRhdGEuanNvbgAAAAA=",
+      "executable": false,
+      "space": 866
+    },
+    "3Tn7BAWv282J1sH1pqF9gtCdaorRFoVMcTpgCqwPEBvf": {
+      "owner": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+      "lamports": "2039280",
+      "data": "xvp6877brTo9ZfNqq8l0MbG75MLS9uDkfKYCA0UvXWFFi/I0FGzJhzaVTgA3b2QNc+2tY8g3m2Wt21uCb9LjFWQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "executable": false,
+      "space": 165
+    },
+    "47od2TPRvqJipfPVWZdyenLEngPw8hC36nDxiLyvGsEP": {
+      "owner": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+      "lamports": "2192400",
+      "data": "F5JIO2yKKoe3Rx2BT5WR+TlchAqc49n01bp9OkuKdJ5Fi/I0FGzJhzaVTgA3b2QNc+2tY8g3m2Wt21uCb9LjFcssoI3zZQEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgcAAAACAAgAAAAAAAAAAAAPAAEAAA==",
+      "executable": false,
+      "space": 187
+    },
+    "HyPmLPSyJxtHC6f2FF4VGtTnxBmMbeENzDAWhvPjVM3Y": null,
+    "5gUuDFHswKi2QMA1qJHf6FEVhNCrHnyAdfWniMaUUPE4": {
+      "owner": "11111111111111111111111111111111",
+      "lamports": "452650716785407",
+      "data": "",
+      "executable": false,
+      "space": 0
+    },
+    "AEcFjuNWuG77oVT5rxhLmpKomq3tDKo2qzr9SyDwkEA4": {
+      "owner": "11111111111111111111111111111111",
+      "lamports": "650240",
+      "data": "",
+      "executable": false,
+      "space": 0
+    }
+  },
+  "expected": {
+    "_comment": "Independent values from Helius jsonParsed at slot 452673424 ; the tests check that our decoding of the base64 snapshot gives these decimals and amounts.",
+    "splDecimals": 6,
+    "token2022Decimals": 6,
+    "splAtaAmount": "100",
+    "token2022AtaAmount": "393571704253643",
+    "splAtaOwner": "5gUuDFHswKi2QMA1qJHf6FEVhNCrHnyAdfWniMaUUPE4",
+    "token2022AtaOwner": "5gUuDFHswKi2QMA1qJHf6FEVhNCrHnyAdfWniMaUUPE4",
+    "token2022AtaExtensions": ["immutableOwner", "transferFeeAmount", "transferHookAccount"]
+  },
+  "fundedBeforeCreation": {
+    "_comment": "Simulation only, nothing was sent: simulateTransaction (sigVerify false, replaceRecentBlockhash true) of a System transfer of 650240 lamports (getMinimumBalanceForRentExemption(0)) to the not yet created PYUSD ATA of wallet 0 of the \"abandon … about\" test mnemonic, via Helius at slot 452679627. The account state after the transfer is stored in accounts[ata].",
+    "slot": 452679627,
+    "owner": "HAgk14JpMQLgt6rVgv7cBQFJWFto5Dqxi472uT3DKpqk",
+    "mint": "2b1kV6DkPAnxd5ixfnxCpjxmKwqjjaYmCZfHsFu24GXo",
+    "ata": "AEcFjuNWuG77oVT5rxhLmpKomq3tDKo2qzr9SyDwkEA4"
+  }
+}

@@ -29,6 +29,7 @@ describe('ERROR_MESSAGES', () => {
         'VAULT_LOCKED',
         'INVALID_SETTINGS',
         'RPC_UNAVAILABLE',
+        'NOT_A_TOKEN_MINT',
         'HELIUS_KEY_MISSING',
         'VAULT_TIMEOUT',
         'INTERNAL_ERROR',
