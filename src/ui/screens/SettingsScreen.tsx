@@ -22,6 +22,7 @@ import {
 } from '../../storage/keystore-file.ts';
 import type { ApiKeyChanges, ApiKeyFlags, VaultInfo } from '../../worker/protocol.ts';
 import { formatSol, parseSol } from '../sol.ts';
+import { ConnectionTest } from '../ConnectionTest.tsx';
 import { SettingsResetNotice } from '../SettingsResetNotice.tsx';
 import { useVault } from '../vault-state.ts';
 
@@ -489,6 +490,8 @@ export function SettingsScreen({ info, storage, onUnsavedChange }: SettingsScree
           </button>
         </div>
       </form>
+
+      <ConnectionTest />
     </section>
   );
 }
