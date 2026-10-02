@@ -15,7 +15,7 @@ const codes = Object.keys(ERROR_MESSAGES) as ErrorCode[];
 
 describe('ERROR_MESSAGES', () => {
   it('contains exactly the sprint 1 codes', () => {
-    expect(codes.sort()).toEqual(
+    expect([...codes].sort()).toEqual(
       [
         'INVALID_DERIVATION_INDEX',
         'INVALID_MNEMONIC',

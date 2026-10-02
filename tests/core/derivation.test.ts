@@ -3,6 +3,7 @@ import { HDKey } from 'micro-key-producer/slip10.js';
 import { describe, expect, it } from 'vitest';
 import {
   AppError,
+  ERROR_MESSAGES,
   MAX_FLEET_SIZE,
   deriveSlip10Ed25519,
   deriveWallets,
@@ -227,6 +228,12 @@ describe('index range', () => {
     ['fromIndex 100', 100, 1],
   ])('%s → INVALID_DERIVATION_INDEX', (_label, fromIndex, count) => {
     expectAppError(() => deriveWallets(MNEMONIC_12, fromIndex, count), 'INVALID_DERIVATION_INDEX');
+  });
+
+  it('error message states the same range as MAX_FLEET_SIZE', () => {
+    const message = ERROR_MESSAGES.INVALID_DERIVATION_INDEX;
+    expect(message).toContain(`od 1 do ${String(MAX_FLEET_SIZE)}`);
+    expect(message).toContain(`od 0 do ${String(MAX_FLEET_SIZE - 1)}`);
   });
 
   it('checks the range before touching the mnemonic', () => {

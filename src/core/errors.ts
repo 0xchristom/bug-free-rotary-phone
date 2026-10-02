@@ -9,7 +9,8 @@
 /** Code → user-facing message (Polish). The keys define the ErrorCode union. */
 export const ERROR_MESSAGES = {
   INVALID_MNEMONIC: 'Nieprawidłowa fraza odzyskiwania (mnemonik). Sprawdź słowa i ich kolejność.',
-  INVALID_DERIVATION_INDEX: 'Nieprawidłowy indeks portfela. Dozwolone są liczby całkowite od 0.',
+  INVALID_DERIVATION_INDEX:
+    'Nieprawidłowy zakres portfeli. Flota może mieć od 1 do 100 portfeli (indeksy od 0 do 99).',
   PASSWORD_TOO_SHORT: 'Hasło jest za krótkie. Użyj co najmniej 12 znaków.',
   KEYSTORE_WRONG_PASSWORD_OR_CORRUPTED:
     'Nie udało się odszyfrować pliku. Hasło jest błędne albo plik jest uszkodzony.',
