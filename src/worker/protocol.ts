@@ -31,6 +31,8 @@ export type VaultRequest =
   /** Validates a keystore file and returns its public part; needs no password. */
   | { readonly type: 'preview'; readonly fileText: string }
   | { readonly type: 'unlock'; readonly fileText: string; readonly password: string }
+  /** SOL balances of the fleet via Helius (fallback: public RPC). Not user activity. */
+  | { readonly type: 'refreshBalances' }
   | { readonly type: 'lock' }
   | { readonly type: 'status' }
   | {
@@ -66,6 +68,19 @@ export interface VaultPreview {
   readonly wallets: readonly PublicWalletV1[];
 }
 
+export interface WalletBalance {
+  readonly index: number;
+  readonly lamports: bigint;
+}
+
+export interface VaultBalances {
+  readonly balances: readonly WalletBalance[];
+  /** `fallback`: Helius failed and the public RPC answered (shown in the UI). */
+  readonly source: 'helius' | 'fallback';
+  /** ISO-8601 time of the read. */
+  readonly fetchedAt: string;
+}
+
 export interface VaultStatus {
   readonly locked: boolean;
   readonly armed: boolean;
@@ -81,6 +96,7 @@ export interface VaultFileResult {
 export interface VaultResultMap {
   readonly create: VaultFileResult;
   readonly preview: VaultPreview;
+  readonly refreshBalances: VaultBalances;
   readonly unlock: VaultStatus;
   readonly lock: VaultStatus;
   readonly status: VaultStatus;

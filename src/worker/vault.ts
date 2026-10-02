@@ -11,6 +11,15 @@
  * request to sign arbitrary bytes or to export keys without the password.
  */
 import { base58 } from '@scure/base';
+import type { RpcTransport } from '@solana/kit';
+import {
+  PUBLIC_RPC_URL,
+  createBalancesRpc,
+  createHttpTransport,
+  createResilientTransport,
+  fetchSolBalances,
+  type RpcSource,
+} from '../chain/index.ts';
 import {
   API_KEY_NAMES,
   AppError,
@@ -24,6 +33,7 @@ import {
   parseKeystoreFile,
   secretKeyToBase58,
   serializeKeystoreFile,
+  heliusRpcUrl,
   validateGlobalSettings,
   wipe,
   type ApiKeyName,
@@ -37,6 +47,7 @@ import {
 import { DEFAULT_AUTO_LOCK_MS } from './protocol.ts';
 import type {
   ApiKeyFlags,
+  VaultBalances,
   VaultFileResult,
   VaultInfo,
   VaultPort,
@@ -50,9 +61,17 @@ import type {
 
 export { DEFAULT_AUTO_LOCK_MS } from './protocol.ts';
 
+export interface ChainOptions {
+  /** HTTP transport per URL; tests pass a mock. */
+  readonly createTransport?: (url: string) => RpcTransport;
+  /** Backoff sleep; tests pass an instant one. */
+  readonly sleep?: (ms: number) => Promise<void>;
+}
+
 export interface VaultOptions {
   /** Clock in ms; injectable for tests. */
   readonly now?: () => number;
+  readonly chain?: ChainOptions;
   /**
    * Inactivity before auto-lock. Overrides the fleet's `autoLockMinutes` setting (tests);
    * without it the setting applies, and 15 minutes while locked.
@@ -313,6 +332,50 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
     return false;
   };
 
+  const createTransport = options.chain?.createTransport ?? createHttpTransport;
+
+  /**
+   * Reads SOL balances with the Helius key, which never leaves the worker (D-016). Not
+   * user activity: periodic refreshes must not keep the vault unlocked.
+   */
+  const prepareRefresh = (): (() => Promise<VaultBalances>) => {
+    checkAutoLock();
+    const vault = requireUnlocked();
+    const { apiKeys } = vault;
+    const url =
+      apiKeys.heliusRpcUrl ?? (apiKeys.helius === undefined ? null : heliusRpcUrl(apiKeys.helius));
+    if (url === null) throw new AppError('HELIUS_KEY_MISSING');
+    const wallets = [...vault.publicWallets];
+    return async () => {
+      let source: RpcSource = 'helius';
+      const transport = createResilientTransport({
+        primary: createTransport(url),
+        fallback: createTransport(PUBLIC_RPC_URL),
+        ...(options.chain?.sleep ? { sleep: options.chain.sleep } : {}),
+        onSource: (s) => {
+          if (s === 'fallback') source = 'fallback';
+        },
+      });
+      let lamports: bigint[];
+      try {
+        lamports = await fetchSolBalances(
+          createBalancesRpc(transport),
+          wallets.map((w) => w.address),
+        );
+      } catch (e) {
+        // Only our own codes cross; anything else may carry the URL with the key.
+        throw isAppError(e) ? e : new AppError('RPC_UNAVAILABLE');
+      }
+      // Locked (or another fleet opened) while reading: do not hand out stale data.
+      if (unlocked !== vault) throw new AppError('VAULT_LOCKED');
+      return {
+        balances: wallets.map((w, i) => ({ index: w.index, lamports: lamports[i] ?? 0n })),
+        source,
+        fetchedAt: new Date(now()).toISOString(),
+      };
+    };
+  };
+
   const dispatch = async (
     raw: unknown,
     options: VaultHandleOptions,
@@ -399,6 +462,16 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
 
   return {
     handle(request: unknown, options: VaultHandleOptions = {}) {
+      if (isRecord(request) && request.type === 'refreshBalances') {
+        // Only the quick preparation is queued; the network read must not hold up other
+        // requests such as `lock`.
+        const prepared = tail.then(prepareRefresh);
+        tail = prepared.then(
+          () => undefined,
+          () => undefined,
+        );
+        return prepared.then((read) => read());
+      }
       const run = tail.then(() => dispatch(request, options));
       tail = run.then(
         () => undefined,

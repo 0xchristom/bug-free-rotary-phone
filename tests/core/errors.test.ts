@@ -28,6 +28,8 @@ describe('ERROR_MESSAGES', () => {
         'PASSWORD_TOO_SHORT',
         'VAULT_LOCKED',
         'INVALID_SETTINGS',
+        'RPC_UNAVAILABLE',
+        'HELIUS_KEY_MISSING',
         'VAULT_TIMEOUT',
         'INTERNAL_ERROR',
         'STORAGE_CANCELLED',

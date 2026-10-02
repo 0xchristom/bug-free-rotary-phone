@@ -280,3 +280,14 @@ legend {
 .key-field .muted {
   margin: 0.15rem 0 0.35rem;
 }
+
+.balances-bar {
+  align-items: center;
+  gap: 0.75rem;
+}
+
+td.amount {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
