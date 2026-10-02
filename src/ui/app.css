@@ -137,3 +137,68 @@ button.danger {
     width: 100%;
   }
 }
+
+.form {
+  display: grid;
+  gap: 6px;
+  max-width: 520px;
+}
+
+.form label {
+  margin-top: 10px;
+  font-weight: 600;
+}
+
+.form label.checkbox {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  font-weight: 400;
+}
+
+input[type='text'],
+input[type='password'],
+input[type='number'] {
+  font: inherit;
+  color: var(--text);
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 6px 10px;
+  width: 100%;
+}
+
+input[aria-invalid='true'] {
+  border-color: var(--danger);
+}
+
+.inline {
+  display: flex;
+  gap: 8px;
+}
+
+meter,
+progress {
+  width: 100%;
+  max-width: 520px;
+}
+
+.field-error {
+  margin: 0;
+  color: var(--danger);
+  font-size: 0.875rem;
+}
+
+.hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+
+.notice.warning {
+  border-left-color: #f5a524;
+}
+
+.notice.error {
+  border-left-color: var(--danger);
+}

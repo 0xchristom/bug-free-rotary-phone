@@ -118,6 +118,43 @@ describe('vault client ↔ handler', () => {
   });
 });
 
+describe('progress', () => {
+  it('reports scrypt progress of create in whole percent, ending at 1', async () => {
+    const [ui, worker] = portPair();
+    attachVaultHandler(worker, createVaultHandler());
+    const client = createVaultClient(ui);
+    const seen: number[] = [];
+    const result = await client.request(
+      {
+        type: 'create',
+        fleetName: 'Postep',
+        walletCount: 1,
+        password: 'correct horse battery staple',
+      },
+      { onProgress: (p) => seen.push(p) },
+    );
+    expect(result.info.wallets).toHaveLength(1);
+    expect(seen.length).toBeGreaterThan(5);
+    expect(seen.length).toBeLessThanOrEqual(101);
+    expect(seen.at(-1)).toBe(1);
+    expect(seen.every((p, i) => i === 0 || p > (seen[i - 1] ?? -1))).toBe(true);
+    expect(seen.every((p) => Number.isInteger(Math.round(p * 100)) && p >= 0 && p <= 1)).toBe(true);
+  }, 60_000);
+
+  it('ignores progress for unknown ids and does not settle the request', async () => {
+    const port = silentPort();
+    const client = createVaultClient(port);
+    let settled = false;
+    const pending = client.request({ type: 'status' }).finally(() => (settled = true));
+    port.reply({ id: 99, progress: 0.5 });
+    port.reply({ id: 1, progress: 0.5 });
+    await Promise.resolve();
+    expect(settled).toBe(false);
+    port.reply({ id: 1, ok: true, result: { locked: true, armed: false, info: null } });
+    await pending;
+  });
+});
+
 describe('worker failure', () => {
   it('rejects all pending requests at once with INTERNAL_ERROR', async () => {
     vi.useFakeTimers();
