@@ -7,6 +7,7 @@
  */
 import type {
   ApiKeyName,
+  ConnectionReport,
   ErrorCode,
   FleetSettingsV1,
   PlainExport,
@@ -43,6 +44,11 @@ export type VaultRequest =
       /** Also read this token's balance for every wallet (SPL Token or Token-2022). */
       readonly mint?: string;
     }
+  /**
+   * Connection test (SPEC 3.3): Helius HTTP and WSS, Jupiter quote without `taker`. Runs
+   * with the saved keys; the answer has statuses and times only, never a key (D-024).
+   */
+  | { readonly type: 'testConnections' }
   | { readonly type: 'lock' }
   | { readonly type: 'status' }
   | {
@@ -132,6 +138,7 @@ export interface VaultResultMap {
   readonly create: VaultFileResult;
   readonly preview: VaultPreview;
   readonly refreshBalances: VaultBalances;
+  readonly testConnections: ConnectionReport;
   readonly exportPlain: PlainExport;
   readonly unlock: VaultStatus;
   readonly lock: VaultStatus;

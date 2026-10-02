@@ -18,9 +18,13 @@ import {
   createHttpTransport,
   createResilientTransport,
   fetchSolBalances,
+  checkHeliusHttp,
+  checkHeliusWs,
   fetchTokenBalances,
   type RpcSource,
+  type WebSocketFactory,
 } from '../chain/index.ts';
+import { checkJupiterQuote } from '../jupiter/index.ts';
 import {
   API_KEY_NAMES,
   AppError,
@@ -35,11 +39,15 @@ import {
   parseKeystoreFile,
   secretKeyToBase58,
   serializeKeystoreFile,
+  CONNECTION_TEST_TIMEOUT_MS,
   heliusRpcUrl,
+  heliusWsUrl,
   validateGlobalSettings,
   wipe,
   type ApiKeyName,
   type ApiKeysV1,
+  type ConnectionReport,
+  type FetchLike,
   type FleetSettingsV1,
   type KeystoreSecretsV1,
   type KeystoreSession,
@@ -70,10 +78,20 @@ export interface ChainOptions {
   readonly sleep?: (ms: number) => Promise<void>;
 }
 
+/** Network access of the connection test; tests pass mocks. */
+export interface NetOptions {
+  readonly fetch?: FetchLike;
+  readonly createWebSocket?: WebSocketFactory;
+  readonly timeoutMs?: number;
+  /** Monotonic clock in ms for measured times. */
+  readonly clock?: () => number;
+}
+
 export interface VaultOptions {
   /** Clock in ms; injectable for tests. */
   readonly now?: () => number;
   readonly chain?: ChainOptions;
+  readonly net?: NetOptions;
   /**
    * Inactivity before auto-lock. Overrides the fleet's `autoLockMinutes` setting (tests);
    * without it the setting applies, and 15 minutes while locked.
@@ -389,6 +407,42 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
     };
   };
 
+  /**
+   * Connection test (BUNNDLY-16). Like refreshBalances, only reading the keys is queued;
+   * the three checks run in parallel outside the queue and never throw. A click on the
+   * button is user activity.
+   */
+  const prepareConnectionTest = (): (() => Promise<ConnectionReport>) => {
+    checkAutoLock();
+    const vault = requireUnlocked();
+    touch();
+    const { apiKeys } = vault;
+    const rpcUrl =
+      apiKeys.heliusRpcUrl ?? (apiKeys.helius === undefined ? null : heliusRpcUrl(apiKeys.helius));
+    const wsUrl =
+      apiKeys.heliusWsUrl ?? (apiKeys.helius === undefined ? null : heliusWsUrl(apiKeys.helius));
+    const jupiterKey = apiKeys.jupiter ?? null;
+    const net = options.net ?? {};
+    const fetchFn: FetchLike = net.fetch ?? ((url, init) => globalThis.fetch(url, init));
+    const createWebSocket: WebSocketFactory = net.createWebSocket ?? ((url) => new WebSocket(url));
+    const timeoutMs = net.timeoutMs ?? CONNECTION_TEST_TIMEOUT_MS;
+    const clock = net.clock ?? (() => performance.now());
+    const missing = { ok: false, ms: null, problem: 'KEY_MISSING', httpStatus: null } as const;
+    return async () => {
+      const [heliusHttp, heliusWs, jupiter] = await Promise.all([
+        rpcUrl === null
+          ? { ...missing, slot: null }
+          : checkHeliusHttp({ url: rpcUrl, fetch: fetchFn, timeoutMs, clock }),
+        wsUrl === null
+          ? { ...missing, connectMs: null, firstEventMs: null, slot: null }
+          : checkHeliusWs({ url: wsUrl, createWebSocket, timeoutMs, clock }),
+        checkJupiterQuote({ apiKey: jupiterKey, fetch: fetchFn, timeoutMs, clock }),
+      ]);
+      if (unlocked !== vault) throw new AppError('VAULT_LOCKED');
+      return { heliusHttp, heliusWs, jupiter, testedAt: new Date(now()).toISOString() };
+    };
+  };
+
   const dispatch = async (
     raw: unknown,
     options: VaultHandleOptions,
@@ -493,6 +547,14 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
 
   return {
     handle(request: unknown, options: VaultHandleOptions = {}) {
+      if (isRecord(request) && request.type === 'testConnections') {
+        const prepared = tail.then(() => prepareConnectionTest());
+        tail = prepared.then(
+          () => undefined,
+          () => undefined,
+        );
+        return prepared.then((run) => run());
+      }
       if (isRecord(request) && request.type === 'refreshBalances') {
         // Only the quick preparation is queued; the network read must not hold up other
         // requests such as `lock`.
