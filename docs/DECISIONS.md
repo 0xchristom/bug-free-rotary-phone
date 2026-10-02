@@ -632,3 +632,10 @@ Rejestr decyzji i rozbieżności z dokumentacją zewnętrzną. Nowe wpisy dopisu
   - `effectiveJupiterPlan(global, maKluczJupitera)` zwraca plan z Ustawień tylko wtedy, gdy klucz Jupitera jest zapisany. Bez klucza zwraca Keyless: budżet `/order` 27 na 60 s, `/execute` 18 na sekundę.
   - `startBuy` bierze limitery dla tego planu.
   - Podsumowanie przed startem (BUNNDLY-27) pokazuje plan, który faktycznie obowiązuje.
+
+## D-034: Sprawdzanie łańcucha czyta też transakcje v1
+
+- Data: 2026-10-02
+- Zadanie: poprawka wymagana w review PR #22 (BUNNDLY-23)
+- Kontekst: D-030 (sygnatura nieznana: `getTransaction` każdego kandydata z historii portfela). Około 10% transakcji na mainnecie to v1 (D-026). Z `maxSupportedTransactionVersion: 0` Helius odpowiada wtedy błędem -32015. Sprawdzenie RFQ nie mogło się rozstrzygnąć i kończyło jako UNKNOWN, nawet gdy nasza transakcja (v0) leżała obok.
+- Decyzja: `getTransaction` w sprawdzaniu łańcucha używa `maxSupportedTransactionVersion: 1`. kit 8.4 dekoduje v1 poprawnie (Andy sprawdził na prawdziwej transakcji). Kontrole przed podpisem nadal przyjmują tylko v0 (D-028). Test: fałszywe RPC odpowiada -32015 dla zapytania z wersją 0.
