@@ -1,9 +1,15 @@
 name: CI
 
+# Automatic triggers are paused until further notice: the GitHub Actions minutes ran out
+# (Krystian's decision, 2026-10-02; docs/DECISIONS.md D-012). Run locally before every PR:
+#   npm ci && npm run lint && npm run typecheck && npm test && npm run build \
+#     && npm run format:check && npm audit --audit-level=high
+# To restore (D-007), replace `workflow_dispatch:` below with:
+#   pull_request:
+#   push:
+#     branches: [main]
 on:
-  pull_request:
-  push:
-    branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: read

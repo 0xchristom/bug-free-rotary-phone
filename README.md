@@ -21,6 +21,14 @@ Wersja produkcyjna (statyczny build) lokalnie:
 npm run build && npm run preview
 ```
 
+## Kontrole przed PR
+
+> **CI w GitHub Actions jest wstrzymane do odwołania** (brak minut, `docs/DECISIONS.md` D-012). Workflow da się uruchomić tylko ręcznie. Przed każdym PR uruchom lokalnie i wklej wynik do opisu PR:
+
+```bash
+npm ci && npm run lint && npm run typecheck && npm test && npm run build && npm run format:check && npm audit --audit-level=high
+```
+
 ## Skrypty
 
 | Skrypt                 | Co robi                                    |
