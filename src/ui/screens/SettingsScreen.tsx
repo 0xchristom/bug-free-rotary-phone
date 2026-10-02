@@ -24,18 +24,10 @@ import type { ApiKeyChanges, ApiKeyFlags, VaultInfo } from '../../worker/protoco
 import { formatSol, parseSol } from '../sol.ts';
 import { ConnectionTest } from '../ConnectionTest.tsx';
 import { SettingsResetNotice } from '../SettingsResetNotice.tsx';
+import { PLAN_LABELS } from '../plan-labels.ts';
 import { useVault } from '../vault-state.ts';
 
 type KeyName = keyof ApiKeyFlags;
-
-const PLAN_LABELS: Record<JupiterPlan, string> = {
-  keyless: 'Bez klucza (Keyless)',
-  free: 'Free',
-  developer: 'Developer',
-  launch: 'Launch',
-  pro: 'Pro',
-  custom: 'Własny',
-};
 
 const EXPLORER_LABELS: Record<Explorer, string> = {
   solscan: 'Solscan',

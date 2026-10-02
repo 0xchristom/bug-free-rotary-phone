@@ -1,7 +1,19 @@
 import { memo } from 'react';
+import type { Explorer } from '../core/settings.ts';
+import { formatPrice } from '../executor/oplog.ts';
+import {
+  FAIL_MESSAGES,
+  SKIP_MESSAGES,
+  UNKNOWN_MESSAGES,
+  type WalletReason,
+  type WalletState,
+} from '../executor/states.ts';
+import { VERIFY_MESSAGES, type VerifyStatus } from '../executor/verify.ts';
 import { AddressQr } from './AddressQr.tsx';
+import { transactionUrl } from './explorer.ts';
 import { rowState } from './fleet-math.ts';
-import { formatSol, parseSolAmount } from './sol.ts';
+import { formatSol, formatUnits, parseSolAmount } from './sol.ts';
+import type { BuyRow } from './use-buy.ts';
 
 export interface FleetRowData {
   readonly index: number;
@@ -25,6 +37,149 @@ interface RowProps extends FleetRowData {
   readonly onQr: (index: number) => void;
   /** Test hook: called on every render of the row. */
   readonly probe?: ((index: number) => void) | undefined;
+  /** Purchase columns are shown once a buy started (BUNNDLY-27). */
+  readonly showBuy: boolean;
+  /** This wallet's progress; the same object until its next event (memo). */
+  readonly buy: BuyRow | null;
+  readonly decimals: number | null;
+  readonly explorer: Explorer;
+}
+
+const STATE_LABELS: Record<WalletState, string> = {
+  IDLE: 'Czeka',
+  QUEUED: 'W kolejce',
+  QUOTING: 'Wycena',
+  SIGNING: 'Podpis',
+  SUBMITTED: 'Wysłano',
+  CONFIRMED: 'Kupiono',
+  FAILED: 'Nieudany',
+  UNKNOWN: 'Nieznany',
+  SKIPPED: 'Pominięty',
+};
+
+function stateLabel(row: BuyRow): string {
+  if (row.state === 'UNKNOWN' && row.reason?.code === 'EXECUTE_NO_ANSWER') {
+    return 'Sprawdzam łańcuch';
+  }
+  if (row.state === 'SKIPPED' && row.reason?.code === 'DRY_RUN') return 'DRY-RUN';
+  return STATE_LABELS[row.state];
+}
+
+/** Colour class; the text says the same, colour is never the only signal. */
+function stateTone(row: BuyRow): string {
+  if (row.state === 'CONFIRMED') return 'ok';
+  if (row.state === 'FAILED') return 'danger';
+  if (row.state === 'UNKNOWN') return 'warning';
+  if (row.state === 'SKIPPED') return row.reason?.code === 'DRY_RUN' ? 'info' : 'muted';
+  return 'busy';
+}
+
+function reasonText(reason: WalletReason | null): string | null {
+  if (reason === null) return null;
+  switch (reason.kind) {
+    case 'SKIPPED':
+      return SKIP_MESSAGES[reason.code];
+    case 'FAILED':
+      return FAIL_MESSAGES[reason.code];
+    case 'UNKNOWN':
+      return UNKNOWN_MESSAGES[reason.code];
+  }
+}
+
+const VERIFY_LABELS: Record<VerifyStatus, string> = {
+  MATCH: 'potwierdzone',
+  INCREASED: 'saldo wzrosło',
+  MISMATCH: 'inna ilość',
+  NO_INCREASE: 'brak wzrostu',
+  UNVERIFIABLE: 'nie sprawdzono',
+};
+
+function seconds(ms: number): string {
+  return `${(ms / 1000).toFixed(1).replace('.', ',')} s`;
+}
+
+function tokens(amount: bigint, decimals: number | null): string {
+  return decimals === null ? amount.toString() : formatUnits(amount, decimals);
+}
+
+function BuyCells({
+  buy,
+  decimals,
+  explorer,
+}: {
+  readonly buy: BuyRow | null;
+  readonly decimals: number | null;
+  readonly explorer: Explorer;
+}) {
+  if (buy === null) {
+    return (
+      <>
+        <td>–</td>
+        <td className="amount">–</td>
+        <td className="amount">–</td>
+        <td className="amount">–</td>
+        <td className="amount">–</td>
+        <td className="amount">–</td>
+        <td>–</td>
+        <td>–</td>
+      </>
+    );
+  }
+  const { result, quote } = buy;
+  const received = result?.totalOutputAmount ?? null;
+  const spent = result?.totalInputAmount ?? null;
+  const price =
+    received !== null && spent !== null && decimals !== null
+      ? formatPrice(spent, received, decimals)
+      : null;
+  // DRY-RUN says it in the badge already; other reasons explain the state.
+  const why = buy.reason?.code === 'DRY_RUN' ? null : reasonText(buy.reason);
+  const url = result?.signature ? transactionUrl(explorer, result.signature) : null;
+  const warn = buy.verify === 'MISMATCH' || buy.verify === 'NO_INCREASE';
+  return (
+    <>
+      <td>
+        <span className={`badge state ${stateTone(buy)}`}>{stateLabel(buy)}</span>
+        {why && <p className="reason">{why}</p>}
+      </td>
+      <td className="amount">{seconds(buy.sinceStartMs)}</td>
+      <td className="amount">{buy.attempt}</td>
+      <td className="amount">
+        {received !== null ? (
+          tokens(received, decimals)
+        ) : quote && buy.reason?.code === 'DRY_RUN' ? (
+          <span className="muted" title="Wycena z /order w trybie DRY-RUN">
+            ≈ {tokens(quote.outAmount, decimals)}
+          </span>
+        ) : (
+          '–'
+        )}
+      </td>
+      <td className="amount">{spent === null ? '–' : formatSol(spent)}</td>
+      <td className="amount">{price ?? '–'}</td>
+      <td>
+        {buy.verify === null ? (
+          '–'
+        ) : (
+          <span
+            className={`badge ${warn ? 'danger' : buy.verify === 'UNVERIFIABLE' ? 'unverified' : 'ok'}`}
+            title={VERIFY_MESSAGES[buy.verify]}
+          >
+            {VERIFY_LABELS[buy.verify]}
+          </span>
+        )}
+      </td>
+      <td>
+        {url ? (
+          <a href={url} target="_blank" rel="noopener noreferrer">
+            Transakcja
+          </a>
+        ) : (
+          '–'
+        )}
+      </td>
+    </>
+  );
 }
 
 /**
@@ -89,6 +244,7 @@ const FleetRow = memo(function FleetRow(p: RowProps) {
           }}
         />
       </td>
+      {p.showBuy && <BuyCells buy={p.buy} decimals={p.decimals} explorer={p.explorer} />}
       <td>
         <button
           type="button"
@@ -129,10 +285,18 @@ export interface FleetTableProps {
   readonly onCopy: RowProps['onCopy'];
   readonly onQr: RowProps['onQr'];
   readonly probe?: RowProps['probe'];
+  /** Progress of the current buy, or null before the first one (BUNNDLY-27). */
+  readonly buy?: ReadonlyMap<number, BuyRow> | null;
+  /** Decimals of the bought token. */
+  readonly buyDecimals?: number | null;
+  readonly explorer?: Explorer;
 }
 
-/** Fleet table (SPEC 3.2) without the purchase columns (sprint 3). */
+/** Fleet table (SPEC 3.2), with the purchase columns once a buy started (SPEC 3.6). */
 export function FleetTable(t: FleetTableProps) {
+  const showBuy = t.buy !== undefined && t.buy !== null;
+  const decimals = t.buyDecimals ?? null;
+  const explorer = t.explorer ?? 'solscan';
   return (
     <div className="table-wrap">
       <table className="wallets">
@@ -150,6 +314,18 @@ export function FleetTable(t: FleetTableProps) {
             <th scope="col">Rezerwa (SOL)</th>
             <th scope="col">{t.tokenLabel ?? 'Token'}</th>
             <th scope="col">Aktywny</th>
+            {showBuy && (
+              <>
+                <th scope="col">Status zakupu</th>
+                <th scope="col">Czas</th>
+                <th scope="col">Próby</th>
+                <th scope="col">Kupione</th>
+                <th scope="col">Wydano (SOL)</th>
+                <th scope="col">Cena (SOL/token)</th>
+                <th scope="col">Łańcuch</th>
+                <th scope="col">Transakcja</th>
+              </>
+            )}
             <th scope="col">Akcje</th>
           </tr>
         </thead>
@@ -172,6 +348,10 @@ export function FleetTable(t: FleetTableProps) {
               onCopy={t.onCopy}
               onQr={t.onQr}
               probe={t.probe}
+              showBuy={showBuy}
+              buy={t.buy?.get(w.index) ?? null}
+              decimals={decimals}
+              explorer={explorer}
             />
           ))}
         </tbody>

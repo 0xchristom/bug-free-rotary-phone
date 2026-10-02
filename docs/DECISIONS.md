@@ -623,6 +623,44 @@ Rejestr decyzji i rozbieżności z dokumentacją zewnętrzną. Nowe wpisy dopisu
     - panel „Dziennik operacji” na ekranie Flota pokazuje liczbę wpisów i ma przyciski „Pobierz CSV” i „Pobierz JSON” (pobranie jak w BUNNDLY-11). BUNNDLY-27 przeniesie go do widoku postępu.
 - Konsekwencje: BUNNDLY-27 pokazuje cenę i ostrzeżenia `MISMATCH`, `NO_INCREASE` i `UNVERIFIABLE` przy portfelu.
 
+## D-032: UI trybu A i widok postępu
+
+- Data: 2026-10-02
+- Zadanie: BUNNDLY-27
+- Kontekst: SPEC 1, 3.4 (tryb A), 3.6 i 7; D-022 (pole mintu), D-029 do D-031.
+- Decyzja:
+  - **Start zakupu:**
+    - mint do zakupu to ten, który worker już sprawdził: jego saldo tokenu jest na ekranie po „Pokaż saldo tokenu”, a zły adres daje `NOT_A_TOKEN_MINT`;
+    - „Kupuj teraz” jest aktywny tylko przy takim mincie, co najmniej jednym gotowym portfelu, zapisanej tabeli (zakup bierze ustawienia z sejfu) i, w trybie na żywo, z kluczem Helius;
+    - podsumowanie pokazuje też limity Jupitera, które faktycznie obowiązują (Keyless bez klucza, D-033);
+    - nie dodaję drugiego potwierdzenia przy samym starcie. Potwierdzenie jest przy przejściu na tryb na żywo, a w DRY-RUN nic nie jest wysyłane.
+  - **Tryb:**
+    - etykieta DRY-RUN (zielona) albo NA ŻYWO (czerwona) jest stale przy panelu zakupu;
+    - przejście na tryb na żywo wymaga potwierdzenia w dialogu (`role="alertdialog"`, w treści strony, bez `window.confirm`), który podaje łączną kwotę i liczbę gotowych portfeli;
+    - powrót do DRY-RUN nie wymaga potwierdzenia;
+    - tryb jest ustawieniem floty (D-029), więc zmiana zapisuje się w sejfie, a ekran proponuje zapis pliku floty jak przy innych ustawieniach;
+    - w Ustawieniach pole wyboru też wymaga potwierdzenia (BUNNDLY-21).
+  - **Postęp:**
+    - zdarzenia z workera trafiają do bufora i są stosowane raz na klatkę (`requestAnimationFrame`, a bez niego co 16 ms);
+    - czysty reducer (`reduceBuy`) podmienia obiekt wiersza tylko dla portfela, który dostał zdarzenie, więc pozostałe wiersze tabeli (`memo`) się nie przerysowują (test na 100 portfelach);
+    - widok zakupu i dziennik żyją w `App`, więc przetrwają zmianę ekranu w trakcie zakupu;
+    - dziennik jest w widoku postępu, pod paskiem;
+    - tokeny, cenę i dziennik formatuję wg `decimals` mintu z zakupu. `App` pamięta `decimals` każdego mintu odczytanego przez worker w tej sesji, więc inny mint wpisany później w pole niczego nie zmienia (uwaga z review BUNNDLY-25).
+  - **Liczniki:**
+    - potwierdzone;
+    - w trakcie: kolejka, wycena, podpis, wysłane oraz UNKNOWN w trakcie sprawdzania łańcucha;
+    - nieudane albo pominięte: FAILED, SKIPPED (także DRY-RUN) i UNKNOWN po limicie;
+    - czasy od startu do pierwszego i do ostatniego CONFIRMED.
+  - **Kolumny zakupu** pojawiają się w tabeli floty dopiero po pierwszym zakupie w sesji:
+    - status jako tekst z kolorem i powodem po polsku;
+    - czas, próby, kupione tokeny (w DRY-RUN „≈” z wyceny), wydany SOL, cena, wynik sprawdzenia saldem tokenu;
+    - link do transakcji w eksploratorze z Ustawień (`solscan.io`, `orb.helius.dev`, `explorer.solana.com`), budowany tylko z poprawnej sygnatury base58, z `rel="noopener noreferrer"`.
+  - **STOP:** duży czerwony przycisk przez cały zakup. Po kliknięciu pokazuje „Zatrzymywanie…” do końca przebiegu.
+  - **Karta otwarta:**
+    - w trakcie zakupu widać ostrzeżenie, a zamknięcie lub przeładowanie karty wywołuje pytanie przeglądarki (`beforeunload`);
+    - koniec przebiegu (zdarzenie `finished`) od razu odświeża status sejfu.
+- Konsekwencje: tryb B (sprint 4) użyje tego samego widoku postępu.
+
 ## D-033: Bez klucza Jupitera obowiązują limity Keyless
 
 - Data: 2026-10-02

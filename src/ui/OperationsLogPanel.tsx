@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import { toUserMessage } from '../core/errors.ts';
 import { logFileName, toCsv, toJson } from '../executor/oplog.ts';
 import { downloadTextFile, type StorageEnv } from '../storage/keystore-file.ts';
@@ -20,6 +20,7 @@ export function OperationsLogPanel({
   now = () => Date.now(),
 }: OperationsLogPanelProps) {
   const size = useOperationsLogSize(log);
+  const titleId = useId();
   const [error, setError] = useState<string | null>(null);
 
   const save = (format: 'csv' | 'json'): void => {
@@ -39,8 +40,8 @@ export function OperationsLogPanel({
   };
 
   return (
-    <section aria-labelledby="oplog-title">
-      <h3 id="oplog-title">Dziennik operacji</h3>
+    <section aria-labelledby={titleId}>
+      <h4 id={titleId}>Dziennik operacji</h4>
       <p className="muted">
         {size === 0
           ? 'Brak wpisów. Każda zmiana stanu portfela w zakupie trafia tutaj.'

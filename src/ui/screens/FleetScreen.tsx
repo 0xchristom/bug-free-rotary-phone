@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useId, useMemo, useState, type SyntheticEvent } from 'react';
 import { toUserMessage } from '../../core/errors.ts';
+import { effectiveJupiterPlan } from '../../core/settings.ts';
 import {
   saveKeystoreFile,
   supportsDirectoryPicker,
@@ -7,6 +8,7 @@ import {
   type StorageEnv,
 } from '../../storage/keystore-file.ts';
 import type { VaultInfo } from '../../worker/protocol.ts';
+import { BuyPanel } from '../BuyPanel.tsx';
 import { ExportDialog } from '../ExportDialog.tsx';
 import { FleetBulk, FleetSummaryBar } from '../FleetBulk.tsx';
 import { shareOf, summarize } from '../fleet-math.ts';
@@ -16,6 +18,7 @@ import { OperationsLogPanel } from '../OperationsLogPanel.tsx';
 import { SettingsResetNotice } from '../SettingsResetNotice.tsx';
 import { formatSol, formatUnits, parseSolAmount } from '../sol.ts';
 import { useBalances } from '../use-balances.ts';
+import { EMPTY_BUY, type BuyView } from '../use-buy.ts';
 import { useVault } from '../vault-state.ts';
 
 const MAX_WALLETS = 100;
@@ -47,6 +50,11 @@ export interface FleetScreenProps {
   readonly rowProbe?: (index: number) => void;
   /** Session log of buys (BUNNDLY-25); the panel is hidden without it. */
   readonly operationsLog?: OperationsLog;
+  /** Progress of the current or last buy (BUNNDLY-27), kept by the app across screens. */
+  readonly buyView?: BuyView;
+  /** Decimals of every mint the worker read this session (the bought one may differ from the field). */
+  readonly mintDecimals?: ReadonlyMap<string, number>;
+  readonly onMintDecimals?: (mint: string, decimals: number) => void;
 }
 
 type Drafts = Readonly<Record<number, string>>;
@@ -78,6 +86,9 @@ export function FleetScreen({
   balanceRefreshMs,
   rowProbe,
   operationsLog,
+  buyView = EMPTY_BUY,
+  mintDecimals,
+  onMintDecimals,
 }: FleetScreenProps) {
   const { client, refresh } = useVault();
   const [mintText, setMintText] = useState('');
@@ -198,6 +209,49 @@ export function FleetScreen({
       };
     }),
   );
+
+  // The worker checked this mint (its token balance is on screen): only then can a buy start.
+  const checkedMint = balances.token !== null && balances.token.mint === mint ? mint : null;
+  const { global } = info.settings;
+  const hasRpc = info.apiKeys.helius || info.apiKeys.heliusRpcUrl;
+  const buyBlocked = tableDirty
+    ? 'Najpierw zapisz zmiany w tabeli: zakup używa ustawień zapisanych w sejfie.'
+    : !global.dryRun && !hasRpc
+      ? 'Tryb na żywo wymaga klucza Helius (Ustawienia).'
+      : null;
+  const token = balances.token;
+  useEffect(() => {
+    if (token) onMintDecimals?.(token.mint, token.decimals);
+  }, [token, onMintDecimals]);
+  // Decimals of the mint the buy used, not of whatever the mint field shows now.
+  const buyDecimals =
+    buyView.run === null
+      ? null
+      : (mintDecimals?.get(buyView.run.mint) ??
+        (token?.mint === buyView.run.mint ? token.decimals : null));
+
+  /** DRY-RUN or live mode: saved in the vault, then the fleet file waits to be saved. */
+  const setDryRun = async (dryRun: boolean): Promise<void> => {
+    const result = await client.request({
+      type: 'saveSettings',
+      settings: {
+        maxSpend: info.settings.maxSpend,
+        active: info.settings.active,
+        global: { ...global, dryRun },
+      },
+    });
+    setPhase({
+      kind: 'unsaved',
+      fileText: result.fileText,
+      fleetName: result.info.fleetName,
+      note: dryRun
+        ? 'Tryb DRY-RUN jest zapisany w sejfie.'
+        : 'Tryb na żywo jest zapisany w sejfie.',
+      savedNote: 'z nowym trybem zakupu',
+      saving: false,
+    });
+    await refresh();
+  };
 
   const saveTable = async (): Promise<void> => {
     if (!tableDirty || tableInvalid || phase.kind === 'unsaved' || phase.kind === 'adding') return;
@@ -337,6 +391,21 @@ export function FleetScreen({
         )}
       </form>
 
+      <BuyPanel
+        view={buyView}
+        mint={checkedMint}
+        readyCount={summary.readyCount}
+        toSpend={summary.toSpendLamports}
+        dryRun={global.dryRun}
+        blocked={buyBlocked}
+        plan={effectiveJupiterPlan(global, info.apiKeys.jupiter)}
+        onDryRun={setDryRun}
+      >
+        {operationsLog && (
+          <OperationsLogPanel log={operationsLog} storage={storage} decimals={buyDecimals} />
+        )}
+      </BuyPanel>
+
       <FleetSummaryBar
         summary={summary}
         walletCount={info.wallets.length}
@@ -368,6 +437,9 @@ export function FleetScreen({
         onCopy={onCopy}
         onQr={onQr}
         probe={rowProbe}
+        buy={buyView.run === null ? null : buyView.rows}
+        buyDecimals={buyDecimals}
+        explorer={global.explorer}
       />
       <div className="actions">
         <button
@@ -446,14 +518,6 @@ export function FleetScreen({
             </button>
           </div>
         </form>
-      )}
-
-      {operationsLog && (
-        <OperationsLogPanel
-          log={operationsLog}
-          storage={storage}
-          decimals={balances.token?.decimals ?? null}
-        />
       )}
 
       <h3>Kopia zapasowa</h3>
