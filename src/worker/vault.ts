@@ -18,6 +18,7 @@ import {
   createHttpTransport,
   createResilientTransport,
   fetchSolBalances,
+  fetchTokenBalances,
   type RpcSource,
 } from '../chain/index.ts';
 import {
@@ -338,7 +339,8 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
    * Reads SOL balances with the Helius key, which never leaves the worker (D-016). Not
    * user activity: periodic refreshes must not keep the vault unlocked.
    */
-  const prepareRefresh = (): (() => Promise<VaultBalances>) => {
+  const prepareRefresh = (mint: unknown): (() => Promise<VaultBalances>) => {
+    if (mint !== undefined && typeof mint !== 'string') return badRequest();
     checkAutoLock();
     const vault = requireUnlocked();
     const { apiKeys } = vault;
@@ -356,12 +358,21 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
           if (s === 'fallback') source = 'fallback';
         },
       });
+      const rpc = createBalancesRpc(transport);
+      const owners = wallets.map((w) => w.address);
       let lamports: bigint[];
+      let token: VaultBalances['token'];
       try {
-        lamports = await fetchSolBalances(
-          createBalancesRpc(transport),
-          wallets.map((w) => w.address),
-        );
+        lamports = await fetchSolBalances(rpc, owners);
+        if (mint !== undefined) {
+          const t = await fetchTokenBalances(rpc, mint, owners);
+          token = {
+            mint: t.mint,
+            program: t.program,
+            decimals: t.decimals,
+            balances: wallets.map((w, i) => ({ index: w.index, amount: t.amounts[i] ?? 0n })),
+          };
+        }
       } catch (e) {
         // Only our own codes cross; anything else may carry the URL with the key.
         throw isAppError(e) ? e : new AppError('RPC_UNAVAILABLE');
@@ -370,6 +381,7 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
       if (unlocked !== vault) throw new AppError('VAULT_LOCKED');
       return {
         balances: wallets.map((w, i) => ({ index: w.index, lamports: lamports[i] ?? 0n })),
+        ...(token ? { token } : {}),
         source,
         fetchedAt: new Date(now()).toISOString(),
       };
@@ -465,7 +477,8 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
       if (isRecord(request) && request.type === 'refreshBalances') {
         // Only the quick preparation is queued; the network read must not hold up other
         // requests such as `lock`.
-        const prepared = tail.then(prepareRefresh);
+        const mint = request.mint;
+        const prepared = tail.then(() => prepareRefresh(mint));
         tail = prepared.then(
           () => undefined,
           () => undefined,

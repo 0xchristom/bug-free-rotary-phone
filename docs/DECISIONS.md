@@ -324,3 +324,32 @@ Rejestr decyzji i rozbieżności z dokumentacją zewnętrzną. Nowe wpisy dopisu
 - Konsekwencje:
   - BUNNDLY-13 (salda tokenów) dołoży do tego samego mechanizmu kolejne zapytania.
   - CSP aplikacji (`connect-src`) musi obejmować `https://*.helius-rpc.com`, `wss://*.helius-rpc.com` i `https://api.mainnet.solana.com`.
+
+## D-021: Salda tokenów: stałe programów i układ kont
+
+- Data: 2026-10-02
+- Zadanie: BUNNDLY-13
+- Kontekst: SPEC 3.2 (saldo tokenu dla SPL Token i Token-2022). Zadanie zabrania ciężkich zależności dla samych stałych.
+- Decyzja:
+  - **Adresy programów jako stałe z oficjalnej dokumentacji** (linki w `src/chain/tokens.ts`), bez nowych paczek:
+    - Token `TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA` (https://spl.solana.com/token);
+    - Token-2022 `TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb` (https://spl.solana.com/token-2022);
+    - Associated Token `ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL` (https://spl.solana.com/associated-token-account).
+  - **ATA** wyprowadzam przez `getProgramDerivedAddress` z `@solana/kit` (już w projekcie, D-020) z ziarnami `[właściciel, program tokenów, mint]`. Test sprawdza zgodność z kontami z mainnetu dla obu programów.
+  - **Mint:** program wynika z właściciela konta. Rozpoznawane są tylko Token i Token-2022, a każdy inny właściciel lub brak konta daje nowy kod `NOT_A_TOKEN_MINT` z komunikatem po polsku.
+    - SPL: dokładnie 82 bajty;
+    - Token-2022: 82 bajty albo więcej niż 165 z bajtem typu konta `1` (Mint) na pozycji 165;
+    - w obu przypadkach `is_initialized` (bajt 45) musi być 1, a `decimals` to bajt 44.
+    - Konto tokenowe podane jako mint jest odrzucane.
+  - **Saldo:** czytam tylko 72 bajty bazowej części konta (`dataSlice`: mint, właściciel, kwota u64 LE na pozycji 64). Rozszerzenia Token-2022 leżą za bajtem 165, więc nie wpływają na odczyt.
+    - Sprawdzam właściciela konta (program tokenów) i pole mint.
+    - Brak ATA oznacza `0n`.
+    - Kwota jest `bigint` (`DataView.getBigUint64`), bez utraty precyzji.
+  - **Worker:** `refreshBalances { mint? }` zwraca dodatkowo `token: { mint, program, decimals, balances: { index, amount }[] }`. Działa tym samym transportem z backoffem i fallbackiem (D-020), nie jest aktywnością, a odpowiedź nie zawiera klucza.
+  - **Fixtures:** `tests/fixtures/token-accounts.mainnet.json` to prawdziwe konta z mainnetu pobrane przez Helius (`getMultipleAccounts`, base64; slot i źródło są w pliku):
+    - mint USDC (SPL) i jego ATA;
+    - mint PYUSD (Token-2022 z rozszerzeniami) i jego ATA z rozszerzeniami;
+    - ATA losowego adresu, którego nie ma.
+
+    Wartości kontrolne (decimals, kwoty, rozszerzenia) pochodzą z niezależnego parsera Helius (`jsonParsed`). Klucz był tylko w zmiennej środowiska `HELIUS_API_KEY` i nie trafił do repo.
+- Konsekwencje: BUNNDLY-14 pokaże salda tokenu z `decimals`. Przy pierwszym zakupie (BUNNDLY-16 i dalej) ten sam kod wyprowadzi ATA do sprawdzenia rezultatu.

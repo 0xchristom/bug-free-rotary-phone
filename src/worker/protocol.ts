@@ -32,7 +32,11 @@ export type VaultRequest =
   | { readonly type: 'preview'; readonly fileText: string }
   | { readonly type: 'unlock'; readonly fileText: string; readonly password: string }
   /** SOL balances of the fleet via Helius (fallback: public RPC). Not user activity. */
-  | { readonly type: 'refreshBalances' }
+  | {
+      readonly type: 'refreshBalances';
+      /** Also read this token's balance for every wallet (SPL Token or Token-2022). */
+      readonly mint?: string;
+    }
   | { readonly type: 'lock' }
   | { readonly type: 'status' }
   | {
@@ -73,8 +77,23 @@ export interface WalletBalance {
   readonly lamports: bigint;
 }
 
+export interface WalletTokenBalance {
+  readonly index: number;
+  /** Raw amount (u64); divide by 10^decimals for display. */
+  readonly amount: bigint;
+}
+
+export interface VaultTokenBalances {
+  readonly mint: string;
+  readonly program: 'spl-token' | 'token-2022';
+  readonly decimals: number;
+  readonly balances: readonly WalletTokenBalance[];
+}
+
 export interface VaultBalances {
   readonly balances: readonly WalletBalance[];
+  /** Present when the request named a mint. */
+  readonly token?: VaultTokenBalances;
   /** `fallback`: Helius failed and the public RPC answered (shown in the UI). */
   readonly source: 'helius' | 'fallback';
   /** ISO-8601 time of the read. */

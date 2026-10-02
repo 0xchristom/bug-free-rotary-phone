@@ -7,6 +7,8 @@ export type {
   ApiKeyChanges,
   ApiKeyFlags,
   VaultBalances,
+  VaultTokenBalances,
+  WalletTokenBalance,
   WalletBalance,
   VaultFileResult,
   VaultInfo,
