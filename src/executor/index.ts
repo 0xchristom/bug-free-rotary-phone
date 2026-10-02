@@ -20,3 +20,10 @@ export type {
   OrderLimiterOptions,
   WindowLimiterOptions,
 } from './limiter.ts';
+export { MAX_ORDER_SIGNERS, ORDER_CHECK_MESSAGES, checkOrderTransaction } from './order-check.ts';
+export type {
+  CheckedOrder,
+  OrderCheckProblem,
+  OrderCheckResult,
+  OrderExpectation,
+} from './order-check.ts';

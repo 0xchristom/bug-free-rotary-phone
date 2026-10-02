@@ -20,6 +20,7 @@ import type {
   VaultStatus,
 } from '../../src/worker/protocol.ts';
 import { createVaultHandler, type VaultHandler } from '../../src/worker/vault.ts';
+import { USDC, buildTransaction, orderFor } from '../helpers/tx-fakes.ts';
 import { valueWords } from '../helpers/words.ts';
 
 // Real scrypt (N=2^17) on create/unlock and when re-opening files.
@@ -675,6 +676,30 @@ describe('request validation', () => {
   });
 });
 
+describe('signOrder (BUNNDLY-22) in the leak scan', () => {
+  it('a signed /order transaction carries no mnemonic or private key', async () => {
+    const signer = createVaultHandler();
+    await signer.handle({
+      type: 'create',
+      fleetName: 'Podpis',
+      walletCount: 1,
+      password: PASSWORD,
+    });
+    collectSecrets(signer);
+    const settings = { ...defaultFleetSettings(), maxSpend: [{ index: 0, lamports: 10_000_000n }] };
+    await call(signer, { type: 'saveSettings', settings });
+    const status = await call<VaultStatus>(signer, { type: 'status' });
+    const taker = status.info?.wallets[0]?.address ?? '';
+    const result = await signer.signOrder(
+      0,
+      { outputMint: USDC, amount: 10_000_000n },
+      orderFor(taker, buildTransaction({ feePayer: taker })),
+    );
+    expect(result.ok).toBe(true);
+    responses.push(result);
+  });
+});
+
 describe('no secrets in any response', () => {
   it('serialized responses of all operations contain no mnemonic or private key', () => {
     expect(responses.length).toBeGreaterThan(20);
@@ -691,7 +716,14 @@ describe('no secrets in any response', () => {
     // Addresses are skipped: base58 fragments can be BIP39 words by chance (e.g. "van");
     // keys are covered by the exact-match check above.
     // `global` holds fixed setting names ("free", "custom", …) that are BIP39 words too.
-    const words = valueWords(responses, ['fileText', 'address', 'global']);
+    // signedTransaction (base64) and signature (base58) are covered by the exact match.
+    const words = valueWords(responses, [
+      'fileText',
+      'address',
+      'global',
+      'signedTransaction',
+      'signature',
+    ]);
     for (const secret of secretsSeen) {
       if (!secret.includes(' ')) continue;
       for (const word of new Set(secret.split(' '))) {

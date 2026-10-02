@@ -502,3 +502,24 @@ Rejestr decyzji i rozbieżności z dokumentacją zewnętrzną. Nowe wpisy dopisu
   - **Przerwanie:** `acquire(signal)` zwraca `false` po `abort` (STOP) i zwalnia miejsce w kolejce; nigdy nie rzuca.
   - **Czysta logika** w `src/executor/limiter.ts` ze wstrzykiwanym zegarem (`now`, `sleep`), bez DOM. Kolejność oczekujących FIFO.
 - Konsekwencje: executor (BUNNDLY-21) woła `acquire` przed każdym `/order` i `/execute` oraz `report` z `httpStatus` i `rateLimit` z wyniku klienta (D-026). Jeśli nagłówki okażą się wiarygodne (BUNNDLY-30), korektę można rozszerzyć bez zmiany budżetu.
+
+## D-028: Podpis transakcji z `/order` w sejfie i kontrole przed podpisem
+
+- Data: 2026-10-02
+- Zadanie: BUNNDLY-22
+- Kontekst: SPEC 2.3, 6.1 i 6.2, D-013 (sejf ma tylko operacje domenowe, nie ma „podpisz bajty”), D-026 (klient Jupitera), `order-and-execute.md` („Sign the transaction”: podpis częściowy) i `gasless.md`.
+- Decyzja:
+  - **`VaultHandler.signOrder(walletIndex, { outputMint, amount }, order)`** to metoda dla executora, który działa w tym samym workerze. Nie ma jej w `handle` ani w protokole wiadomości; żądania `signOrder`, `sign` i `signTransaction` z UI dają `INTERNAL_ERROR` (test). Nigdy nie rzuca: zwraca podpisaną transakcję albo kod problemu.
+  - **Kontrole są osobną, czystą funkcją bez klucza** (`src/executor/order-check.ts`), więc da się je uruchomić na prawdziwych transakcjach bez żadnego klucza (BUNNDLY-30 część B). Kolejność i kody:
+    - `/order` dał transakcję (`NO_TRANSACTION`);
+    - `taker` odpowiedzi to adres portfela (`TAKER_MISMATCH`), `inputMint` to SOL, `outputMint` to zlecony mint;
+    - `inAmount` nie przekracza max spend portfela, który sejf bierze **z własnych ustawień**, nie od wywołującego (`OVER_MAX_SPEND`), i równa się zleconej kwocie (`AMOUNT_MISMATCH`);
+    - bajty dają się zdekodować przez `@solana/kit` (`UNDECODABLE`), liczba podpisów zgadza się z nagłówkiem;
+    - wersja wiadomości to 0 (`NOT_V0`: legacy i v1 są odrzucane, choć na mainnecie są już transakcje v1, D-026);
+    - najwyżej 2 wymagane podpisy (`TOO_MANY_SIGNERS`): taker oraz ewentualnie market maker JupiterZ albo sponsor gasless;
+    - portfel jest sygnatariuszem, a jego miejsce na podpis jest puste;
+    - pierwszy klucz (płatnik opłaty) to `signatureFeePayer`, a gdy go nie ma, taker (`FEE_PAYER_MISMATCH`).
+  - **Podpis:** `createKeyPairFromBytes` z 64-bajtowego klucza sejfu (sprawdza też zgodność połówek), `getAddressFromPublicKey` musi dać adres takera, `signBytes` na `messageBytes`. Wypełniam tylko miejsce takera; pozostałe podpisy zostają bajt w bajt (przy JupiterZ market maker podpisuje w `/execute`). Wynik: transakcja w base64 i sygnatura transakcji, gdy taker płaci opłatę (pierwszy podpis), a w przeciwnym razie `null`.
+  - **Blokada w trakcie podpisu** zeruje klucz; wynik jest wtedy odrzucany (`VAULT_LOCKED`), a niespodziewany błąd daje `SIGNING_FAILED` bez szczegółów.
+  - **Granica zaufania:** API Jupitera (HTTPS do `api.jup.ag`) jest zaufane. Kontrole chronią przed pomyłkami (inny portfel, inne zlecenie, inna kwota, uszkodzone dane), a nie przed złośliwym Jupiterem: nie interpretują instrukcji swapu. Twardą granicę wydatku daje max spend z sejfu.
+- Konsekwencje: executor (BUNNDLY-21) woła `signOrder` po każdym `/order` z transakcją; sygnatura z wyniku (albo z `/execute` przy JupiterZ) służy do śledzenia stanu UNKNOWN (BUNNDLY-23). Test „brak sekretów w odpowiedziach” obejmuje wynik `signOrder`.

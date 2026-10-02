@@ -24,7 +24,9 @@ import {
   type RpcSource,
   type WebSocketFactory,
 } from '../chain/index.ts';
-import { checkJupiterQuote } from '../jupiter/index.ts';
+import { checkOrderTransaction, type OrderCheckProblem } from '../executor/order-check.ts';
+import { checkJupiterQuote, type JupiterOrder } from '../jupiter/index.ts';
+import { signCheckedOrder, type SignedOrder } from './sign-order.ts';
 import {
   API_KEY_NAMES,
   AppError,
@@ -129,9 +131,33 @@ export interface VaultHandleOptions {
   readonly onProgress?: (progress: number) => void;
 }
 
+/** What the executor asked `/order` for, for one wallet (BUNNDLY-22). */
+export interface OrderSignRequest {
+  readonly outputMint: string;
+  /** Lamports asked for; must equal the order's inAmount and fit the max spend. */
+  readonly amount: bigint;
+}
+
+export type SignOrderResult =
+  | ({ readonly ok: true } & SignedOrder)
+  | {
+      readonly ok: false;
+      readonly problem: OrderCheckProblem | 'VAULT_LOCKED' | 'UNKNOWN_WALLET' | 'SIGNING_FAILED';
+    };
+
 export interface VaultHandler {
   /** Handles one request; requests run strictly one after another. */
   handle(request: unknown, options?: VaultHandleOptions): Promise<VaultResultMap[VaultRequestType]>;
+  /**
+   * For the executor inside the worker only (BUNNDLY-22, D-028); not reachable through
+   * `handle` or the message protocol. Signs the `/order` transaction of one wallet after
+   * the checks pass; the max spend comes from the vault's own settings. Never throws.
+   */
+  signOrder(
+    walletIndex: number,
+    request: OrderSignRequest,
+    order: JupiterOrder,
+  ): Promise<SignOrderResult>;
   /** Locks if idle for longer than the auto-lock time and not armed. Returns true if it locked. */
   checkAutoLock(): boolean;
   /** For tests only. */
@@ -545,7 +571,40 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
     }
   };
 
+  const signOrder = async (
+    walletIndex: number,
+    request: OrderSignRequest,
+    order: JupiterOrder,
+  ): Promise<SignOrderResult> => {
+    const vault = unlocked;
+    if (vault === null) return { ok: false, problem: 'VAULT_LOCKED' };
+    const wallet = vault.publicWallets.find((w) => w.index === walletIndex);
+    const secret = vault.wallets.find((w) => w.index === walletIndex);
+    if (wallet === undefined || secret === undefined) {
+      return { ok: false, problem: 'UNKNOWN_WALLET' };
+    }
+    const maxSpend = vault.settings.maxSpend.find((m) => m.index === walletIndex)?.lamports ?? 0n;
+    const check = checkOrderTransaction(order, {
+      taker: wallet.address,
+      outputMint: request.outputMint,
+      amount: request.amount,
+      maxSpend,
+    });
+    if (!check.ok) return check;
+    let signed: SignedOrder;
+    try {
+      signed = await signCheckedOrder(secret.secretKey, check.checked);
+    } catch {
+      // A lock zeroes the key mid-signing; anything else is a vault bug. Nothing leaks.
+      return { ok: false, problem: unlocked === vault ? 'SIGNING_FAILED' : 'VAULT_LOCKED' };
+    }
+    // Locked while signing: the result must not leave a locked vault.
+    if (unlocked !== vault) return { ok: false, problem: 'VAULT_LOCKED' };
+    return { ok: true, ...signed };
+  };
+
   return {
+    signOrder,
     handle(request: unknown, options: VaultHandleOptions = {}) {
       if (isRecord(request) && request.type === 'testConnections') {
         const prepared = tail.then(() => prepareConnectionTest());
