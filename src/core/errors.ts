@@ -25,6 +25,13 @@ export const ERROR_MESSAGES = {
   VAULT_LOCKED: 'Plik floty jest zablokowany. Odblokuj go hasłem, aby kontynuować.',
   VAULT_TIMEOUT: 'Sejf z kluczami nie odpowiedział w wyznaczonym czasie. Spróbuj ponownie.',
   INTERNAL_ERROR: 'Wystąpił wewnętrzny błąd aplikacji. Spróbuj ponownie.',
+  STORAGE_CANCELLED: 'Anulowano wybór pliku lub folderu. Plik nie został zapisany ani wczytany.',
+  STORAGE_PERMISSION_DENIED:
+    'Przeglądarka nie dała dostępu do wybranego folderu lub pliku. Zezwól na dostęp i spróbuj ponownie.',
+  STORAGE_WRITE_FAILED:
+    'Nie udało się zapisać pliku floty. Spróbuj ponownie lub wybierz inny folder.',
+  STORAGE_READ_FAILED: 'Nie udało się odczytać pliku. Spróbuj ponownie.',
+  STORAGE_FILE_TOO_LARGE: 'Plik jest za duży (ponad 1 MB). To nie jest plik floty Bunndly.',
 } as const satisfies Record<string, string>;
 
 export type ErrorCode = keyof typeof ERROR_MESSAGES;

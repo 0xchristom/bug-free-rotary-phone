@@ -46,6 +46,7 @@ export type {
   KdfParams,
   ScryptCost,
 } from './keystore/crypto.ts';
+export { KEYSTORE_FILE_SUFFIX } from './keystore/limits.ts';
 export {
   KEYSTORE_VERSION,
   MAX_KEYSTORE_FILE_BYTES,

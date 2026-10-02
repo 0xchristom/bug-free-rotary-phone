@@ -29,6 +29,11 @@ describe('ERROR_MESSAGES', () => {
         'VAULT_LOCKED',
         'VAULT_TIMEOUT',
         'INTERNAL_ERROR',
+        'STORAGE_CANCELLED',
+        'STORAGE_PERMISSION_DENIED',
+        'STORAGE_WRITE_FAILED',
+        'STORAGE_READ_FAILED',
+        'STORAGE_FILE_TOO_LARGE',
       ].sort(),
     );
   });
