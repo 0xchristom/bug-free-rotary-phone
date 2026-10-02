@@ -6,6 +6,7 @@ Format: `RRRR-MM-DD · BUNNDLY-<n> · <co działa>`
 
 ---
 
+- 2026-10-02 · BUNNDLY-5 · `src/core/keystore/crypto.ts`: `encryptSecrets` / `decryptSecrets` (scrypt N=2^17 + AES-256-GCM, WebCrypto), walidacja parametrów przed scrypt, hasło NFKC min. 12 znaków; 37 testów na domyślnych parametrach.
 - 2026-10-02 · BUNNDLY-4 · `src/core/derivation.ts`: mnemonik BIP39 (generowanie 24 słów, import 12–24, normalizacja), derywacja `m/44'/501'/i'/0'` zgodna z Phantomem (wektory Andy'ego + oficjalne SLIP-0010), eksport klucza base58 (64 B), `wipe`; 45 testów.
 - 2026-10-02 · BUNNDLY-3 · `src/core/errors.ts`: `AppError` z typowanym `code` i `cause`, komunikaty po polsku, `isAppError`, `toUserMessage` (bez wycieku treści nieznanych błędów); 24 testy.
 - 2026-10-02 · BUNNDLY-2 · CI w GitHub Actions (lint, typecheck, test, build, npm audit) na PR i push do main; akcje przypięte do SHA; engines.node >=22.13.
