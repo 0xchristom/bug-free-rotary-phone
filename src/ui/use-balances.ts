@@ -56,6 +56,8 @@ export function useBalances(
   /** A refresh asked for while one was running (e.g. a new mint): run it afterwards. */
   const again = useRef(false);
   const latest = useRef<() => void>(() => undefined);
+  /** The mint shown now; answers for any other mint are stale and dropped. */
+  const currentMint = useRef(mint);
 
   const refresh = useCallback(() => {
     if (!visible()) return;
@@ -71,9 +73,14 @@ export function useBalances(
         latest.current();
       }
     };
-    client.request({ type: 'refreshBalances', ...(mint === null ? {} : { mint }) }).then(
+    const asked = mint;
+    // The user may change or clear the mint while this request runs. Its answer, success
+    // or error, then belongs to a mint no longer on screen and must be ignored; the
+    // refresh for the new mint follows right after (`again`).
+    const stale = (): boolean => !mounted.current || currentMint.current !== asked;
+    client.request({ type: 'refreshBalances', ...(asked === null ? {} : { mint: asked }) }).then(
       (res) => {
-        if (mounted.current) {
+        if (!stale()) {
           setState({
             lamports: new Map(res.balances.map((b) => [b.index, b.lamports])),
             token: res.token
@@ -92,8 +99,8 @@ export function useBalances(
         done();
       },
       (e: unknown) => {
-        if (mounted.current) {
-          if (mint !== null && isAppError(e) && e.code === 'NOT_A_TOKEN_MINT' && onBadMint) {
+        if (!stale()) {
+          if (asked !== null && isAppError(e) && e.code === 'NOT_A_TOKEN_MINT' && onBadMint) {
             setState((s) => ({ ...s, token: null }));
             onBadMint(toUserMessage(e));
           } else {
@@ -105,6 +112,11 @@ export function useBalances(
       },
     );
   }, [client, mint, onBadMint]);
+
+  // Declared before the polling effect so the new mint is current before it refreshes.
+  useEffect(() => {
+    currentMint.current = mint;
+  }, [mint]);
 
   useEffect(() => {
     latest.current = refresh;
