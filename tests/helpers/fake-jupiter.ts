@@ -168,6 +168,7 @@ export class FakeJupiter implements JupiterClient {
         ok: spec.ok ?? true,
         at,
         spent: order.inAmount,
+        received: order.outAmount,
         lastValidBlockHeight: order.lastValidBlockHeight,
         expireAt: order.expireAt,
       });
@@ -206,7 +207,7 @@ export class FakeJupiter implements JupiterClient {
       outcome: executeOutcome(code),
       // RFQ: the market maker's signature is not known to the taker.
       signature: order?.router === 'jupiterz' && !ok ? null : fakeSignature(taker, nth),
-      slot: ok ? 452_713_600n : null,
+      slot: ok ? (this.script.chain?.height() ?? 452_713_600n) : null,
       totalInputAmount: ok ? (order?.inAmount ?? null) : null,
       totalOutputAmount: ok ? (order?.outAmount ?? null) : null,
       inputAmountResult: ok ? (order?.inAmount ?? null) : null,

@@ -194,6 +194,7 @@ describe('fetchTokenBalances', () => {
       program: 'spl-token',
       decimals: 6,
       amounts: [BigInt(F.expected.splAtaAmount), 0n],
+      slot: BigInt(F.slot),
     });
     // one call for the mint, one batch for the ATAs, which asks only for the base prefix
     expect(calls).toHaveLength(2);

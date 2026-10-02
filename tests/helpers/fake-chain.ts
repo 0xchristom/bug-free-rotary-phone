@@ -29,6 +29,8 @@ export interface Landed {
   readonly at: number;
   /** Lamports the swap took (0 when it failed on the chain). */
   readonly spent: bigint;
+  /** Tokens it put in the taker's account (0 when it failed). */
+  readonly received: bigint;
 }
 
 export class FakeChain {
@@ -68,6 +70,7 @@ export class FakeChain {
       ok: tx.ok,
       at: tx.at,
       spent: tx.ok ? tx.spent : 0n,
+      received: tx.ok ? tx.received : 0n,
     });
     return true;
   }
@@ -80,6 +83,20 @@ export class FakeChain {
   successfulBuys(taker: string): Landed[] {
     return this.landed.filter((l) => l.taker === taker && l.ok);
   }
+
+  /** Token balances as an RPC would read them now (BUNNDLY-25), plus external deposits. */
+  readonly deposits = new Map<string, bigint>();
+  readonly tokens = (owners: readonly string[]) => {
+    const visible = this.visible();
+    return Promise.resolve({
+      amounts: owners.map(
+        (o) =>
+          (this.deposits.get(o) ?? 0n) +
+          visible.filter((l) => l.taker === o).reduce((sum, l) => sum + l.received, 0n),
+      ),
+      slot: this.height(),
+    });
+  };
 
   readonly checker = (query: LandingQuery): Promise<Landing> => {
     this.checks += 1;

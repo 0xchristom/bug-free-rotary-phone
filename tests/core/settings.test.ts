@@ -3,6 +3,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import {
   AppError,
   DEFAULT_GLOBAL_SETTINGS,
+  effectiveJupiterPlan,
   JUPITER_PLAN_RPM,
   JUPITER_RATE_LIMITS_URL,
   createKeystore,
@@ -361,5 +362,14 @@ describe('settings in the keystore secrets', () => {
     expect(() => parseSecrets({ ...json(), apiKeys: { heliusRpcUrl: 'http://x' } })).toThrow(
       AppError,
     );
+  });
+});
+
+describe('effectiveJupiterPlan', () => {
+  it('without a Jupiter key: Keyless, whatever the settings say; with a key: the settings', () => {
+    const custom = { jupiterPlan: 'custom' as const, orderRpm: 1_234 };
+    expect(effectiveJupiterPlan(custom, false)).toEqual({ plan: 'keyless', orderRpm: 30 });
+    expect(effectiveJupiterPlan(custom, true)).toEqual({ plan: 'custom', orderRpm: 1_234 });
+    expect(effectiveJupiterPlan(DEFAULT_GLOBAL_SETTINGS, false).plan).toBe('keyless');
   });
 });

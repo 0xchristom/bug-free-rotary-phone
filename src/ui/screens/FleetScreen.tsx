@@ -11,6 +11,8 @@ import { ExportDialog } from '../ExportDialog.tsx';
 import { FleetBulk, FleetSummaryBar } from '../FleetBulk.tsx';
 import { shareOf, summarize } from '../fleet-math.ts';
 import { FleetTable } from '../FleetTable.tsx';
+import type { OperationsLog } from '../operations-log.ts';
+import { OperationsLogPanel } from '../OperationsLogPanel.tsx';
 import { SettingsResetNotice } from '../SettingsResetNotice.tsx';
 import { formatSol, formatUnits, parseSolAmount } from '../sol.ts';
 import { useBalances } from '../use-balances.ts';
@@ -43,6 +45,8 @@ export interface FleetScreenProps {
   readonly balanceRefreshMs?: number;
   /** Test hook for the row render counter (see FleetTable). */
   readonly rowProbe?: (index: number) => void;
+  /** Session log of buys (BUNNDLY-25); the panel is hidden without it. */
+  readonly operationsLog?: OperationsLog;
 }
 
 type Drafts = Readonly<Record<number, string>>;
@@ -73,6 +77,7 @@ export function FleetScreen({
   onUnsavedChange,
   balanceRefreshMs,
   rowProbe,
+  operationsLog,
 }: FleetScreenProps) {
   const { client, refresh } = useVault();
   const [mintText, setMintText] = useState('');
@@ -441,6 +446,14 @@ export function FleetScreen({
             </button>
           </div>
         </form>
+      )}
+
+      {operationsLog && (
+        <OperationsLogPanel
+          log={operationsLog}
+          storage={storage}
+          decimals={balances.token?.decimals ?? null}
+        />
       )}
 
       <h3>Kopia zapasowa</h3>

@@ -42,6 +42,11 @@ const deposit = buildTransaction({
 
 type Handler = (params: unknown[]) => unknown;
 
+/** A JSON-RPC error answer instead of a result. */
+class RpcError {
+  constructor(readonly body: { readonly code: number; readonly message: string }) {}
+}
+
 function rpcWith(handlers: Record<string, Handler>) {
   const calls: string[] = [];
   const transport = ((config: { payload: unknown }) => {
@@ -50,7 +55,11 @@ function rpcWith(handlers: Record<string, Handler>) {
     const handler = handlers[payload.method];
     if (!handler) return Promise.reject(new Error(`unexpected ${payload.method}`));
     try {
-      return Promise.resolve({ jsonrpc: '2.0', id: payload.id, result: handler(payload.params) });
+      const result = handler(payload.params);
+      if (result instanceof RpcError) {
+        return Promise.resolve({ jsonrpc: '2.0', id: payload.id, error: result.body });
+      }
+      return Promise.resolve({ jsonrpc: '2.0', id: payload.id, result });
     } catch (e) {
       return Promise.reject(e instanceof Error ? e : new Error('handler'));
     }
@@ -182,6 +191,22 @@ describe('unknown signature (RFQ, gasless)', () => {
     });
     expect(await check(rfq())).toEqual({ status: 'landed', signature: b58(sig(3)), slot: 1_600n });
     expect(fetched).toEqual([b58(sig(4)), b58(sig(3))]); // the old one is not fetched
+  });
+
+  it('a v1 transaction among the candidates is read too (version 1 allowed)', async () => {
+    // Helius answers -32015 when a transaction's version is above the one the query allows
+    const { check } = rpcWith({
+      isBlockhashValid: () => ({ context: { slot: 1 }, value: true }),
+      getSignaturesForAddress: () => [entry(b58(sig(3)), NOW)],
+      getTransaction: (p) =>
+        (p[1] as { maxSupportedTransactionVersion?: number }).maxSupportedTransactionVersion === 1
+          ? { ...txAnswer(rfqLanded), version: 1 }
+          : new RpcError({
+              code: -32015,
+              message: 'Transaction version (1) is not supported by the requesting client.',
+            }),
+    });
+    expect(await check(rfq())).toEqual({ status: 'landed', signature: b58(sig(3)), slot: 1_600n });
   });
 
   it('landed with an error: failed', async () => {

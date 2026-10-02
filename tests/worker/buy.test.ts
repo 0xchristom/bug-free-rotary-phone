@@ -7,7 +7,14 @@ import type { RpcTransport } from '@solana/kit';
 import { getBase64Encoder, getTransactionDecoder } from '@solana/kit';
 import { describe, expect, it, vi } from 'vitest';
 import { AppError, defaultFleetSettings, type FleetSettingsV1 } from '../../src/core/index.ts';
-import type { ExecutorEvent, WalletEvent } from '../../src/executor/index.ts';
+import {
+  logEntry,
+  toCsv,
+  toJson,
+  type ExecutorEvent,
+  type VerifyEvent,
+  type WalletEvent,
+} from '../../src/executor/index.ts';
 import type { BuyStatus, VaultPort, VaultStatus } from '../../src/worker/protocol.ts';
 import {
   attachVaultHandler,
@@ -58,6 +65,8 @@ interface Setup {
   readonly settings?: Partial<FleetSettingsV1>;
   readonly withChain?: boolean;
   readonly heliusKey?: boolean;
+  readonly walletCount?: number;
+  readonly jupiterKey?: boolean;
 }
 
 async function setup(o: Setup = {}) {
@@ -70,7 +79,11 @@ async function setup(o: Setup = {}) {
   });
   const h = createVaultHandler({
     chain,
-    executor: { jupiter, clock, ...(o.withChain ? { landing: fakeChain.checker } : {}) },
+    executor: {
+      jupiter,
+      clock,
+      ...(o.withChain ? { landing: fakeChain.checker, tokens: fakeChain.tokens } : {}),
+    },
     now: () => clock.now(),
     autoLockMs: 60_000,
   });
@@ -79,7 +92,7 @@ async function setup(o: Setup = {}) {
   await h.handle({
     type: 'create',
     fleetName: 'Zakup',
-    walletCount: 3,
+    walletCount: o.walletCount ?? 3,
     password: PASSWORD,
     mnemonic: MNEMONIC_12,
   });
@@ -96,7 +109,14 @@ async function setup(o: Setup = {}) {
   await h.handle({
     type: 'saveSettings',
     settings,
-    ...(o.heliusKey === false ? {} : { apiKeys: { helius: 'heliusBuyKey' } }),
+    ...(o.heliusKey === false
+      ? {}
+      : {
+          apiKeys: {
+            helius: 'heliusBuyKey',
+            ...(o.jupiterKey ? { jupiter: 'jupiterBuyKey' } : {}),
+          },
+        }),
   });
   if (o.refresh !== false) await h.handle({ type: 'refreshBalances' });
   const status = async () => (await h.handle({ type: 'status' })) as VaultStatus;
@@ -200,6 +220,74 @@ describe('startBuy', () => {
     expect(jupiter.calls.filter((c) => c.kind === 'order')).toHaveLength(2);
     const takers = new Set(jupiter.executions().map((c) => c.taker));
     for (const taker of takers) expect(fakeChain.successfulBuys(taker)).toHaveLength(1);
+  });
+
+  it('after CONFIRMED the token balance confirms the buy (verify events, live only)', async () => {
+    const { clock, h, events } = await setup({
+      dryRun: false,
+      withChain: true,
+      script: { executeDelayMs: () => 1_000 },
+    });
+    await h.handle({ type: 'startBuy', mint: USDC });
+    await runToEnd(clock, events);
+    const verify = (): VerifyEvent[] => events.filter((e): e is VerifyEvent => e.kind === 'verify');
+    for (let i = 0; i < 100 && verify().length < 2; i++) await clock.runUntil();
+    expect(verify().map((e) => [e.index, e.status, e.observed === e.expected])).toEqual([
+      [0, 'MATCH', true],
+      [1, 'MATCH', true],
+    ]);
+
+    const dry = await setup({ withChain: true });
+    await dry.h.handle({ type: 'startBuy', mint: USDC });
+    await runToEnd(dry.clock, dry.events);
+    expect(dry.events.filter((e) => e.kind === 'verify')).toHaveLength(0);
+  });
+
+  it('the exported log (CSV and JSON) has no mnemonic, keys, API key or signed transaction', async () => {
+    const { clock, jupiter, h, events, secrets } = await setup({
+      dryRun: false,
+      withChain: true,
+      script: {
+        execute: (c) => (c.nth === 1 ? { fail: 'TIMEOUT', lands: { afterMs: 500 } } : 'ok'),
+      },
+    });
+    const held = secrets();
+    await h.handle({ type: 'startBuy', mint: USDC });
+    await runToEnd(clock, events);
+    const addresses = ((await h.handle({ type: 'status' })) as VaultStatus).info?.wallets ?? [];
+    const entries = events.map((e) =>
+      logEntry(e, {
+        addressOf: (i) => addresses.find((w) => w.index === i)?.address ?? null,
+        decimals: 6,
+      }),
+    );
+    for (const text of [toCsv(entries), toJson(entries)]) {
+      expect(text).toContain('CONFIRMED');
+      expect(text).toContain(addresses[0]?.address);
+      for (const secret of held) expect(text).not.toContain(secret);
+      expect(text).not.toContain('heliusBuyKey');
+      expect(text.toLowerCase()).not.toContain('api-key');
+      for (const call of jupiter.executions()) {
+        expect(text).not.toContain(call.signedTransaction);
+      }
+    }
+  });
+
+  it('without a Jupiter key the Keyless limits apply, whatever plan the settings name', async () => {
+    const thirty = {
+      maxSpend: Array.from({ length: 30 }, (_, index) => ({ index, lamports: MAX })),
+    };
+    const startsAtOnce = async (jupiterKey: boolean): Promise<number> => {
+      const t = await setup({ walletCount: 30, jupiterKey, settings: thirty });
+      const global = (await t.status()).info?.settings.global;
+      expect(global?.jupiterPlan).toBe('free'); // default plan in the settings
+      await t.h.handle({ type: 'startBuy', mint: USDC });
+      await runToEnd(t.clock, t.events);
+      const first = t.jupiter.calls.filter((c) => c.kind === 'order').map((c) => c.start);
+      return first.filter((at) => at === Math.min(...first)).length;
+    };
+    expect(await startsAtOnce(false)).toBe(27); // Keyless budget: 90 % of 30 per minute
+    expect(await startsAtOnce(true)).toBe(30); // Free with a key: 54, all 30 at once
   });
 
   it('wallets without a balance read are skipped before /order', async () => {
@@ -309,14 +397,9 @@ describe('events over the message port', () => {
     await client.request({ type: 'refreshBalances' });
     await client.request({ type: 'startBuy', mint: USDC });
     await runToEnd(clock, received);
-    expect(received.map((e) => (e.kind === 'run' ? e.phase : e.state))).toEqual([
-      'started',
-      'QUEUED',
-      'QUOTING',
-      'SIGNING',
-      'SKIPPED',
-      'finished',
-    ]);
+    expect(
+      received.map((e) => (e.kind === 'run' ? e.phase : e.kind === 'wallet' ? e.state : e.status)),
+    ).toEqual(['started', 'QUEUED', 'QUOTING', 'SIGNING', 'SKIPPED', 'finished']);
     off();
   });
 });

@@ -111,6 +111,8 @@ export interface TokenBalances extends MintInfo {
   readonly mint: string;
   /** Raw amounts (u64), same order as the owners. */
   readonly amounts: readonly bigint[];
+  /** Lowest slot the ATA reads saw (BUNNDLY-25: before or after a buy landed). */
+  readonly slot: bigint;
 }
 
 /** Reads the mint, then every owner's ATA in batches of at most 100. */
@@ -138,8 +140,9 @@ export async function fetchTokenBalances(
     owners.map((o) => findAssociatedTokenAddress(o, mint, info.program)),
   );
   const amounts: bigint[] = [];
+  let slot: bigint | null = null;
   for (const batch of chunk(atas, MAX_ACCOUNTS_PER_CALL)) {
-    const { value } = await rpc
+    const { context, value } = await rpc
       .getMultipleAccounts(
         batch.map((a) => address(a)),
         {
@@ -150,6 +153,7 @@ export async function fetchTokenBalances(
       )
       .send();
     if (value.length !== batch.length) throw new Error('getMultipleAccounts: wrong length');
+    slot = slot === null || context.slot < slot ? context.slot : slot;
     for (const account of value) {
       if (!account) {
         amounts.push(0n); // no ATA yet
@@ -176,5 +180,5 @@ export async function fetchTokenBalances(
       amounts.push(readU64LE(data, AMOUNT_OFFSET));
     }
   }
-  return { mint, ...info, amounts };
+  return { mint, ...info, amounts, slot: slot ?? 0n };
 }

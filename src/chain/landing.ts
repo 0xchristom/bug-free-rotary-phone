@@ -136,7 +136,8 @@ export function createLandingChecker(
       const tx = await rpc
         .getTransaction(entry.signature, {
           encoding: 'base64',
-          maxSupportedTransactionVersion: 0,
+          // About 10 % of mainnet transactions are v1; with 0 Helius answers -32015 (D-034).
+          maxSupportedTransactionVersion: 1,
           commitment: 'confirmed',
         })
         .send();
