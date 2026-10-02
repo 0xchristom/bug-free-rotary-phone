@@ -483,3 +483,22 @@ Rejestr decyzji i rozbieżności z dokumentacją zewnętrzną. Nowe wpisy dopisu
   - Przy szukaniu publicznego adresu z SOL `getBlock` na Helius odrzucił `maxSupportedTransactionVersion: 0`, bo w bloku były **transakcje w wersji 1**. Jupiter dokumentuje transakcje v0; dekoder przed podpisem (BUNNDLY-22) powinien sprawdzać wersję.
   - Fixtures `/execute` (`tests/fixtures/jupiter-execute.docs.json`) są zbudowane z dokumentacji, bo `/execute` na prawdziwym API nie wołamy.
 - Konsekwencje: limiter (BUNNDLY-20) dostaje `rateLimit` z każdej odpowiedzi, a executor (BUNNDLY-21, 23) kody błędów, powody `buildError` i wyniki `/execute`.
+
+## D-027: Limiter `/order` i `/execute`
+
+- Data: 2026-10-02
+- Zadanie: BUNNDLY-20
+- Kontekst: SPEC 3.5 mówi o token buckecie z tempem `ORDER_RPS` (ok. 1/s z marginesem). Dokumentacja Jupitera (`rate-limits.md`) opisuje okno przesuwne 60 s, a spike Andy'ego (BUNNDLY-30) pokazał, że nagłówki bez klucza opisują okno 10 s z 5 zapytaniami, liczniki są niespójne, a serie 8 i 12 zapytań przeszły bez 429. Krystian zdecydował 2026-10-02 („tak”, komentarz w BUNNDLY-20): budżet okna z 10% zapasu i seria na start.
+- Decyzja:
+  - **Odstępstwo od SPEC 3.5:** zamiast równego tempa ~1/s limiter `/order` daje **budżet 90% limitu planu na 60 s**: Keyless 27, Free 54, Developer 540, Launch 2700, Pro 8100, plan własny 90% `orderRpm` (co najmniej 1). Dokumentacja Jupitera wygrywa ze SPEC (SPEC 0.1).
+  - **Seria na start:** pierwsze min(budżet, N) wywołań rusza od razu; potem w żadnym przesuwnym oknie 60 s nie ma więcej startów niż budżet. Kolejne ruszają, gdy najstarszy start wypada z okna.
+  - **Korekta z nagłówków, nie podstawa:**
+    - `x-ratelimit-remaining ≤ 0` (przy dowolnym statusie) albo 429 wstrzymuje nowe `/order` do `x-ratelimit-reset`;
+    - bez użytecznego resetu (brak nagłówka, reset w przeszłości) backoff 1 s → 2 s → 4 s → 8 s → maks. 10 s; odpowiedź bez błędu (status < 400) zeruje backoff;
+    - reset dalej niż 60 s od teraz przycinam do 60 s (przesunięcie zegara albo zły nagłówek);
+    - brak nagłówków nie zmienia budżetu; po pauzie limiter dalej pilnuje okna.
+  - **`/execute`:** osobny limiter, 90% puli na sekundę: Keyless 18, Free 45, plany płatne 90. Plan własny przypisuję według `orderRpm` (do 30 Keyless, do 60 Free, wyżej płatny). Nie zużywa budżetu `/order`.
+  - **Tryb równego tempa** (`steady`): jeden start co 60 s / budżet. Opcja konstruktora bez UI, na wypadek gdyby test BUNNDLY-30 pokazał 429 przy seriach.
+  - **Przerwanie:** `acquire(signal)` zwraca `false` po `abort` (STOP) i zwalnia miejsce w kolejce; nigdy nie rzuca.
+  - **Czysta logika** w `src/executor/limiter.ts` ze wstrzykiwanym zegarem (`now`, `sleep`), bez DOM. Kolejność oczekujących FIFO.
+- Konsekwencje: executor (BUNNDLY-21) woła `acquire` przed każdym `/order` i `/execute` oraz `report` z `httpStatus` i `rateLimit` z wyniku klienta (D-026). Jeśli nagłówki okażą się wiarygodne (BUNNDLY-30), korektę można rozszerzyć bez zmiany budżetu.
