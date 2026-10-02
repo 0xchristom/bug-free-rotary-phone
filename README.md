@@ -6,7 +6,7 @@ Solana Multi-Wallet Buyer: statyczna aplikacja SPA (bez backendu) do zarządzani
 
 ## Wymagania
 
-- Node.js `>=22.12` (zalecany aktualny LTS, patrz `.nvmrc`: `nvm use`)
+- Node.js `>=22.13` (zalecany aktualny LTS, patrz `.nvmrc`: `nvm use`)
 - npm 10+
 
 ## Uruchomienie lokalne
