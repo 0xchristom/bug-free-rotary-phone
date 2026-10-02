@@ -372,6 +372,7 @@ Rejestr decyzji i rozbieżności z dokumentacją zewnętrzną. Nowe wpisy dopisu
 - Kontekst: SPEC 3.2. Maksymalnie 100 portfeli, salda odświeżane co 12 s (D-020).
 - Decyzja:
   - **Kolumny:** #, etykieta, adres (kopiuj i QR, tylko po odblokowaniu, D-018), saldo SOL, max spend (edytowalny, w SOL), rezerwa, saldo tokenu (z `decimals`, po wpisaniu adresu mintu, D-021) i aktywny.
+  - **Pole „Adres tokenu (mint)” nad tabelą** (decyzja z review BUNNDLY-13): służy do podglądu sald tokenu przez `refreshBalances { mint }`. W sprincie 3 to samo pole wykorzysta „Kupuj teraz”. Mint nie jest ustawieniem i nie trafia do pliku floty. `NOT_A_TOKEN_MINT` jest pokazywany przy polu, nie zamiast tabeli, a po tym błędzie odświeżanie idzie bez mintu, więc salda SOL dalej się aktualizują, aż użytkownik poprawi adres.
   - **Arytmetyka na `bigint`** (`ui/fleet-math.ts`):
     - rezerwa = saldo − max spend;
     - portfel jest gotowy do zakupu, gdy jest aktywny, ma max spend większy od 0, znane saldo i rezerwę ≥ `MIN_RESERVE_SOL` (rezerwa dokładnie równa minimum jest w porządku);

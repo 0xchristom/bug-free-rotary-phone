@@ -184,17 +184,51 @@ describe('fleet table', () => {
   it('a token mint shows balances with decimals; a wrong mint shows a Polish error', async () => {
     const { user } = setup();
     await ready();
-    await user.type(screen.getByLabelText('Token (adres mintu)'), 'SomeMint111');
+    await user.type(screen.getByLabelText('Adres tokenu (mint)'), 'SomeMint111');
     await user.click(screen.getByRole('button', { name: 'Pokaż saldo tokenu' }));
     expect(await screen.findByRole('columnheader', { name: 'Token (Token-2022)' })).toBeTruthy();
     expect(cells('W02')[6]).toBe('1,5');
     expect(cells('W03')[6]).toBe('3');
 
-    await user.clear(screen.getByLabelText('Token (adres mintu)'));
-    await user.type(screen.getByLabelText('Token (adres mintu)'), 'NotAMint');
+    await user.clear(screen.getByLabelText('Adres tokenu (mint)'));
+    await user.type(screen.getByLabelText('Adres tokenu (mint)'), 'NotAMint');
     await user.click(screen.getByRole('button', { name: 'Pokaż saldo tokenu' }));
-    expect((await screen.findByRole('alert')).textContent).toContain('nie jest mintem tokenu');
+    // the message sits at the field, the table stays
+    const alert = await screen.findByRole('alert');
+    expect(alert.textContent).toContain('nie jest mintem tokenu');
+    expect(alert.id).toBe(
+      screen.getByLabelText('Adres tokenu (mint)').getAttribute('aria-describedby'),
+    );
     expect(screen.getByRole('columnheader', { name: 'Token' })).toBeTruthy();
+    expect(screen.getByRole('table')).toBeTruthy();
+  });
+
+  it('after a wrong mint the SOL balances keep refreshing (without the mint)', async () => {
+    const { user, vault, setBalances } = setup();
+    await ready();
+    await user.type(screen.getByLabelText('Adres tokenu (mint)'), 'NotAMint');
+    await user.click(screen.getByRole('button', { name: 'Pokaż saldo tokenu' }));
+    await screen.findByRole('alert');
+    const refreshes = (): { mint?: string }[] =>
+      vault.request.mock.calls.map(([r]) => r).filter((r) => r.type === 'refreshBalances');
+    // right after the error it refreshes again without the mint
+    await waitFor(() => {
+      expect(refreshes().at(-1)?.mint).toBeUndefined();
+    });
+    setBalances(() => 3n * SOL);
+    await user.click(screen.getByRole('button', { name: 'Odśwież salda' }));
+    await waitFor(() => {
+      expect(cells('W01')[3]).toBe('3');
+    });
+    expect(refreshes().at(-1)?.mint).toBeUndefined();
+    expect(screen.getByRole('alert').textContent).toContain('nie jest mintem tokenu');
+
+    // a corrected mint clears the message and reads the token again
+    await user.clear(screen.getByLabelText('Adres tokenu (mint)'));
+    await user.type(screen.getByLabelText('Adres tokenu (mint)'), 'GoodMint1');
+    await user.click(screen.getByRole('button', { name: 'Pokaż saldo tokenu' }));
+    expect(await screen.findByRole('columnheader', { name: 'Token (Token-2022)' })).toBeTruthy();
+    expect(screen.queryByRole('alert')).toBeNull();
   });
 
   it('settings reset while reading the file are announced', async () => {

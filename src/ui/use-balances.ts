@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { toUserMessage } from '../core/errors.ts';
+import { isAppError, toUserMessage } from '../core/errors.ts';
 import type { VaultBalances } from '../worker/protocol.ts';
 import type { VaultClient } from '../worker/vault-client.ts';
 
@@ -44,6 +44,11 @@ export function useBalances(
   intervalMs: number = DEFAULT_BALANCE_REFRESH_MS,
   /** Token mint whose balances are read too; null for SOL only. */
   mint: string | null = null,
+  /**
+   * Called when the vault says the mint is not a token mint. The caller then drops the
+   * mint, so SOL balances keep refreshing until the address is fixed.
+   */
+  onBadMint?: (message: string) => void,
 ): BalancesState & { readonly refresh: () => void } {
   const [state, setState] = useState<BalancesState>(EMPTY);
   const inflight = useRef(false);
@@ -87,12 +92,19 @@ export function useBalances(
         done();
       },
       (e: unknown) => {
-        // A wrong mint must not leave the previous token's balances on screen.
-        if (mounted.current) setState((s) => ({ ...s, token: null, error: toUserMessage(e) }));
+        if (mounted.current) {
+          if (mint !== null && isAppError(e) && e.code === 'NOT_A_TOKEN_MINT' && onBadMint) {
+            setState((s) => ({ ...s, token: null }));
+            onBadMint(toUserMessage(e));
+          } else {
+            // A failed read must not leave a previous token's balances on screen.
+            setState((s) => ({ ...s, token: null, error: toUserMessage(e) }));
+          }
+        }
         done();
       },
     );
-  }, [client, mint]);
+  }, [client, mint, onBadMint]);
 
   useEffect(() => {
     latest.current = refresh;

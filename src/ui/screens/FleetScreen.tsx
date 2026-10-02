@@ -74,7 +74,13 @@ export function FleetScreen({
   const { client, refresh } = useVault();
   const [mintText, setMintText] = useState('');
   const [mint, setMint] = useState<string | null>(null);
-  const balances = useBalances(client, balanceRefreshMs, mint);
+  const [mintError, setMintError] = useState<string | null>(null);
+  // A wrong mint: show the message at the field and go on refreshing SOL without it.
+  const onBadMint = useCallback((message: string) => {
+    setMint(null);
+    setMintError(message);
+  }, []);
+  const balances = useBalances(client, balanceRefreshMs, mint, onBadMint);
   const [maxSpendText, setMaxSpendText] = useState<Drafts>(() => maxSpendDrafts(info));
   const [active, setActive] = useState<ActiveDrafts>(() => activeDrafts(info));
   const ids = useId();
@@ -187,6 +193,7 @@ export function FleetScreen({
   const showToken = (event: SyntheticEvent): void => {
     event.preventDefault();
     const text = mintText.trim();
+    setMintError(null);
     setMint(text === '' ? null : text);
   };
 
@@ -261,19 +268,32 @@ export function FleetScreen({
 
       <SettingsResetNotice fields={info.settings.resetFields} />
 
-      <form className="inline token-bar" onSubmit={showToken}>
-        <label htmlFor={`${ids}-mint`}>Token (adres mintu)</label>
-        <input
-          id={`${ids}-mint`}
-          type="text"
-          value={mintText}
-          spellCheck={false}
-          autoComplete="off"
-          onChange={(e) => {
-            setMintText(e.target.value);
-          }}
-        />
-        <button type="submit">Pokaż saldo tokenu</button>
+      <form className="token-bar" onSubmit={showToken}>
+        <label htmlFor={`${ids}-mint`}>Adres tokenu (mint)</label>
+        <div className="inline">
+          <input
+            id={`${ids}-mint`}
+            type="text"
+            value={mintText}
+            spellCheck={false}
+            autoComplete="off"
+            aria-invalid={mintError !== null}
+            aria-describedby={`${ids}-mint-help`}
+            onChange={(e) => {
+              setMintText(e.target.value);
+            }}
+          />
+          <button type="submit">Pokaż saldo tokenu</button>
+        </div>
+        {mintError ? (
+          <p className="field-error" id={`${ids}-mint-help`} role="alert">
+            {mintError}
+          </p>
+        ) : (
+          <p className="hint" id={`${ids}-mint-help`}>
+            Tylko podgląd sald; adres nie jest zapisywany w pliku floty.
+          </p>
+        )}
       </form>
 
       <FleetTable
