@@ -432,7 +432,7 @@ Rejestr decyzji i rozbieżności z dokumentacją zewnętrzną. Nowe wpisy dopisu
     - według dokumentacji nagłówki są tylko przy 200 i 429 (nie przy 401, 403, 5xx) i mogą zniknąć przy planach bez limitu; `x-ratelimit-reset` to sekundy Unix, kiedy zwalnia się jedno miejsce w oknie 60 s;
     - wniosek dla limitera (sprint 3): można czytać `remaining` i `reset`, ale limiter nie może od nich zależeć, bo bywają nieobecne. Podstawą jest token bucket z `ORDER_RPS`.
   - **Rozbieżności z opisem zadania i SPEC (wygrywa dokumentacja):**
-    - Keyless zwrócił `x-ratelimit-current: 1` i `x-ratelimit-remaining: 4`, czyli okno 5 zapytań, a tabela planów podaje 30/min. Możliwa reguła firewalla per IP. Do sprawdzenia w teście ręcznym z kluczem Krystiana.
+    - Keyless zwrócił `x-ratelimit-current: 1` i `x-ratelimit-remaining: 4`, a tabela planów podaje 30/min. Spike Andy'ego (BUNNDLY-30) pokazał bez klucza okno 10 s z 5 zapytaniami i liczniki niespójne między odpowiedziami; `x-ratelimit-limit` nie jest wysyłany. Dlatego test pokazuje surowe wartości tych nagłówków, które przyszły, nie wylicza z nich planu ani okna, a brak nagłówków nie jest błędem. Test ręczny z kluczem Krystiana pokaże wartości dla planu z kluczem.
     - Helius WebSocket: według aktualnej dokumentacji otwarcie połączenia kosztuje 1 kredyt, a strumień 2 kredyty za 0,1 MB danych. „1 kredyt za zdarzenie” dotyczy Parsed Streams. Limit planu Free: 5 równoczesnych połączeń i 10 zapytań/s. Test trwa ułamek sekundy i używa jednego połączenia.
 - Konsekwencje:
   - CSP (`connect-src`) musi obejmować również `https://api.jup.ag` (D-020 wymienia Helius HTTPS/WSS i awaryjny RPC).

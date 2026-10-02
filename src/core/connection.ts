@@ -26,14 +26,18 @@ export const CONNECTION_PROBLEMS = {
 
 export type ConnectionProblem = keyof typeof CONNECTION_PROBLEMS;
 
-/** Jupiter rate limit headers (https://developers.jup.ag/docs/portal/rate-limits.md). */
+/**
+ * Jupiter rate limit headers (https://developers.jup.ag/docs/portal/rate-limits.md), raw
+ * values as received. Each may be missing; `x-ratelimit-limit` is not sent at all. The
+ * values are shown as they are: no plan or window size is derived from them (D-024).
+ */
 export interface RateLimitHeaders {
   /** Requests left in the window; signed, 0 or negative when over the limit. */
-  readonly remaining: number;
+  readonly remaining: number | null;
   /** Requests already used in the window. */
-  readonly current: number;
+  readonly current: number | null;
   /** Unix time in seconds when the oldest request leaves the window. */
-  readonly reset: number;
+  readonly reset: number | null;
 }
 
 export interface ConnectionCheck {
@@ -63,7 +67,7 @@ export interface JupiterCheck extends ConnectionCheck {
   /** Quoted USDC for the test amount, raw units (6 decimals). */
   readonly outAmount: string | null;
   readonly router: string | null;
-  /** Null when the answer had none (401, 403, 5xx, or a plan without limits). */
+  /** Null when the answer had none (401, 403, 5xx, or a plan without limits); never an error. */
   readonly rateLimit: RateLimitHeaders | null;
 }
 
@@ -87,7 +91,7 @@ export function statusProblem(status: number): ConnectionProblem {
   return 'HTTP_ERROR';
 }
 
-/** Reads `x-ratelimit-*`; null unless all three are present integers. */
+/** Reads `x-ratelimit-*`: the integers that came; null when none did. */
 export function parseRateLimit(headers: {
   get(name: string): string | null;
 }): RateLimitHeaders | null {
@@ -98,7 +102,7 @@ export function parseRateLimit(headers: {
   const remaining = read('x-ratelimit-remaining');
   const current = read('x-ratelimit-current');
   const reset = read('x-ratelimit-reset');
-  return remaining === null || current === null || reset === null
+  return remaining === null && current === null && reset === null
     ? null
     : { remaining, current, reset };
 }
