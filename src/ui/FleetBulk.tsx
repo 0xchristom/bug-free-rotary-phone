@@ -119,7 +119,7 @@ export function FleetSummaryBar({ summary, walletCount, tokenDecimals }: FleetSu
     <dl className="summary" aria-label="Podsumowanie floty">
       <div>
         <dt>Łącznie SOL</dt>
-        <dd>{formatSol(summary.totalLamports)}</dd>
+        <dd>{formatSol(summary.totalLamports)} SOL</dd>
       </div>
       <div>
         <dt>Łącznie do wydania</dt>
