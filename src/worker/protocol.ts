@@ -5,7 +5,13 @@
  * bytes or to export keys without the password (DECISIONS D-013). Responses carry
  * the encrypted file text and public data only; errors carry only a code (D-008).
  */
-import type { ApiKeyName, ErrorCode, FleetSettingsV1, PublicWalletV1 } from '../core/index.ts';
+import type {
+  ApiKeyName,
+  ErrorCode,
+  FleetSettingsV1,
+  PlainExport,
+  PublicWalletV1,
+} from '../core/index.ts';
 
 /**
  * Change of the write-only API secrets (D-016): a missing field keeps the stored value,
@@ -46,6 +52,16 @@ export type VaultRequest =
       readonly apiKeys?: ApiKeyChanges;
     }
   | { readonly type: 'addWallets'; readonly count: number }
+  /**
+   * Plain export of the mnemonic and private keys (SPEC 3.1, D-023). The password is
+   * checked by a full scrypt derivation and decryption, never compared with anything
+   * kept in memory. The only request whose answer contains secrets.
+   */
+  | {
+      readonly type: 'exportPlain';
+      readonly password: string;
+      readonly format: 'txt' | 'json';
+    }
   /** While armed (watcher/executor running) auto-lock is suspended. */
   | { readonly type: 'setArmed'; readonly armed: boolean }
   /** User activity in the UI; resets the auto-lock timer. */
@@ -116,6 +132,7 @@ export interface VaultResultMap {
   readonly create: VaultFileResult;
   readonly preview: VaultPreview;
   readonly refreshBalances: VaultBalances;
+  readonly exportPlain: PlainExport;
   readonly unlock: VaultStatus;
   readonly lock: VaultStatus;
   readonly status: VaultStatus;

@@ -7,6 +7,7 @@ import {
   type StorageEnv,
 } from '../../storage/keystore-file.ts';
 import type { VaultInfo } from '../../worker/protocol.ts';
+import { ExportDialog } from '../ExportDialog.tsx';
 import { FleetBulk, FleetSummaryBar } from '../FleetBulk.tsx';
 import { shareOf, summarize } from '../fleet-math.ts';
 import { FleetTable } from '../FleetTable.tsx';
@@ -87,6 +88,7 @@ export function FleetScreen({
   const [active, setActive] = useState<ActiveDrafts>(() => activeDrafts(info));
   const ids = useId();
   const [qrFor, setQrFor] = useState<number | null>(null);
+  const [exportOpen, setExportOpen] = useState(false);
   const [copied, setCopied] = useState<number | null>(null);
   const [addCount, setAddCount] = useState('1');
   const [phase, setPhase] = useState<AddPhase>({ kind: 'idle' });
@@ -439,6 +441,31 @@ export function FleetScreen({
             </button>
           </div>
         </form>
+      )}
+
+      <h3>Kopia zapasowa</h3>
+      <p className="muted">
+        Jedyna droga do kopii mnemonika i kluczy prywatnych: eksport jawny po ponownym wpisaniu
+        hasła.
+      </p>
+      {exportOpen ? (
+        <ExportDialog
+          storage={storage}
+          onClose={() => {
+            setExportOpen(false);
+          }}
+        />
+      ) : (
+        <div className="actions">
+          <button
+            type="button"
+            onClick={() => {
+              setExportOpen(true);
+            }}
+          >
+            Eksport jawny (mnemonik i klucze)
+          </button>
+        </div>
       )}
     </section>
   );

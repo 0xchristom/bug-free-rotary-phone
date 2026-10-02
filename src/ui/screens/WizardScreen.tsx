@@ -8,6 +8,7 @@ import {
   type StorageEnv,
 } from '../../storage/keystore-file.ts';
 import type { VaultInfo } from '../../worker/protocol.ts';
+import { ExportDialog } from '../ExportDialog.tsx';
 import { passwordStrength } from '../password-strength.ts';
 import { useVault } from '../vault-state.ts';
 
@@ -64,6 +65,7 @@ export function WizardScreen({ storage, onBack, onDone, onUnsavedChange }: Wizar
   const [showMnemonic, setShowMnemonic] = useState(false);
   const [phase, setPhase] = useState<Phase>({ kind: 'form' });
   const [error, setError] = useState<string | null>(null);
+  const [exportOpen, setExportOpen] = useState(false);
 
   const unsaved = phase.kind === 'created';
   useEffect(() => {
@@ -208,14 +210,30 @@ export function WizardScreen({ storage, onBack, onDone, onUnsavedChange }: Wizar
           </p>
         )}
         <p className="notice warning" role="status">
-          Zapamiętaj hasło. Bez hasła i bez mnemonika nie da się odzyskać środków z tej floty. Kopię
-          mnemonika zrobisz później przez eksport jawny.
+          Zapamiętaj hasło. Bez hasła i bez mnemonika nie da się odzyskać środków z tej floty. Zrób
+          teraz kopię zapasową mnemonika i przechowuj ją offline.
         </p>
         <div className="actions">
+          <button
+            type="button"
+            onClick={() => {
+              setExportOpen(true);
+            }}
+          >
+            Zrób kopię zapasową mnemonika
+          </button>
           <button type="button" className="primary" onClick={onDone}>
             Przejdź do floty
           </button>
         </div>
+        {exportOpen && (
+          <ExportDialog
+            storage={storage}
+            onClose={() => {
+              setExportOpen(false);
+            }}
+          />
+        )}
       </section>
     );
   }

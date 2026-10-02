@@ -349,3 +349,17 @@ fieldset.bulk .inline {
   flex-wrap: wrap;
   gap: 0.5rem;
 }
+
+section.dialog {
+  margin: 1rem 0;
+}
+
+button.danger {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: #fff;
+}
+
+button.danger:disabled {
+  opacity: 0.5;
+}

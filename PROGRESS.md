@@ -6,6 +6,7 @@ Format: `RRRR-MM-DD · BUNNDLY-<n> · <co działa>`
 
 ---
 
+- 2026-10-02 · BUNNDLY-11 · Eksport jawny: `exportPlain` w workerze (hasło sprawdzane pełnym scrypt i odszyfrowaniem pliku), .txt albo .json z mnemonikiem i kluczami base58 (64 B, Phantom), dialog z ostrzeżeniem, potwierdzeniem i hasłem; od razu pobranie, treść poza stanem React. Przycisk „Zrób kopię zapasową mnemonika” w kreatorze i „Eksport jawny” na ekranie Flota.
 - 2026-10-02 · BUNNDLY-14 (część 2) · Akcje zbiorcze: max spend dla wszystkich, max spend jako % salda (zaokrąglenie w dół), zaznacz i odznacz wszystkie; pasek podsumowania: łącznie SOL, łącznie do wydania, gotowe portfele, łącznie tokenów (bigint, ze szkicu tabeli).
 - 2026-10-02 · BUNNDLY-14 (część 1) · Tabela floty: saldo SOL, edytowalny max spend, rezerwa (bigint) z czerwonym wierszem poniżej `MIN_RESERVE_SOL`, saldo tokenu z decimals, aktywny; zapis przez `saveSettings` i plik po kliknięciu; wiersze `memo` (odświeżenie sald przerysowuje tylko zmienione). Dolna granica rezerwy 0,005 SOL; tolerancyjny odczyt ustawień spoza zakresu z informacją w UI (D-019).
 - 2026-10-02 · BUNNDLY-13 · `src/chain/tokens.ts`: saldo tokenu dla całej floty: program (SPL Token / Token-2022) i decimals z konta mintu, ATA każdego portfela (PDA przez `@solana/kit`), odczyt bazowej części konta w paczkach po 100, u64 bez utraty precyzji, brak ATA = 0n, `NOT_A_TOKEN_MINT` po polsku. `refreshBalances { mint? }` w workerze. Testy na fixtures z mainnetu (USDC, PYUSD z rozszerzeniami) pobranych przez Helius.

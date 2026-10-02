@@ -152,8 +152,13 @@ async function saveToDirectory(
   return { method: 'directory', fileName, folder: dir.name };
 }
 
-function download(env: StorageEnv, fileText: string, fileName: string): SaveResult {
-  const url = env.createObjectURL(new Blob([fileText], { type: 'application/json' }));
+function download(
+  env: StorageEnv,
+  fileText: string,
+  fileName: string,
+  mimeType = 'application/json',
+): SaveResult {
+  const url = env.createObjectURL(new Blob([fileText], { type: mimeType }));
   try {
     env.clickDownload(url, fileName);
   } catch (e) {
@@ -227,4 +232,23 @@ export async function openKeystoreFile(env: StorageEnv): Promise<OpenedFile> {
   }
   if (file === null) throw new AppError('STORAGE_CANCELLED');
   return readKeystoreFile(file);
+}
+
+/**
+ * Downloads a text file (the plain export, BUNNDLY-11). Always a download, never a write
+ * into a picked folder: the plain export must not end up next to the fleet file by
+ * accident. The object URL is revoked after DOWNLOAD_URL_TTL_MS. Errors:
+ * STORAGE_WRITE_FAILED.
+ */
+export function downloadTextFile(
+  env: StorageEnv,
+  text: string,
+  fileName: string,
+  mimeType: string,
+): void {
+  try {
+    download(env, text, fileName, mimeType);
+  } catch (e) {
+    throw toStorageError(e, 'STORAGE_WRITE_FAILED');
+  }
 }

@@ -2,6 +2,7 @@
 export { browserStorageEnv } from './browser.ts';
 export {
   DOWNLOAD_URL_TTL_MS,
+  downloadTextFile,
   keystoreFileName,
   openKeystoreFile,
   readKeystoreFile,

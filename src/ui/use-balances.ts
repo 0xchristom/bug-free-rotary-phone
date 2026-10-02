@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { isAppError, toUserMessage } from '../core/errors.ts';
 import type { VaultBalances } from '../worker/protocol.ts';
 import type { VaultClient } from '../worker/vault-client.ts';
@@ -113,8 +113,10 @@ export function useBalances(
     );
   }, [client, mint, onBadMint]);
 
-  // Declared before the polling effect so the new mint is current before it refreshes.
-  useEffect(() => {
+  // A layout effect runs at commit, before any passive effect: no answer arriving between
+  // the commit and the effects can be checked against the old mint, and the new mint is
+  // current before the polling effect refreshes.
+  useLayoutEffect(() => {
     currentMint.current = mint;
   }, [mint]);
 

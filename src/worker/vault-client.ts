@@ -8,7 +8,7 @@ import type { VaultPort, VaultRequestOf, VaultRequestType, VaultResultMap } from
 /** scrypt runs on create and unlock (about 1 s in Node, slower on weak devices). */
 export const DEFAULT_SLOW_TIMEOUT_MS = 120_000;
 export const DEFAULT_TIMEOUT_MS = 30_000;
-const SLOW_REQUESTS: ReadonlySet<VaultRequestType> = new Set(['create', 'unlock']);
+const SLOW_REQUESTS: ReadonlySet<VaultRequestType> = new Set(['create', 'unlock', 'exportPlain']);
 
 export interface VaultClientOptions {
   readonly timeoutMs?: number;

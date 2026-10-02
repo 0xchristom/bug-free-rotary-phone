@@ -394,3 +394,21 @@ Rejestr decyzji i rozbieżności z dokumentacją zewnętrzną. Nowe wpisy dopisu
     - akcje zmieniają tylko szkic tabeli. Zapis do sejfu i pliku zostaje osobnym krokiem.
   - **Pasek podsumowania (część 2):** łącznie SOL (znane salda), łącznie do wydania (max spend gotowych portfeli), liczba gotowych portfeli i łącznie tokenów (z `decimals`). Wszystko na `bigint`, ze szkicu tabeli, więc widać skutek zmian przed zapisem. Średnia cena wejścia dojdzie w sprincie 3.
 - Konsekwencje: kolumny zakupu (status, Tx) dojdą w sprincie 3. Akcje zbiorcze i pasek podsumowania są w drugim PR tego zadania.
+
+## D-023: Eksport jawny mnemonika i kluczy
+
+- Data: 2026-10-02
+- Zadanie: BUNNDLY-11
+- Kontekst: SPEC 3.1 i 6.1, D-013 (w workerze nie ma eksportu kluczy bez hasła). Eksport jawny to jedyna droga do kopii zapasowej mnemonika, bo kreator nigdy go nie pokazuje (review BUNNDLY-6).
+- Decyzja:
+  - **Nowe żądanie workera `exportPlain { password, format: 'txt' | 'json' }`.** To jedyna odpowiedź workera z sekretami i wyjątek opisany w D-013: działa tylko z hasłem.
+  - **Weryfikacja hasła:** worker szyfruje bieżący stan kluczem sesji, a potem otwiera ten plik podanym hasłem przez `openKeystore`, czyli pełną derywację scrypt, odszyfrowanie AES-GCM i kontrolę spójności adresów. Nic nie jest porównywane z pamięcią, bo worker hasła nie przechowuje. Złe hasło daje `KEYSTORE_WRONG_PASSWORD_OR_CORRUPTED`, także przy wiadomości wysłanej prosto do workera.
+  - **Treść:** ostrzeżenie, nazwa floty, data, mnemonik oraz dla każdego portfela etykieta, indeks, ścieżka, adres i klucz prywatny base58 (64 bajty: seed i klucz publiczny, format importu Phantom i Solflare). Plik `<flota>.EKSPORT-JAWNY.txt` albo `.json`.
+  - **UI:**
+    - dialog z ostrzeżeniem, checkboxem „Rozumiem, że ten plik daje pełny dostęp do środków” i ponownym hasłem; przycisk jest aktywny dopiero przy obu;
+    - hasło jest czyszczone po każdej próbie;
+    - treść z odpowiedzi idzie od razu do pobrania (`Blob`, `revokeObjectURL` po 60 s, D-017) i nigdy nie trafia do stanu React, DOM, storage ani logów; zostaje tylko nazwa pliku;
+    - eksport jest zawsze pobraniem, nigdy zapisem do wybranego folderu, żeby jawny plik nie trafił przypadkiem obok pliku floty.
+  - **Dostęp:** z ekranu Flota („Kopia zapasowa”) i z ekranu końcowego kreatora („Zrób kopię zapasową mnemonika”), w obu miejscach ten sam dialog.
+  - **Timeout klienta** jak dla `create` i `unlock` (scrypt).
+- Konsekwencje: test „brak sekretów w odpowiedziach” w workerze dalej obejmuje wszystkie inne operacje; `exportPlain` ma osobne testy.

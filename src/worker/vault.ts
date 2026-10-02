@@ -26,6 +26,7 @@ import {
   AppError,
   MAX_FLEET_SIZE,
   buildKeystoreWithSession,
+  buildPlainExport,
   createKeystore,
   deriveWallets,
   isAppError,
@@ -465,6 +466,24 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
         if (typeof request.armed !== 'boolean') return badRequest();
         armed = request.armed;
         return status();
+      case 'exportPlain': {
+        const vault = requireUnlocked();
+        const password = str(request.password);
+        const rawFormat: unknown = request.format;
+        const format = rawFormat === 'json' || rawFormat === 'txt' ? rawFormat : badRequest();
+        // Encrypt the current state with the session key, then open that file with the
+        // given password: a full scrypt derivation and AES-GCM decryption. A wrong
+        // password fails here (KEYSTORE_WRONG_PASSWORD_OR_CORRUPTED).
+        const labels = new Map(vault.publicWallets.map((w) => [w.index, w.label]));
+        const file = await buildKeystoreWithSession(
+          toSecrets(vault, vault.wallets, vault.settings, vault.apiKeys),
+          { fleetName: vault.fleetName, createdAt: vault.createdAt, labels },
+          vault.session,
+        );
+        const opened = await openKeystore(file, password, progress);
+        if (unlocked !== vault) throw new AppError('VAULT_LOCKED');
+        return buildPlainExport(opened.file, opened.secrets, format, new Date(now()));
+      }
       case 'activity':
         return status();
       default:
