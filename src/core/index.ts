@@ -79,3 +79,5 @@ export {
   openKeystore,
 } from './keystore/keystore.ts';
 export type { CreateKeystoreParams, KeystoreMeta, OpenedKeystore } from './keystore/keystore.ts';
+export { PLAIN_EXPORT_WARNING, buildPlainExport } from './keystore/export.ts';
+export type { PlainExport, PlainExportFormat } from './keystore/export.ts';
