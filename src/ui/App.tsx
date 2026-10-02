@@ -114,6 +114,9 @@ export function App({
     if (unsavedFile && screen !== 'wizard' && !window.confirm(UNSAVED_CONFIRM)) return;
     try {
       applyStatus(await vault.request({ type: 'lock' }), 'user');
+      // Drop the unsaved-file guard together with the status, not one render later when
+      // the screen unmounts. The wizard keeps its encrypted file, so it stays guarded.
+      if (screen !== 'wizard') setUnsavedFile(false);
     } catch (e) {
       setNotice(toUserMessage(e));
     }

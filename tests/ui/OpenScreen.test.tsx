@@ -303,9 +303,11 @@ describe('add wallets', () => {
     await user.click(screen.getByRole('button', { name: 'Zablokuj' }));
     expect(await screen.findByRole('heading', { name: 'Witaj w Bunndly' })).toBeTruthy();
     expect(handler.inspect().unlocked).toBeNull();
-    // nothing left to protect after the lock
-    const after = new Event('beforeunload', { cancelable: true });
-    window.dispatchEvent(after);
-    expect(after.defaultPrevented).toBe(false);
+    // nothing left to protect after the lock (the listener goes in a later effect)
+    await waitFor(() => {
+      const after = new Event('beforeunload', { cancelable: true });
+      window.dispatchEvent(after);
+      expect(after.defaultPrevented).toBe(false);
+    });
   });
 });
