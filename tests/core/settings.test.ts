@@ -159,6 +159,7 @@ describe('Helius endpoints and API key values', () => {
     ['https://user:pw@mainnet.helius-rpc.com', 'https:', false],
     ['https://helius-rpc.com.evil.example/?api-key=x', 'https:', false],
     ['https://evilhelius-rpc.com/?api-key=x', 'https:', false],
+    ['https://mainnet.helius-rpc.com./?api-key=x', 'https:', false],
     ['https://rpc.example.com/?api-key=x', 'https:', false],
     ['wss://api.mainnet.solana.com', 'wss:', false],
     ['not a url', 'https:', false],
@@ -191,7 +192,7 @@ describe('Helius endpoints and API key values', () => {
 
   it('isHeliusHost accepts only the exact domain or its subdomains', () => {
     expect(isHeliusHost('helius-rpc.com')).toBe(true);
-    expect(isHeliusHost('mainnet.helius-rpc.com.')).toBe(true);
+    expect(isHeliusHost('mainnet.helius-rpc.com.')).toBe(false); // CSP may not match it
     expect(isHeliusHost('helius-rpc.com.evil.example')).toBe(false);
     expect(isHeliusHost('evilhelius-rpc.com')).toBe(false);
     expect(isHeliusHost('helius-rpc.co')).toBe(false);
