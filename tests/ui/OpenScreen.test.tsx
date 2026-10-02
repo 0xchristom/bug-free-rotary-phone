@@ -36,7 +36,10 @@ beforeAll(async () => {
     mnemonic: MNEMONIC,
   });
   fixture = await buildKeystore(
-    { ...opened.secrets, settings: { maxSpend: [{ index: 1, lamports: 5_000_000n }] } },
+    {
+      ...opened.secrets,
+      settings: { ...opened.secrets.settings, maxSpend: [{ index: 1, lamports: 5_000_000n }] },
+    },
     {
       fleetName: 'Flota testowa',
       labels: new Map([
@@ -263,7 +266,7 @@ describe('add wallets', () => {
     expect(wallets.slice(0, 3)).toEqual(fixture.public.wallets);
     expect(wallets.map((w) => w.label)).toEqual(['Alfa', 'Beta', 'W03', 'W04', 'W05']);
     expect(wallets.map((w) => w.index)).toEqual([0, 1, 2, 3, 4]);
-    expect(reopened.secrets.settings).toEqual({ maxSpend: [{ index: 1, lamports: 5_000_000n }] });
+    expect(reopened.secrets.settings.maxSpend).toEqual([{ index: 1, lamports: 5_000_000n }]);
     expect(reopened.secrets.mnemonic).toBe(MNEMONIC);
   }, 30_000);
 

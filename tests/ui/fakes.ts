@@ -1,5 +1,6 @@
 import { vi } from 'vitest';
 import { AppError } from '../../src/core/errors.ts';
+import { DEFAULT_GLOBAL_SETTINGS } from '../../src/core/settings.ts';
 import type { DirectoryHandleLike, StorageEnv } from '../../src/storage/keystore-file.ts';
 import type { VaultInfo, VaultRequest, VaultStatus } from '../../src/worker/protocol.ts';
 import type { VaultClient, VaultRequestOptions } from '../../src/worker/vault-client.ts';
@@ -16,8 +17,8 @@ export function fleetInfo(count = 3, fleetName = 'Flota testowa'): VaultInfo {
       derivationPath: `m/44'/501'/${String(index)}'/0'`,
       label: `W${String(index + 1).padStart(2, '0')}`,
     })),
-    settings: { maxSpend: [] },
-    apiKeys: {},
+    settings: { maxSpend: [], active: [], global: DEFAULT_GLOBAL_SETTINGS },
+    apiKeys: { helius: false, jupiter: false, heliusRpcUrl: false, heliusWsUrl: false },
   };
 }
 

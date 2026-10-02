@@ -48,7 +48,10 @@ export type {
 } from './keystore/crypto.ts';
 export { KEYSTORE_FILE_SUFFIX } from './keystore/limits.ts';
 export {
+  API_KEY_NAMES,
   KEYSTORE_VERSION,
+  defaultFleetSettings,
+  isValidApiKeyValue,
   MAX_KEYSTORE_FILE_BYTES,
   isValidFleetName,
   parseKeystoreFile,
@@ -57,6 +60,7 @@ export {
   serializeKeystoreFile,
 } from './keystore/format.ts';
 export type {
+  ApiKeyName,
   ApiKeysV1,
   FleetSettingsV1,
   KeystoreFileV1,
@@ -64,7 +68,9 @@ export type {
   MaxSpendV1,
   PublicWalletV1,
   SecretWalletV1,
+  WalletActiveV1,
 } from './keystore/format.ts';
+export * from './settings.ts';
 export {
   buildKeystore,
   buildKeystoreWithSession,

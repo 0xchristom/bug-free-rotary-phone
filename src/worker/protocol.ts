@@ -5,7 +5,16 @@
  * bytes or to export keys without the password (DECISIONS D-013). Responses carry
  * the encrypted file text and public data only; errors carry only a code (D-008).
  */
-import type { ApiKeysV1, ErrorCode, FleetSettingsV1, PublicWalletV1 } from '../core/index.ts';
+import type { ApiKeyName, ErrorCode, FleetSettingsV1, PublicWalletV1 } from '../core/index.ts';
+
+/**
+ * Change of the write-only API secrets (D-016): a missing field keeps the stored value,
+ * `null` removes it and a string replaces it.
+ */
+export type ApiKeyChanges = { readonly [K in ApiKeyName]?: string | null };
+
+/** Which API secrets are set. The values themselves never leave the worker (D-016). */
+export type ApiKeyFlags = { readonly [K in ApiKeyName]: boolean };
 
 /** Default inactivity before the vault locks itself (SPEC 3.1: 15 minutes). */
 export const DEFAULT_AUTO_LOCK_MS = 15 * 60 * 1000;
@@ -26,8 +35,9 @@ export type VaultRequest =
   | { readonly type: 'status' }
   | {
       readonly type: 'saveSettings';
+      /** Replaces all settings (global, maxSpend, active). */
       readonly settings: FleetSettingsV1;
-      readonly apiKeys: ApiKeysV1;
+      readonly apiKeys?: ApiKeyChanges;
     }
   | { readonly type: 'addWallets'; readonly count: number }
   /** While armed (watcher/executor running) auto-lock is suspended. */
@@ -43,7 +53,7 @@ export interface VaultInfo {
   readonly createdAt: string;
   readonly wallets: readonly PublicWalletV1[];
   readonly settings: FleetSettingsV1;
-  readonly apiKeys: ApiKeysV1;
+  readonly apiKeys: ApiKeyFlags;
 }
 
 /**

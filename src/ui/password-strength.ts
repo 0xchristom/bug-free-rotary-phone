@@ -25,8 +25,11 @@ const LABELS: Record<StrengthScore, string> = {
   4: 'Bardzo dobre',
 };
 
-/** Frequent passwords and words (lower case, digits and symbols stripped before matching). */
-const COMMON = [
+/**
+ * Frequent passwords and words (lower case, at least 4 letters). Matched against the
+ * Latin letters of the password after removing diacritics, digits and symbols.
+ */
+export const COMMON_WORDS = [
   'password',
   'passwort',
   'haslo',
@@ -54,7 +57,6 @@ const COMMON = [
   'phantom',
   'polska',
   'zaqxsw',
-  'abc',
   'test',
 ] as const;
 
@@ -97,12 +99,17 @@ function hasRepeats(pw: string, length: number): boolean {
 }
 
 function containsCommon(pw: string): boolean {
-  const letters = pw
+  const latin = pw
     .normalize('NFKD')
     .replace(/\p{M}/gu, '')
     .toLowerCase()
     .replace(/[^a-z]/g, '');
-  return COMMON.some((word) => word.length >= 4 && letters.includes(word)) || letters.length === 0;
+  return COMMON_WORDS.some((word) => latin.includes(word));
+}
+
+/** Only digits, symbols and spaces: easy to brute-force whatever the length. */
+function hasNoLetters(pw: string): boolean {
+  return !/\p{L}/u.test(pw);
 }
 
 export function passwordStrength(password: string): PasswordStrength {
@@ -131,7 +138,10 @@ export function passwordStrength(password: string): PasswordStrength {
     score -= 1;
     hints.push('Unikaj sekwencji (abcd, 1234) i układów klawiatury (qwerty).');
   }
-  if (containsCommon(password)) {
+  if (hasNoLetters(password)) {
+    score = Math.min(score, 1);
+    hints.push('Hasło ma same cyfry i symbole. Dodaj litery albo użyj frazy z kilku słów.');
+  } else if (containsCommon(password)) {
     score = Math.min(score, 1);
     hints.push('Hasło zawiera popularne słowo lub wzorzec. Użyj frazy z kilku przypadkowych słów.');
   }

@@ -12,17 +12,21 @@
  */
 import { base58 } from '@scure/base';
 import {
+  API_KEY_NAMES,
   AppError,
   MAX_FLEET_SIZE,
   buildKeystoreWithSession,
   createKeystore,
   deriveWallets,
   isAppError,
+  isValidApiKeyValue,
   openKeystore,
   parseKeystoreFile,
   secretKeyToBase58,
   serializeKeystoreFile,
+  validateGlobalSettings,
   wipe,
+  type ApiKeyName,
   type ApiKeysV1,
   type FleetSettingsV1,
   type KeystoreSecretsV1,
@@ -32,6 +36,7 @@ import {
 } from '../core/index.ts';
 import { DEFAULT_AUTO_LOCK_MS } from './protocol.ts';
 import type {
+  ApiKeyFlags,
   VaultFileResult,
   VaultInfo,
   VaultPort,
@@ -48,7 +53,10 @@ export { DEFAULT_AUTO_LOCK_MS } from './protocol.ts';
 export interface VaultOptions {
   /** Clock in ms; injectable for tests. */
   readonly now?: () => number;
-  /** Inactivity before auto-lock; default 15 minutes. */
+  /**
+   * Inactivity before auto-lock. Overrides the fleet's `autoLockMinutes` setting (tests);
+   * without it the setting applies, and 15 minutes while locked.
+   */
   readonly autoLockMs?: number;
 }
 
@@ -107,23 +115,87 @@ function int(value: unknown): number {
   return typeof value === 'number' && Number.isSafeInteger(value) ? value : badRequest();
 }
 
-function parseSettings(value: unknown): FleetSettingsV1 {
-  if (!isRecord(value) || !Array.isArray(value.maxSpend)) return badRequest();
-  const items: unknown[] = value.maxSpend;
-  return {
-    maxSpend: items.map((item) => {
-      if (!isRecord(item) || typeof item.lamports !== 'bigint') return badRequest();
-      return { index: int(item.index), lamports: item.lamports };
-    }),
-  };
+function invalidSettings(): never {
+  throw new AppError('INVALID_SETTINGS');
 }
 
-function parseApiKeys(value: unknown): ApiKeysV1 {
-  if (!isRecord(value)) return badRequest();
-  const keys: { helius?: string; jupiter?: string } = {};
-  if (value.helius !== undefined) keys.helius = str(value.helius);
-  if (value.jupiter !== undefined) keys.jupiter = str(value.jupiter);
-  return keys;
+function isIndexIn(value: unknown, indices: ReadonlySet<number>): value is number {
+  return typeof value === 'number' && indices.has(value);
+}
+
+/** Full settings from the UI; anything malformed or out of range is INVALID_SETTINGS. */
+function parseSettings(value: unknown, walletIndices: ReadonlySet<number>): FleetSettingsV1 {
+  if (!isRecord(value) || !Array.isArray(value.maxSpend) || !Array.isArray(value.active)) {
+    return invalidSettings();
+  }
+  const maxSpendItems: unknown[] = value.maxSpend;
+  const activeItems: unknown[] = value.active;
+  const maxSpend = maxSpendItems.map((item) => {
+    if (
+      !isRecord(item) ||
+      !isIndexIn(item.index, walletIndices) ||
+      typeof item.lamports !== 'bigint' ||
+      item.lamports < 0n ||
+      item.lamports >= 2n ** 64n
+    ) {
+      return invalidSettings();
+    }
+    return { index: item.index, lamports: item.lamports };
+  });
+  const active = activeItems.map((item) => {
+    if (!isRecord(item) || !isIndexIn(item.index, walletIndices)) return invalidSettings();
+    if (typeof item.active !== 'boolean') return invalidSettings();
+    return { index: item.index, active: item.active };
+  });
+  for (const list of [maxSpend, active]) {
+    if (new Set(list.map((i) => i.index)).size !== list.length) invalidSettings();
+  }
+  if (!isRecord(value.global)) return invalidSettings();
+  const g = value.global;
+  const global = {
+    minReserveLamports: g.minReserveLamports,
+    maxAttempts: g.maxAttempts,
+    priceCeilingPercent: g.priceCeilingPercent,
+    noRouteWindowMs: g.noRouteWindowMs,
+    noRouteBackoffMinMs: g.noRouteBackoffMinMs,
+    noRouteBackoffMaxMs: g.noRouteBackoffMaxMs,
+    mode: g.mode,
+    explorer: g.explorer,
+    autoLockMinutes: g.autoLockMinutes,
+    jupiterPlan: g.jupiterPlan,
+    orderRpm: g.orderRpm,
+  } as FleetSettingsV1['global'];
+  if (validateGlobalSettings(global).length > 0) return invalidSettings();
+  return { maxSpend, active, global };
+}
+
+/** Applies write-only key changes: missing keeps, null removes, a string replaces. */
+function applyKeyChanges(current: ApiKeysV1, changes: unknown): ApiKeysV1 {
+  if (changes === undefined) return current;
+  if (!isRecord(changes)) return invalidSettings();
+  if (!Object.keys(changes).every((k) => (API_KEY_NAMES as readonly string[]).includes(k))) {
+    return invalidSettings();
+  }
+  const next: { -readonly [K in ApiKeyName]?: string } = {};
+  for (const name of API_KEY_NAMES) {
+    const change = changes[name];
+    let value: string | undefined;
+    if (change === undefined) value = current[name];
+    else if (change === null) value = undefined;
+    else if (typeof change === 'string' && isValidApiKeyValue(name, change)) value = change;
+    else return invalidSettings();
+    if (value !== undefined) next[name] = value;
+  }
+  return next;
+}
+
+function keyFlags(keys: ApiKeysV1): ApiKeyFlags {
+  return {
+    helius: keys.helius !== undefined,
+    jupiter: keys.jupiter !== undefined,
+    heliusRpcUrl: keys.heliusRpcUrl !== undefined,
+    heliusWsUrl: keys.heliusWsUrl !== undefined,
+  };
 }
 
 function wipeVault(vault: UnlockedVault): void {
@@ -168,13 +240,15 @@ function infoOf(vault: UnlockedVault): VaultInfo {
     createdAt: vault.createdAt.toISOString(),
     wallets: vault.publicWallets,
     settings: vault.settings,
-    apiKeys: vault.apiKeys,
+    apiKeys: keyFlags(vault.apiKeys),
   };
 }
 
 export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
   const now = options.now ?? (() => Date.now());
-  const autoLockMs = options.autoLockMs ?? DEFAULT_AUTO_LOCK_MS;
+  const autoLockMs = (): number =>
+    options.autoLockMs ??
+    (unlocked ? unlocked.settings.global.autoLockMinutes * 60_000 : DEFAULT_AUTO_LOCK_MS);
   let unlocked: UnlockedVault | null = null;
   let armed = false;
   let lastActivity = now();
@@ -232,7 +306,7 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
   };
 
   const checkAutoLock = (): boolean => {
-    if (unlocked !== null && !armed && now() - lastActivity >= autoLockMs) {
+    if (unlocked !== null && !armed && now() - lastActivity >= autoLockMs()) {
       lock();
       return true;
     }
@@ -288,11 +362,12 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
         return status();
       case 'saveSettings': {
         const vault = requireUnlocked();
+        const indices = new Set(vault.wallets.map((w) => w.index));
         return rebuild(
           vault,
           vault.wallets,
-          parseSettings(request.settings),
-          parseApiKeys(request.apiKeys),
+          parseSettings(request.settings, indices),
+          applyKeyChanges(vault.apiKeys, request.apiKeys),
         );
       }
       case 'addWallets': {

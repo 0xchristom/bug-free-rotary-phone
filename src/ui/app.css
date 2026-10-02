@@ -159,7 +159,8 @@ button.danger {
 
 input[type='text'],
 input[type='password'],
-input[type='number'] {
+input[type='number'],
+select {
   font: inherit;
   color: var(--text);
   background: var(--panel);
@@ -254,4 +255,28 @@ svg.qr {
   display: block;
   max-width: 100%;
   height: auto;
+}
+
+fieldset {
+  display: grid;
+  gap: 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.75rem 1rem 1rem;
+  margin: 0 0 1rem;
+  min-width: 0;
+}
+
+legend {
+  padding: 0 0.25rem;
+  font-weight: 600;
+}
+
+.key-field {
+  display: grid;
+  gap: 4px;
+}
+
+.key-field .muted {
+  margin: 0.15rem 0 0.35rem;
 }

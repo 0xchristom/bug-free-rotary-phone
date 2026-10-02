@@ -7,6 +7,12 @@ import { MAX_FLEET_SIZE, solanaDerivationPath } from '../derivation.ts';
 import { AppError } from '../errors.ts';
 import type { CipherParams, KdfParams } from './crypto.ts';
 import { MAX_KEYSTORE_FILE_BYTES, isValidFleetName } from './limits.ts';
+import {
+  DEFAULT_GLOBAL_SETTINGS,
+  isValidEndpointUrl,
+  validateGlobalSettings,
+  type GlobalSettingsV1,
+} from '../settings.ts';
 
 export { MAX_KEYSTORE_FILE_BYTES, isValidFleetName } from './limits.ts';
 
@@ -47,14 +53,49 @@ export interface MaxSpendV1 {
   readonly lamports: bigint;
 }
 
+/** Per-wallet "active" flag (SPEC 3.2); wallets without an entry are active. */
+export interface WalletActiveV1 {
+  readonly index: number;
+  readonly active: boolean;
+}
+
+/**
+ * Settings inside the encrypted part. `active` and `global` were added in BUNNDLY-15
+ * without a version bump (no real files existed yet, D-019); missing ones read as the
+ * defaults. From the first real use on, any format change means a new version.
+ */
 export interface FleetSettingsV1 {
   /** Per-wallet max spend; wallets without an entry have none set yet. */
   readonly maxSpend: readonly MaxSpendV1[];
+  readonly active: readonly WalletActiveV1[];
+  readonly global: GlobalSettingsV1;
 }
 
+export function defaultFleetSettings(): FleetSettingsV1 {
+  return { maxSpend: [], active: [], global: DEFAULT_GLOBAL_SETTINGS };
+}
+
+/** Secrets that never leave the vault worker (D-016). Custom Helius URLs contain the key. */
 export interface ApiKeysV1 {
   readonly helius?: string;
   readonly jupiter?: string;
+  readonly heliusRpcUrl?: string;
+  readonly heliusWsUrl?: string;
+}
+
+export const API_KEY_NAMES = ['helius', 'jupiter', 'heliusRpcUrl', 'heliusWsUrl'] as const;
+export type ApiKeyName = (typeof API_KEY_NAMES)[number];
+
+/** True if the value is acceptable for that API key slot (also used by the worker). */
+export function isValidApiKeyValue(name: ApiKeyName, value: string): boolean {
+  switch (name) {
+    case 'heliusRpcUrl':
+      return isValidEndpointUrl(value, 'https:');
+    case 'heliusWsUrl':
+      return isValidEndpointUrl(value, 'wss:');
+    default:
+      return value.length > 0 && value.length <= MAX_API_KEY_LENGTH && !/[\p{Cc}\s]/u.test(value);
+  }
 }
 
 /** Plaintext inside `ciphertext`. */
@@ -231,9 +272,23 @@ function expectLamports(value: unknown): bigint {
   return n <= U64_MAX ? n : invalid();
 }
 
-function parseApiKey(value: unknown): string {
-  const s = expectString(value);
-  return s.length > 0 && s.length <= MAX_API_KEY_LENGTH ? s : invalid();
+function expectBoolean(value: unknown): boolean {
+  return typeof value === 'boolean' ? value : invalid();
+}
+
+const GLOBAL_KEYS = Object.keys(DEFAULT_GLOBAL_SETTINGS) as (keyof GlobalSettingsV1)[];
+
+/** Missing keys take the defaults; present ones must be valid (else the file is invalid). */
+function parseGlobalSettings(value: unknown): GlobalSettingsV1 {
+  if (value === undefined) return DEFAULT_GLOBAL_SETTINGS;
+  const g = expectKeys(value, [], GLOBAL_KEYS);
+  const merged: Record<string, unknown> = { ...DEFAULT_GLOBAL_SETTINGS };
+  for (const key of GLOBAL_KEYS) {
+    if (!(key in g)) continue;
+    merged[key] = key === 'minReserveLamports' ? expectLamports(g[key]) : g[key];
+  }
+  const global = merged as unknown as GlobalSettingsV1;
+  return validateGlobalSettings(global).length === 0 ? global : invalid();
 }
 
 /**
@@ -255,7 +310,7 @@ export function parseSecrets(raw: unknown): KeystoreSecretsV1 {
   });
   expectUniqueIndices(wallets);
 
-  const settings = expectKeys(s.settings, ['maxSpend']);
+  const settings = expectKeys(s.settings, ['maxSpend'], ['active', 'global']);
   if (!Array.isArray(settings.maxSpend)) return invalid();
   const rawMaxSpend: unknown[] = settings.maxSpend;
   const maxSpend = rawMaxSpend.map((value) => {
@@ -266,16 +321,39 @@ export function parseSecrets(raw: unknown): KeystoreSecretsV1 {
   const walletIndices = new Set(wallets.map((w) => w.index));
   if (!maxSpend.every((m) => walletIndices.has(m.index))) invalid();
 
-  const keys = expectKeys(s.apiKeys, [], ['helius', 'jupiter']);
-  const apiKeys: { helius?: string; jupiter?: string } = {};
-  if ('helius' in keys) apiKeys.helius = parseApiKey(keys.helius);
-  if ('jupiter' in keys) apiKeys.jupiter = parseApiKey(keys.jupiter);
+  let active: WalletActiveV1[] = [];
+  if (settings.active !== undefined) {
+    if (!Array.isArray(settings.active)) return invalid();
+    const rawActive: unknown[] = settings.active;
+    active = rawActive.map((value) => {
+      const a = expectKeys(value, ['index', 'active']);
+      return { index: expectIndex(a.index), active: expectBoolean(a.active) };
+    });
+    expectUniqueIndices(active);
+    if (!active.every((a) => walletIndices.has(a.index))) invalid();
+  }
+  const global = parseGlobalSettings(settings.global);
 
-  return { mnemonic, wallets, settings: { maxSpend }, apiKeys };
+  const keys = expectKeys(s.apiKeys, [], API_KEY_NAMES);
+  const apiKeys: { -readonly [K in ApiKeyName]?: string } = {};
+  for (const name of API_KEY_NAMES) {
+    if (!(name in keys)) continue;
+    const value = expectString(keys[name]);
+    if (!isValidApiKeyValue(name, value)) invalid();
+    apiKeys[name] = value;
+  }
+
+  return { mnemonic, wallets, settings: { maxSpend, active, global }, apiKeys };
 }
 
 /** JSON with lamports as decimal strings (bigint is not JSON-serializable). */
 export function secretsToJson(secrets: KeystoreSecretsV1): string {
+  const { global } = secrets.settings;
+  const apiKeys: Partial<Record<ApiKeyName, string>> = {};
+  for (const name of API_KEY_NAMES) {
+    const value = secrets.apiKeys[name];
+    if (value !== undefined) apiKeys[name] = value;
+  }
   return JSON.stringify({
     mnemonic: secrets.mnemonic,
     wallets: secrets.wallets.map((w) => ({ index: w.index, secretKey: w.secretKey })),
@@ -284,10 +362,9 @@ export function secretsToJson(secrets: KeystoreSecretsV1): string {
         index: m.index,
         lamports: m.lamports.toString(),
       })),
+      active: secrets.settings.active.map((a) => ({ index: a.index, active: a.active })),
+      global: { ...global, minReserveLamports: global.minReserveLamports.toString() },
     },
-    apiKeys: {
-      ...(secrets.apiKeys.helius === undefined ? {} : { helius: secrets.apiKeys.helius }),
-      ...(secrets.apiKeys.jupiter === undefined ? {} : { jupiter: secrets.apiKeys.jupiter }),
-    },
+    apiKeys,
   });
 }
