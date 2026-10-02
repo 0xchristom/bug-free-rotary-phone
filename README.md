@@ -2,7 +2,7 @@
 
 Solana Multi-Wallet Buyer: statyczna aplikacja SPA (bez backendu) do zarządzania flotą portfeli Solany i zakupu tokenów przez Jupiter. Pełna specyfikacja: [`docs/SPEC.md`](docs/SPEC.md). Bezpieczeństwo i model zagrożeń: [`SECURITY.md`](SECURITY.md).
 
-> Status: flota, salda, ustawienia i test połączeń działają. Zakup (tryb A) dochodzi w sprincie 3, obserwacja portfela (tryb B) w sprincie 4.
+> Status: flota, salda, ustawienia, test połączeń i zakup w trybie A (domyślnie DRY-RUN) działają. Obserwacja portfela (tryb B) dojdzie w sprincie 4.
 
 > **Ważne:**
 >
@@ -16,6 +16,7 @@ Solana Multi-Wallet Buyer: statyczna aplikacja SPA (bez backendu) do zarządzani
 - [Wdrożenie na Cloudflare Pages](#wdrożenie-na-cloudflare-pages)
 - [Cloudflare Access: dostęp tylko dla Ciebie](#cloudflare-access-dostęp-tylko-dla-ciebie)
 - [Pierwsze kroki w aplikacji](#pierwsze-kroki-w-aplikacji)
+- [Zakup: tryb A](#zakup-tryb-a)
 - [Dla programistów](#dla-programistów)
 
 ## Uruchomienie lokalne
@@ -116,7 +117,30 @@ Otwórz `https://<project>.pages.dev` w oknie prywatnym. Powinna się pokazać s
 8. **Saldo tokenu:** wpisz adres mintu w polu **Adres tokenu (mint)** i kliknij **Pokaż saldo tokenu**.
 9. **Później:** **Otwórz plik floty** > wybierz plik > sprawdź podgląd adresów > wpisz hasło. Po 15 minutach bezczynności flota blokuje się sama.
 
-Sekcja o zakupie (tryb A: DRY-RUN i tryb na żywo) dojdzie w sprincie 3.
+## Zakup: tryb A
+
+Tryb A kupuje token od razu wszystkimi gotowymi portfelami (aktywny, max spend > 0, rezerwa co najmniej `MIN_RESERVE_SOL`). Każdy portfel kupuje za swój max spend, najwyżej raz.
+
+1. **Mint:** na ekranie **Flota** wpisz adres tokenu w polu **Adres tokenu (mint)** i kliknij **Pokaż saldo tokenu**. Aplikacja sprawdza, że to mint SPL albo Token-2022. Dopiero wtedy **Kupuj teraz** staje się aktywny.
+2. **Podsumowanie:** panel **Zakup (tryb A)** pokazuje mint, liczbę gotowych portfeli, łączną kwotę do wydania i tryb. Zakup używa ustawień zapisanych w sejfie, więc najpierw zapisz zmiany w tabeli.
+3. **DRY-RUN (domyślnie):** etykieta **DRY-RUN** przy panelu. Aplikacja pyta Jupitera o cenę (`/order`), sprawdza i podpisuje transakcje, ale **niczego nie wysyła**. Każdy portfel kończy jako „DRY-RUN” z wyceną i czasami. Tak sprawdzisz klucze, limity i salda bez wydawania środków.
+4. **Tryb na żywo:**
+   - przełączasz przyciskiem **Przełącz na tryb na żywo…**;
+   - dialog podaje kwotę i liczbę portfeli i wymaga potwierdzenia **Tak, przełącz na tryb na żywo**;
+   - etykieta zmienia się na czerwone **NA ŻYWO**;
+   - tryb na żywo wymaga klucza Helius, bo przed każdym ponowieniem aplikacja sprawdza w łańcuchu, czy poprzednia transakcja nie wylądowała;
+   - powrót: **Wróć do DRY-RUN**, bez potwierdzenia;
+   - tryb zapisuje się w pliku floty, więc potem kliknij **Zapisz zaktualizowany plik floty**.
+5. **Kupuj teraz:** start. **Nie zamykaj ani nie przeładowuj karty** do końca zakupu: klucze i zakup działają tylko w niej, a przeglądarka zapyta przed zamknięciem.
+6. **Postęp:**
+   - pasek pokazuje potwierdzone, w trakcie oraz nieudane albo pominięte, a także czas od startu do pierwszego i do ostatniego potwierdzenia;
+   - w tabeli floty dochodzą kolumny zakupu: status (kolor i tekst z powodem), czas, próby, kupione tokeny, wydany SOL, cena (SOL za token), wynik sprawdzenia saldem tokenu („potwierdzone” albo ostrzeżenie) i link **Transakcja** do eksploratora z **Ustawień**;
+   - „Sprawdzam łańcuch” znaczy, że wynik wysłanej transakcji nie jest jeszcze znany. Portfel nie spróbuje ponownie, dopóki łańcuch nie pokaże, że transakcja nie wylądowała.
+7. **STOP:** duży czerwony przycisk widoczny przez cały zakup. Zatrzymuje nowe zapytania; transakcje już wysłane są śledzone do końca, a reszta portfeli kończy jako „Pominięty”.
+8. **Dziennik operacji:** panel **Dziennik operacji**, przyciski **Pobierz CSV** i **Pobierz JSON**:
+   - każda zmiana stanu każdego portfela z czasem, kwotami (lamporty i jednostki tokena, bez zaokrągleń), routerem, sygnaturą i powodem;
+   - bez kluczy i podpisanych transakcji;
+   - dziennik żyje do zamknięcia karty.
 
 ## Dla programistów
 
@@ -138,6 +162,7 @@ npm ci && npm run lint && npm run typecheck && npm test && npm run build && npm 
 | `npm run lint`         | ESLint (type-aware, reguły bezpieczeństwa)                 |
 | `npm run typecheck`    | `tsc -b` bez emisji                                        |
 | `npm test`             | Vitest (Node; testy UI w jsdom), bez prawdziwej sieci      |
+| `npm run test:sim`     | długa symulacja niezmienników executora (5000 ziaren)      |
 | `npm run format`       | Prettier, zapis zmian                                      |
 | `npm run format:check` | Prettier, tylko sprawdzenie                                |
 

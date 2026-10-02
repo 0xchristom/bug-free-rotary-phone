@@ -6,6 +6,7 @@ Format: `RRRR-MM-DD · BUNNDLY-<n> · <co działa>`
 
 ---
 
+- 2026-10-02 · BUNNDLY-27 · UI trybu A: panel zakupu z etykietą DRY-RUN/NA ŻYWO, przejście na tryb na żywo tylko przez dialog z kwotą i liczbą portfeli, „Kupuj teraz” po sprawdzonym mincie, duży STOP, ostrzeżenie o otwartej karcie; widok postępu (pasek, liczniki, czasy do pierwszego i ostatniego potwierdzenia) i kolumny zakupu w tabeli z linkiem do eksploratora; zdarzenia stosowane raz na klatkę, wiersze `memo` (100 portfeli: przerysowane tylko wiersze ze zdarzeniem); README: sekcja trybu A. Chromium (build produkcyjny, `vite preview` z `_headers`, 1280 i 375 px): przebieg DRY-RUN na podstawionym API, bez naruszeń CSP i bez przewijania w poziomie (D-032).
 - 2026-10-02 · Poprawka z review (BUNNDLY-23) · Sprawdzanie łańcucha czyta transakcje v1 (`maxSupportedTransactionVersion: 1`); wcześniej -32015 z Helius zostawiało RFQ jako UNKNOWN (D-034).
 - 2026-10-02 · Poprawka z review (BUNNDLY-21) · Bez klucza Jupitera executor używa limitów Keyless (27 `/order` na 60 s, 18 `/execute` na s), niezależnie od planu w Ustawieniach (D-033).
 - 2026-10-02 · BUNNDLY-25 · Wynik zakupu: zdarzenia z czasem i kwotami `bigint` z `/execute`, cena efektywna; potwierdzenie saldem tokenu po CONFIRMED (punkt odniesienia czytany równolegle z pierwszym `/order`, porównanie slotów, do 5 odczytów co 2 s; `MATCH`/`INCREASED`/`MISMATCH`/`NO_INCREASE`/`UNVERIFIABLE` jako ostrzeżenie, bez zmiany stanu); dziennik operacji z eksportem CSV (ochrona przed formułami) i JSON, panel na ekranie Flota (D-031).

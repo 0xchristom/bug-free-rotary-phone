@@ -5,6 +5,7 @@ import type { StorageEnv } from '../storage/keystore-file.ts';
 import type { VaultClient } from '../worker/vault-client.ts';
 import { AppHeader } from './AppHeader.tsx';
 import { createOperationsLog } from './operations-log.ts';
+import { useBuyView } from './use-buy.ts';
 import { FleetScreen } from './screens/FleetScreen.tsx';
 import { OpenScreen } from './screens/OpenScreen.tsx';
 import { SettingsScreen } from './screens/SettingsScreen.tsx';
@@ -53,6 +54,12 @@ export function App({
   const [unsavedFile, setUnsavedFile] = useState(false);
   // One log per session, outside React state: it survives screens and the auto-lock.
   const [operationsLog] = useState(() => createOperationsLog(vault));
+  // Buy progress outlives screen changes (e.g. a look at Settings during a buy).
+  const buyView = useBuyView(vault);
+  const [mintDecimals, setMintDecimals] = useState<ReadonlyMap<string, number>>(new Map());
+  const onMintDecimals = useCallback((mint: string, decimals: number) => {
+    setMintDecimals((m) => (m.get(mint) === decimals ? m : new Map(m).set(mint, decimals)));
+  }, []);
   const wallets = status?.info?.wallets;
   useEffect(() => {
     if (wallets) operationsLog.setWallets(wallets);
@@ -234,6 +241,9 @@ export function App({
                   storage={storage}
                   onUnsavedChange={setUnsavedFile}
                   operationsLog={operationsLog}
+                  buyView={buyView}
+                  mintDecimals={mintDecimals}
+                  onMintDecimals={onMintDecimals}
                   {...(balanceRefreshMs === undefined ? {} : { balanceRefreshMs })}
                   {...(rowProbe === undefined ? {} : { rowProbe })}
                 />
