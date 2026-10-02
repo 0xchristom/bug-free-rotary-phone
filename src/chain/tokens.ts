@@ -22,7 +22,7 @@ export const TOKEN_PROGRAM_ADDRESS = 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5D
 export const TOKEN_2022_PROGRAM_ADDRESS = 'TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb';
 /** https://spl.solana.com/associated-token-account (program id). */
 export const ASSOCIATED_TOKEN_PROGRAM_ADDRESS = 'ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL';
-/** https://docs.solana.com/developing/runtime-facilities/programs#system-program */
+/** System Program id, official repository: https://github.com/solana-program/system */
 export const SYSTEM_PROGRAM_ADDRESS = '11111111111111111111111111111111';
 
 export type TokenProgram = 'spl-token' | 'token-2022';
