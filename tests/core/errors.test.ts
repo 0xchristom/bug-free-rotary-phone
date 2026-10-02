@@ -38,6 +38,9 @@ describe('ERROR_MESSAGES', () => {
         'STORAGE_WRITE_FAILED',
         'STORAGE_READ_FAILED',
         'STORAGE_FILE_TOO_LARGE',
+        'BUY_RUNNING',
+        'NO_WALLETS_TO_BUY',
+        'INVALID_MINT_ADDRESS',
       ].sort(),
     );
   });

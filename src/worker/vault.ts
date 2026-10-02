@@ -24,8 +24,16 @@ import {
   type RpcSource,
   type WebSocketFactory,
 } from '../chain/index.ts';
+import { startRun, type ExecutorEvent, type ExecutorRun } from '../executor/executor.ts';
+import { ExecuteLimiter, OrderLimiter, realClock, type LimiterClock } from '../executor/limiter.ts';
 import { checkOrderTransaction, type OrderCheckProblem } from '../executor/order-check.ts';
-import { checkJupiterQuote, type JupiterOrder } from '../jupiter/index.ts';
+import {
+  SOL_MINT,
+  checkJupiterQuote,
+  createJupiterClient,
+  type JupiterClient,
+  type JupiterOrder,
+} from '../jupiter/index.ts';
 import { signCheckedOrder, type SignedOrder } from './sign-order.ts';
 import {
   API_KEY_NAMES,
@@ -59,7 +67,9 @@ import {
 import { DEFAULT_AUTO_LOCK_MS } from './protocol.ts';
 import type {
   ApiKeyFlags,
+  BuyStatus,
   VaultBalances,
+  VaultEventEnvelope,
   VaultFileResult,
   VaultInfo,
   VaultPort,
@@ -89,11 +99,20 @@ export interface NetOptions {
   readonly clock?: () => number;
 }
 
+/** Executor dependencies; tests pass a fake Jupiter and clock. */
+export interface ExecutorOptions {
+  readonly jupiter?: JupiterClient;
+  readonly clock?: LimiterClock;
+  /** Even `/order` pace instead of a burst (D-027 emergency mode). */
+  readonly steady?: boolean;
+}
+
 export interface VaultOptions {
   /** Clock in ms; injectable for tests. */
   readonly now?: () => number;
   readonly chain?: ChainOptions;
   readonly net?: NetOptions;
+  readonly executor?: ExecutorOptions;
   /**
    * Inactivity before auto-lock. Overrides the fleet's `autoLockMinutes` setting (tests);
    * without it the setting applies, and 15 minutes while locked.
@@ -158,6 +177,8 @@ export interface VaultHandler {
     request: OrderSignRequest,
     order: JupiterOrder,
   ): Promise<SignOrderResult>;
+  /** Executor progress (BUNNDLY-21). Returns the unsubscribe function. */
+  onEvent(listener: (event: ExecutorEvent) => void): () => void;
   /** Locks if idle for longer than the auto-lock time and not armed. Returns true if it locked. */
   checkAutoLock(): boolean;
   /** For tests only. */
@@ -229,6 +250,7 @@ function parseSettings(value: unknown, walletIndices: ReadonlySet<number>): Flee
     autoLockMinutes: g.autoLockMinutes,
     jupiterPlan: g.jupiterPlan,
     orderRpm: g.orderRpm,
+    dryRun: g.dryRun,
   } as FleetSettingsV1['global'];
   if (validateGlobalSettings(global).length > 0) return invalidSettings();
   return { maxSpend, active, global };
@@ -315,7 +337,16 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
     options.autoLockMs ??
     (unlocked ? unlocked.settings.global.autoLockMinutes * 60_000 : DEFAULT_AUTO_LOCK_MS);
   let unlocked: UnlockedVault | null = null;
-  let armed = false;
+  /** Changes on every unlock and lock; settings changes keep it (unlike `unlocked`). */
+  let session = 0;
+  /** SOL balances from the last refresh of this session (pre-check before `/order`). */
+  let balances = new Map<number, bigint>();
+  let buy: { readonly run: ExecutorRun; status: BuyStatus } | null = null;
+  let nextRunId = 1;
+  const listeners = new Set<(event: ExecutorEvent) => void>();
+  /** Limiters live across runs, so a new buy respects the window of the last one. */
+  const limiters = new Map<string, { order: OrderLimiter; execute: ExecuteLimiter }>();
+  const isArmed = (): boolean => buy !== null;
   let lastActivity = now();
   let tail: Promise<unknown> = Promise.resolve();
 
@@ -326,6 +357,8 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
   const lock = (): void => {
     if (unlocked) wipeVault(unlocked);
     unlocked = null;
+    session += 1;
+    balances = new Map();
   };
 
   const install = (opened: OpenedKeystore): void => {
@@ -336,8 +369,9 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
 
   const status = (): VaultStatus => ({
     locked: unlocked === null,
-    armed,
+    armed: isArmed(),
     info: unlocked ? infoOf(unlocked) : null,
+    buy: buy === null ? null : { ...buy.status },
   });
 
   const requireUnlocked = (): UnlockedVault => {
@@ -371,7 +405,7 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
   };
 
   const checkAutoLock = (): boolean => {
-    if (unlocked !== null && !armed && now() - lastActivity >= autoLockMs()) {
+    if (unlocked !== null && !isArmed() && now() - lastActivity >= autoLockMs()) {
       lock();
       return true;
     }
@@ -393,6 +427,7 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
       apiKeys.heliusRpcUrl ?? (apiKeys.helius === undefined ? null : heliusRpcUrl(apiKeys.helius));
     if (url === null) throw new AppError('HELIUS_KEY_MISSING');
     const wallets = [...vault.publicWallets];
+    const readSession = session;
     return async () => {
       let source: RpcSource = 'helius';
       const transport = createResilientTransport({
@@ -423,7 +458,8 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
         throw isAppError(e) ? e : new AppError('RPC_UNAVAILABLE');
       }
       // Locked (or another fleet opened) while reading: do not hand out stale data.
-      if (unlocked !== vault) throw new AppError('VAULT_LOCKED');
+      if (session !== readSession || unlocked === null) throw new AppError('VAULT_LOCKED');
+      balances = new Map(wallets.map((w, i) => [w.index, lamports[i] ?? 0n]));
       return {
         balances: wallets.map((w, i) => ({ index: w.index, lamports: lamports[i] ?? 0n })),
         ...(token ? { token } : {}),
@@ -469,6 +505,88 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
     };
   };
 
+  const emit = (event: ExecutorEvent): void => {
+    for (const listener of listeners) listener(event);
+  };
+
+  const limitersFor = (plan: FleetSettingsV1['global']['jupiterPlan'], orderRpm: number) => {
+    const key = `${plan}:${String(orderRpm)}`;
+    let pair = limiters.get(key);
+    if (pair === undefined) {
+      const clock = options.executor?.clock ?? realClock;
+      pair = {
+        order: new OrderLimiter({
+          orderRpm,
+          clock,
+          ...(options.executor?.steady === undefined ? {} : { steady: options.executor.steady }),
+        }),
+        execute: new ExecuteLimiter({ plan, orderRpm, clock }),
+      };
+      limiters.set(key, pair);
+    }
+    return pair;
+  };
+
+  /** startBuy (BUNNDLY-21): runs the executor in the worker; progress goes out as events. */
+  const startBuy = (rawMint: unknown): BuyStatus => {
+    const vault = requireUnlocked();
+    if (buy !== null) throw new AppError('BUY_RUNNING');
+    const mint = str(rawMint).trim();
+    if (!/^[1-9A-HJ-NP-Za-km-z]{32,44}$/u.test(mint) || mint === SOL_MINT) {
+      throw new AppError('INVALID_MINT_ADDRESS');
+    }
+    const { global } = vault.settings;
+    const inactive = new Set(vault.settings.active.filter((a) => !a.active).map((a) => a.index));
+    const spend = new Map(vault.settings.maxSpend.map((m) => [m.index, m.lamports]));
+    const wallets = vault.publicWallets
+      .filter((w) => !inactive.has(w.index) && (spend.get(w.index) ?? 0n) > 0n)
+      .map((w) => ({
+        index: w.index,
+        address: w.address,
+        maxSpend: spend.get(w.index) ?? 0n,
+        balance: balances.get(w.index) ?? null,
+      }));
+    if (wallets.length === 0) throw new AppError('NO_WALLETS_TO_BUY');
+    const net = options.net ?? {};
+    const jupiter =
+      options.executor?.jupiter ??
+      createJupiterClient({
+        apiKey: vault.apiKeys.jupiter ?? null,
+        fetch: net.fetch ?? ((url, init) => globalThis.fetch(url, init)),
+      });
+    const pair = limitersFor(global.jupiterPlan, global.orderRpm);
+    const runId = nextRunId++;
+    const run = startRun(
+      {
+        jupiter,
+        orderLimiter: pair.order,
+        executeLimiter: pair.execute,
+        sign: signOrder,
+        clock: options.executor?.clock ?? realClock,
+        emit,
+      },
+      {
+        runId,
+        mint,
+        wallets,
+        dryRun: global.dryRun,
+        maxAttempts: global.maxAttempts,
+        minReserveLamports: global.minReserveLamports,
+      },
+    );
+    const current = {
+      run,
+      status: { runId, mint, dryRun: global.dryRun, wallets: wallets.length, accepting: true },
+    };
+    buy = current;
+    const finish = (): void => {
+      if (buy === current) buy = null;
+      touch(); // the user was busy with the buy: the auto-lock timer starts now
+    };
+    run.done.then(finish, finish);
+    return { ...current.status };
+  };
+
   const dispatch = async (
     raw: unknown,
     options: VaultHandleOptions,
@@ -479,6 +597,14 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
     checkAutoLock();
     // Reading the status or previewing a file is not user activity on the fleet.
     if (request.type !== 'status' && request.type !== 'preview') touch();
+
+    // Keys must stay while a buy signs: no lock and no other fleet until it ends.
+    if (
+      buy !== null &&
+      (request.type === 'create' || request.type === 'unlock' || request.type === 'lock')
+    ) {
+      throw new AppError('BUY_RUNNING');
+    }
 
     switch (request.type) {
       case 'create': {
@@ -542,9 +668,13 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
           throw e;
         }
       }
-      case 'setArmed':
-        if (typeof request.armed !== 'boolean') return badRequest();
-        armed = request.armed;
+      case 'startBuy':
+        return startBuy(request.mint);
+      case 'stop':
+        if (buy !== null) {
+          buy.status = { ...buy.status, accepting: false };
+          buy.run.stop();
+        }
         return status();
       case 'exportPlain': {
         const vault = requireUnlocked();
@@ -578,6 +708,8 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
   ): Promise<SignOrderResult> => {
     const vault = unlocked;
     if (vault === null) return { ok: false, problem: 'VAULT_LOCKED' };
+    const signSession = session;
+    const stillOpen = (): boolean => unlocked !== null && session === signSession;
     const wallet = vault.publicWallets.find((w) => w.index === walletIndex);
     const secret = vault.wallets.find((w) => w.index === walletIndex);
     if (wallet === undefined || secret === undefined) {
@@ -596,15 +728,21 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
       signed = await signCheckedOrder(secret.secretKey, check.checked);
     } catch {
       // A lock zeroes the key mid-signing; anything else is a vault bug. Nothing leaks.
-      return { ok: false, problem: unlocked === vault ? 'SIGNING_FAILED' : 'VAULT_LOCKED' };
+      return { ok: false, problem: stillOpen() ? 'SIGNING_FAILED' : 'VAULT_LOCKED' };
     }
     // Locked while signing: the result must not leave a locked vault.
-    if (unlocked !== vault) return { ok: false, problem: 'VAULT_LOCKED' };
+    if (!stillOpen()) return { ok: false, problem: 'VAULT_LOCKED' };
     return { ok: true, ...signed };
   };
 
   return {
     signOrder,
+    onEvent(listener) {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
+    },
     handle(request: unknown, options: VaultHandleOptions = {}) {
       if (isRecord(request) && request.type === 'testConnections') {
         const prepared = tail.then(() => prepareConnectionTest());
@@ -633,12 +771,16 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
       return run;
     },
     checkAutoLock,
-    inspect: () => ({ unlocked, armed, lastActivity }),
+    inspect: () => ({ unlocked, armed: isArmed(), lastActivity }),
   };
 }
 
 /** Connects a handler to a message port (the worker's `self`, or a MessagePort in tests). */
 export function attachVaultHandler(port: VaultPort, handler: VaultHandler): void {
+  handler.onEvent((event) => {
+    const message: VaultEventEnvelope = { event };
+    port.postMessage(message);
+  });
   port.addEventListener('message', (event) => {
     const data = event.data;
     if (!isRecord(data) || typeof data.id !== 'number') return;

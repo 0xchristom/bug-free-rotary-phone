@@ -523,3 +523,25 @@ Rejestr decyzji i rozbieżności z dokumentacją zewnętrzną. Nowe wpisy dopisu
   - **Blokada w trakcie podpisu** zeruje klucz; wynik jest wtedy odrzucany (`VAULT_LOCKED`), a niespodziewany błąd daje `SIGNING_FAILED` bez szczegółów.
   - **Granica zaufania:** API Jupitera (HTTPS do `api.jup.ag`) jest zaufane. Kontrole chronią przed pomyłkami (inny portfel, inne zlecenie, inna kwota, uszkodzone dane), a nie przed złośliwym Jupiterem: nie interpretują instrukcji swapu. Twardą granicę wydatku daje max spend z sejfu.
 - Konsekwencje: executor (BUNNDLY-21) woła `signOrder` po każdym `/order` z transakcją; sygnatura z wyniku (albo z `/execute` przy JupiterZ) służy do śledzenia stanu UNKNOWN (BUNNDLY-23). Test „brak sekretów w odpowiedziach” obejmuje wynik `signOrder`.
+
+## D-029: Executor, tryb DRY-RUN i sterowanie zakupem z workera
+
+- Data: 2026-10-02
+- Zadanie: BUNNDLY-21 (obejmuje dawne BUNNDLY-26 DRY-RUN i fałszywego Jupitera z BUNNDLY-29)
+- Kontekst: SPEC 3.4, 3.5 i 6; D-013 (sejf ma tylko operacje domenowe), D-026 (klient Jupitera), D-027 (limiter), D-028 (podpis w sejfie).
+- Decyzja:
+  - **Maszyna stanów** (`src/executor/states.ts`): IDLE → QUEUED → QUOTING → SIGNING → SUBMITTED → CONFIRMED, z odgałęzieniami do QUEUED (ponowienie), FAILED, UNKNOWN i SKIPPED. Tabela `TRANSITIONS` jest jedynym źródłem dozwolonych przejść; niedozwolone przejście rzuca `IllegalTransitionError` (błąd programisty, test). Stany końcowe: CONFIRMED, FAILED, UNKNOWN, SKIPPED. Każdy stan końcowy poza CONFIRMED ma powód z kodem i komunikatem po polsku.
+  - **Kolejka FIFO i potok:** dyspozytor bierze następny portfel, gdy limiter `/order` da miejsce, i nie czeka na inne portfele. Próba to `/order` → kontrole i podpis w sejfie → `/execute`; `/execute` różnych portfeli idą równolegle (osobny limiter, D-027). Portfel jest najwyżej w jednej próbie naraz (test). Ponowienie wraca na koniec kolejki.
+  - **Polityka po każdym kroku** jest osobnym modułem (`src/executor/policy.ts`), żeby BUNNDLY-23 mogło ją zmienić bez ruszania kolejki:
+    - `/order`: 429 wraca do kolejki bez liczenia próby; 5xx, timeout, sieć i brak trasy wracają z liczeniem próby; inne błędy kończą FAILED;
+    - `transaction: ""`: brak środków albo SOL na opłatę daje SKIPPED; inne powody wracają do kolejki;
+    - `/execute` bez odpowiedzi, 5xx i kody „nieznany wynik” (-1001, -2001) dają **UNKNOWN i nigdy nie są ponawiane** w tym zadaniu; kody błędu po naszej stronie (-2, -3, -1002, -1003, -2002) oraz 400/401/403 dają FAILED; 429 wraca do kolejki bez liczenia próby; pozostałe udokumentowane porażki wracają do kolejki z liczeniem próby;
+    - po `maxAttempts` próbach portfel kończy FAILED (`MAX_ATTEMPTS`).
+  - **Tymczasowość:** ponowienie po porażce zgłoszonej przez `/execute` nie sprawdza jeszcze łańcucha. Dodaje to BUNNDLY-23 (sprawdzenie sygnatury i salda przed ponowieniem, okno „no route”, sufit ceny). **Trybu na żywo nie używamy przed BUNNDLY-23.**
+  - **DRY-RUN** (`GlobalSettingsV1.dryRun`) jest domyślnie włączony. Plik bez tego pola (sprzed BUNNDLY-21) też oznacza DRY-RUN, bez komunikatu o resecie. Wartość złego typu też daje DRY-RUN, z komunikatem. W DRY-RUN executor robi prawdziwe `/order`, kontrole i podpis, a potem wyrzuca podpisaną transakcję: `/execute` nie jest wołane na żadnej ścieżce (test zlicza wywołania), a portfel kończy SKIPPED (`DRY_RUN`). Wyłączenie DRY-RUN w Ustawieniach wymaga potwierdzenia z ostrzeżeniem.
+  - **Kontrola przed `/order`:** portfel bez odczytanego salda SOL kończy SKIPPED (`BALANCE_UNKNOWN`); saldo mniejsze niż max spend + rezerwa daje SKIPPED (`INSUFFICIENT_SOL`). Salda pochodzą z ostatniego `refreshBalances` w workerze.
+  - **STOP:** nowe `/order` nie startują, portfele w kolejce kończą SKIPPED (`STOPPED`), a próby w toku kończą się normalnie. `/execute`, które już wyszło, nie jest przerywane.
+  - **Worker:** żądania `startBuy { mint }` i `stop` w protokole. `startBuy` sprawdza adres mintu (nie SOL) i bierze aktywne portfele z max spend > 0 (`INVALID_MINT_ADDRESS`, `NO_WALLETS_TO_BUY`, `BUY_RUNNING`). `armed` wynika z trwającego zakupu, a żądanie `setArmed` usunąłem: UI nie może uzbroić sejfu bez zakupu. W trakcie zakupu nie ma auto-locku, a `lock`, `create` i `unlock` dają `BUY_RUNNING`. Blokada i nowa flota unieważniają sesję, więc spóźniony podpis z poprzedniej sesji jest odrzucany.
+  - **Zdarzenia:** worker wysyła `{ event }` bez `id` (stan portfela, próba, powód, quote, wynik, czasy; początek, zatrzymanie i koniec zakupu). Klient przekazuje je słuchaczom `onEvent`. W zdarzeniach nie ma kluczy, mnemonika ani podpisanych transakcji (test).
+  - **Testy:** fałszywy zegar (`tests/helpers/fake-clock.ts`) i fałszywy Jupiter (`tests/helpers/fake-jupiter.ts`) z opóźnieniami, wstrzykiwanymi błędami i prawdziwymi transakcjami v0, więc sejf naprawdę podpisuje.
+- Konsekwencje: BUNNDLY-23 zmienia tylko `policy.ts` i rozwiązywanie UNKNOWN; BUNNDLY-25 dopina wynik i dziennik do zdarzeń; BUNNDLY-27 (UI) słucha `onEvent` i woła `startBuy` / `stop`.

@@ -5,6 +5,7 @@
  * bytes or to export keys without the password (DECISIONS D-013). Responses carry
  * the encrypted file text and public data only; errors carry only a code (D-008).
  */
+import type { ExecutorEvent } from '../executor/executor.ts';
 import type {
   ApiKeyName,
   ConnectionReport,
@@ -68,8 +69,14 @@ export type VaultRequest =
       readonly password: string;
       readonly format: 'txt' | 'json';
     }
-  /** While armed (watcher/executor running) auto-lock is suspended. */
-  | { readonly type: 'setArmed'; readonly armed: boolean }
+  /**
+   * Buy `mint` with every active wallet that has a max spend (SPEC 3.4 A, BUNNDLY-21).
+   * Runs in the worker; progress arrives as events. DRY-RUN unless the settings say
+   * otherwise. While it runs the vault is armed: no auto-lock and no manual lock.
+   */
+  | { readonly type: 'startBuy'; readonly mint: string }
+  /** STOP: no new `/order`; transactions already sent are followed to the end. */
+  | { readonly type: 'stop' }
   /** User activity in the UI; resets the auto-lock timer. */
   | { readonly type: 'activity' };
 
@@ -122,10 +129,23 @@ export interface VaultBalances {
   readonly fetchedAt: string;
 }
 
+export interface BuyStatus {
+  readonly runId: number;
+  readonly mint: string;
+  readonly dryRun: boolean;
+  /** Wallets taking part (active, with a max spend). */
+  readonly wallets: number;
+  /** False after STOP, while sent transactions finish. */
+  readonly accepting: boolean;
+}
+
 export interface VaultStatus {
   readonly locked: boolean;
+  /** A buy is running (auto-lock and lock suspended). */
   readonly armed: boolean;
   readonly info: VaultInfo | null;
+  /** The running buy, if any. */
+  readonly buy: BuyStatus | null;
 }
 
 /** Encrypted keystore file text to save, plus the new public view. */
@@ -145,7 +165,8 @@ export interface VaultResultMap {
   readonly status: VaultStatus;
   readonly saveSettings: VaultFileResult;
   readonly addWallets: VaultFileResult;
-  readonly setArmed: VaultStatus;
+  readonly startBuy: BuyStatus;
+  readonly stop: VaultStatus;
   readonly activity: VaultStatus;
 }
 
@@ -160,6 +181,14 @@ export interface VaultRequestEnvelope {
 export interface VaultProgressEnvelope {
   readonly id: number;
   readonly progress: number;
+}
+
+/**
+ * Executor progress, pushed by the worker without a request id (BUNNDLY-21). Carries no
+ * keys and no signed transactions.
+ */
+export interface VaultEventEnvelope {
+  readonly event: ExecutorEvent;
 }
 
 export type VaultResponseEnvelope =

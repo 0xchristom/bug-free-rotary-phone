@@ -10,6 +10,7 @@ const FIELD_LABELS: Record<SettingsField, string> = {
   mode: 'tryb',
   explorer: 'explorer',
   autoLockMinutes: 'automatyczna blokada',
+  dryRun: 'tryb DRY-RUN',
   jupiterPlan: 'plan Jupitera',
   orderRpm: 'limit /order',
 };

@@ -262,6 +262,24 @@ describe('settings in the keystore secrets', () => {
     });
   });
 
+  it('a file without dryRun (before BUNNDLY-21) means DRY-RUN, without a reset notice', () => {
+    const older: Record<string, unknown> = {
+      ...DEFAULT_GLOBAL_SETTINGS,
+      minReserveLamports: '15000000',
+    };
+    delete older['dryRun'];
+    const raw = { ...json(), settings: { maxSpend: [], active: [], global: older } };
+    const { settings } = parseSecrets(raw);
+    expect(settings.global.dryRun).toBe(true);
+    expect(settings.resetFields).toBeUndefined();
+    // a value of the wrong type falls back to DRY-RUN as well, and is announced
+    const odd = { ...json(), settings: { maxSpend: [], global: { dryRun: 'no' } } };
+    expect(parseSecrets(odd).settings).toMatchObject({
+      global: { dryRun: true },
+      resetFields: ['dryRun'],
+    });
+  });
+
   it('a partial global object fills the missing fields with defaults', () => {
     const raw = { ...json(), settings: { maxSpend: [], global: { maxAttempts: 7 } } };
     expect(parseSecrets(raw).settings.global).toEqual({

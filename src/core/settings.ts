@@ -59,6 +59,11 @@ export interface GlobalSettingsV1 {
   readonly jupiterPlan: JupiterPlan;
   /** Jupiter `/order` limit per minute; ORDER_RPS = orderRpm / 60. */
   readonly orderRpm: number;
+  /**
+   * DRY-RUN (SPEC 7): the whole pipeline with real `/order`, checks and signing, but
+   * `/execute` is never called. On by default; a file without the field means on too.
+   */
+  readonly dryRun: boolean;
 }
 
 export const DEFAULT_GLOBAL_SETTINGS: GlobalSettingsV1 = {
@@ -73,6 +78,7 @@ export const DEFAULT_GLOBAL_SETTINGS: GlobalSettingsV1 = {
   autoLockMinutes: 15,
   jupiterPlan: 'free',
   orderRpm: JUPITER_PLAN_RPM.free,
+  dryRun: true,
 };
 
 /** Inclusive ranges of the numeric settings. */
@@ -154,6 +160,7 @@ export function validateGlobalSettings(g: GlobalSettingsV1): SettingsProblem[] {
   }
   if (!oneOf(BUY_MODES, g.mode)) add('mode', 'Wybierz tryb: jednorazowy albo ciągły.');
   if (!oneOf(EXPLORERS, g.explorer)) add('explorer', 'Wybierz explorer z listy.');
+  if (typeof g.dryRun !== 'boolean') add('dryRun', 'Wybierz, czy działać w trybie DRY-RUN.');
   if (!isIntIn(g.autoLockMinutes, L.autoLockMinutes)) {
     add('autoLockMinutes', 'Automatyczna blokada musi wynosić od 1 do 120 minut.');
   }

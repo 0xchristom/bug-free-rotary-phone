@@ -337,7 +337,7 @@ describe('lock and auto-lock', () => {
     const buffers = heldBuffers(h);
     expect(buffers.some((b) => b.some((x) => x !== 0))).toBe(true);
     const status = await call<VaultStatus>(h, { type: 'lock' });
-    expect(status).toEqual({ locked: true, armed: false, info: null });
+    expect(status).toEqual({ locked: true, armed: false, info: null, buy: null });
     expect(buffers.every((b) => b.every((x) => x === 0))).toBe(true);
     expect(h.inspect().unlocked).toBeNull();
     await expectCode(
@@ -371,17 +371,11 @@ describe('lock and auto-lock', () => {
     await expectCode(h.handle({ type: 'addWallets', count: 1 }), 'VAULT_LOCKED');
   });
 
-  it('does not auto-lock while armed', async () => {
+  it('setArmed is gone from the protocol: armed comes from a running buy (BUNNDLY-21)', async () => {
     const c = clock();
     const h = await unlockedHandler(c);
-    await call(h, { type: 'setArmed', armed: true });
-    for (let i = 0; i < 10; i++) {
-      c.advance(AUTO_LOCK_MS * 10);
-      expect(h.checkAutoLock()).toBe(false);
-    }
-    const status = await call<VaultStatus>(h, { type: 'status' });
-    expect(status).toMatchObject({ locked: false, armed: true });
-    await call(h, { type: 'setArmed', armed: false });
+    await expectCode(h.handle({ type: 'setArmed', armed: true }), 'INTERNAL_ERROR');
+    expect((await call<VaultStatus>(h, { type: 'status' })).armed).toBe(false);
     c.advance(AUTO_LOCK_MS);
     expect(h.checkAutoLock()).toBe(true);
   });
@@ -634,7 +628,7 @@ describe('settings and write-only API keys (BUNNDLY-15)', () => {
     // every later response of this handler is scanned by "no secrets in any response"
     await call(h, { type: 'addWallets', count: 1 });
     await call(h, { type: 'activity' });
-    await call(h, { type: 'setArmed', armed: false });
+    await call(h, { type: 'stop' });
     await call(h, { type: 'lock' });
     const reopened = await call<VaultFileResult>(createVaultHandler(), {
       type: 'unlock',
@@ -669,7 +663,8 @@ describe('request validation', () => {
     ['unknown type', { type: 'signBytes', bytes: [1, 2, 3] }],
     ['exportKeys', { type: 'exportKeys' }],
     ['count as string', { type: 'addWallets', count: '3' }],
-    ['armed as string', { type: 'setArmed', armed: 'yes' }],
+    ['setArmed (removed)', { type: 'setArmed', armed: true }],
+    ['startBuy without a mint', { type: 'startBuy' }],
     ['password as number', { type: 'unlock', fileText: '{}', password: 1 }],
   ])('%s → INTERNAL_ERROR', async (_label, request) => {
     await expectCode(main.handle(request), 'INTERNAL_ERROR');

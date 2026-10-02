@@ -7,48 +7,10 @@ import {
   WindowLimiter,
   executeBudget,
   orderBudget,
-  type LimiterClock,
 } from '../../src/executor/index.ts';
 import { JUPITER_PLAN_RPM } from '../../src/core/settings.ts';
 
-const T0 = 1_790_000_000_000; // ms, a realistic Unix time
-
-/** Manual clock: sleep() resolves only when the test advances time. */
-class FakeClock implements LimiterClock {
-  private t = T0;
-  private timers: { at: number; resolve: () => void }[] = [];
-
-  now(): number {
-    return this.t;
-  }
-
-  sleep(ms: number): Promise<void> {
-    return new Promise((resolve) => {
-      this.timers.push({ at: this.t + Math.max(0, ms), resolve });
-    });
-  }
-
-  /** Lets resolved promises run (the limiter pump hops through a few microtasks). */
-  async settle(): Promise<void> {
-    for (let i = 0; i < 20; i++) await Promise.resolve();
-  }
-
-  /** Runs timers in order until `until` (inclusive) or until none are left. */
-  async runUntil(until = Number.POSITIVE_INFINITY): Promise<void> {
-    await this.settle();
-    for (;;) {
-      this.timers.sort((a, b) => a.at - b.at);
-      const next = this.timers[0];
-      if (next === undefined || next.at > until) break;
-      this.timers.shift();
-      this.t = Math.max(this.t, next.at);
-      next.resolve();
-      await this.settle();
-    }
-    if (until !== Number.POSITIVE_INFINITY) this.t = Math.max(this.t, until);
-    await this.settle();
-  }
-}
+import { FakeClock, T0 } from '../helpers/fake-clock.ts';
 
 /** Starts `count` calls at once; returns the time (ms after T0) each one was granted. */
 function startAll(acquire: () => Promise<boolean>, clock: FakeClock, count: number) {

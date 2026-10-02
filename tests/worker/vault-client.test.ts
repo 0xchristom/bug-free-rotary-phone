@@ -69,6 +69,7 @@ describe('vault client ↔ handler', () => {
       locked: true,
       armed: false,
       info: null,
+      buy: null,
     });
     const err = await rejection(client.request({ type: 'addWallets', count: 1 }));
     expect(err).toBeInstanceOf(AppError);
@@ -101,8 +102,8 @@ describe('vault client ↔ handler', () => {
     try {
       attachVaultHandler(channel.port2 as unknown as VaultPort, createVaultHandler());
       const client = createVaultClient(channel.port1 as unknown as VaultPort);
-      const status = await client.request({ type: 'setArmed', armed: true });
-      expect(status.armed).toBe(true);
+      const status = await client.request({ type: 'stop' });
+      expect(status).toMatchObject({ armed: false, buy: null });
       const err = await rejection(
         client.request({
           type: 'saveSettings',
