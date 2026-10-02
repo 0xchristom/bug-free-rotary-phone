@@ -33,3 +33,10 @@ export type {
   WebSocketLike,
   WsCheckOptions,
 } from './connection-test.ts';
+export {
+  BLOCK_TIME_MARGIN_MS,
+  SIGNATURES_LIMIT,
+  createLandingChecker,
+  createLandingRpc,
+} from './landing.ts';
+export type { LandingCheckerOptions, LandingRpc } from './landing.ts';

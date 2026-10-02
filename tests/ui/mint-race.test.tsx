@@ -37,7 +37,7 @@ function balancesFor(mint: string | undefined, decimals: number, perWallet: bigi
 
 function setup() {
   const info = fleetInfo(2);
-  const status = (): VaultStatus => ({ locked: false, armed: false, info });
+  const status = (): VaultStatus => ({ locked: false, armed: false, info, buy: null });
   const vault = mockVault(status());
   const pending = new Map<string, Deferred>();
   vault.request.mockImplementation((req: VaultRequest) => {

@@ -5,7 +5,7 @@ import type { DirectoryHandleLike, StorageEnv } from '../../src/storage/keystore
 import type { VaultInfo, VaultRequest, VaultStatus } from '../../src/worker/protocol.ts';
 import type { VaultClient, VaultRequestOptions } from '../../src/worker/vault-client.ts';
 
-export const LOCKED: VaultStatus = { locked: true, armed: false, info: null };
+export const LOCKED: VaultStatus = { locked: true, armed: false, info: null, buy: null };
 
 export function fleetInfo(count = 3, fleetName = 'Flota testowa'): VaultInfo {
   return {
@@ -23,7 +23,7 @@ export function fleetInfo(count = 3, fleetName = 'Flota testowa'): VaultInfo {
 }
 
 export function unlocked(armed = false): VaultStatus {
-  return { locked: false, armed, info: fleetInfo() };
+  return { locked: false, armed, info: fleetInfo(), buy: null };
 }
 
 type CreateHandler = (
@@ -57,7 +57,12 @@ export function mockVault(initial: VaultStatus, onCreate?: CreateHandler) {
         case 'create':
           if (onCreate) {
             return onCreate(req, options).then((result) => {
-              status = { locked: false, armed: false, info: (result as { info: VaultInfo }).info };
+              status = {
+                locked: false,
+                armed: false,
+                info: (result as { info: VaultInfo }).info,
+                buy: null,
+              };
               return result;
             });
           }

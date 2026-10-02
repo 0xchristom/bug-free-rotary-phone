@@ -30,6 +30,11 @@ export const ERROR_MESSAGES = {
     'Podany adres nie jest mintem tokenu (SPL Token ani Token-2022). Sprawdź adres tokenu.',
   HELIUS_KEY_MISSING: 'Brak klucza API Helius. Dodaj go w Ustawieniach, aby odczytać salda.',
   VAULT_LOCKED: 'Plik floty jest zablokowany. Odblokuj go hasłem, aby kontynuować.',
+  BUY_RUNNING:
+    'Trwa zakup. Zatrzymaj go przyciskiem STOP i poczekaj, aż wysłane transakcje się zakończą.',
+  NO_WALLETS_TO_BUY:
+    'Żaden portfel nie może kupować: zaznacz aktywne portfele i ustaw im max spend.',
+  INVALID_MINT_ADDRESS: 'To nie jest prawidłowy adres mintu tokenu (base58, 32–44 znaki).',
   VAULT_TIMEOUT: 'Sejf z kluczami nie odpowiedział w wyznaczonym czasie. Spróbuj ponownie.',
   INTERNAL_ERROR: 'Wystąpił wewnętrzny błąd aplikacji. Spróbuj ponownie.',
   STORAGE_CANCELLED: 'Anulowano wybór pliku lub folderu. Plik nie został zapisany ani wczytany.',

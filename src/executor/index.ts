@@ -27,3 +27,41 @@ export type {
   OrderCheckResult,
   OrderExpectation,
 } from './order-check.ts';
+export {
+  FAIL_MESSAGES,
+  FINAL_STATES,
+  IllegalTransitionError,
+  SKIP_MESSAGES,
+  TRANSITIONS,
+  UNKNOWN_MESSAGES,
+  WALLET_STATES,
+  assertTransition,
+} from './states.ts';
+export type { FailReason, SkipReason, UnknownReason, WalletReason, WalletState } from './states.ts';
+export { aboveCeiling, startRun } from './executor.ts';
+export type {
+  ExecutorDeps,
+  ExecutorEvent,
+  ExecutorRun,
+  ExecutorWallet,
+  OrderSigner,
+  RunEvent,
+  RunOptions,
+  RunPhase,
+  RunSummary,
+  WalletEvent,
+  WalletQuote,
+  WalletResult,
+  WalletSnapshot,
+  WalletTimes,
+} from './executor.ts';
+export {
+  afterBuildError,
+  afterExecuteFailure,
+  afterExecution,
+  afterOrderFailure,
+} from './policy.ts';
+export type { Decision } from './policy.ts';
+export { LANDING_POLL_MS, LANDING_TIMEOUT_MS } from './landing.ts';
+export type { Landing, LandingChecker, LandingQuery } from './landing.ts';
+export { EXECUTE_FATAL, EXECUTE_NOT_SENT } from './policy.ts';

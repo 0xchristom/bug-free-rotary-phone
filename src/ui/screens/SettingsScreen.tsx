@@ -66,7 +66,11 @@ const KEY_FIELDS: readonly { name: KeyName; label: string; placeholder: string }
 const CONTINUOUS_WARNING =
   'Tryb ciągły: watcher nie rozbroi się po pierwszym zakupie i będzie kupował każdy kolejny wykryty token, aż go wyłączysz. Włączyć tryb ciągły?';
 
+const LIVE_WARNING =
+  'Wyłączasz DRY-RUN: zakup wyśle prawdziwe transakcje i wyda SOL z portfeli (do max spend każdego). Wyłączyć DRY-RUN?';
+
 interface Form {
+  dryRun: boolean;
   minReserve: string;
   maxAttempts: string;
   priceCeiling: string;
@@ -80,6 +84,11 @@ interface Form {
   customRpm: string;
 }
 
+/** Form fields edited as text. */
+type TextKey = {
+  [K in keyof Form]: Form[K] extends string ? (string extends Form[K] ? K : never) : never;
+}[keyof Form];
+
 type KeyDraft = { readonly text: string; readonly show: boolean; readonly remove: boolean };
 
 type SavePhase =
@@ -90,6 +99,7 @@ type SavePhase =
 
 function formOf(g: GlobalSettingsV1): Form {
   return {
+    dryRun: g.dryRun,
     minReserve: formatSol(g.minReserveLamports),
     maxAttempts: String(g.maxAttempts),
     priceCeiling: String(g.priceCeilingPercent),
@@ -126,6 +136,7 @@ function settingsOf(f: Form): GlobalSettingsV1 {
     autoLockMinutes: int(f.autoLock),
     jupiterPlan: f.plan,
     orderRpm: f.plan === 'custom' ? int(f.customRpm) : JUPITER_PLAN_RPM[f.plan],
+    dryRun: f.dryRun,
   };
 }
 
@@ -247,7 +258,7 @@ export function SettingsScreen({ info, storage, onUnsavedChange }: SettingsScree
   };
 
   const numberField = (
-    key: keyof Form,
+    key: TextKey,
     field: SettingsField,
     label: string,
     suffix: string,
@@ -456,6 +467,22 @@ export function SettingsScreen({ info, storage, onUnsavedChange }: SettingsScree
           {form.mode === 'continuous' && (
             <p className="notice warning">
               Tryb ciągły jest włączony: watcher nie rozbroi się po pierwszym zakupie.
+            </p>
+          )}
+          <label className="checkbox">
+            <input
+              type="checkbox"
+              checked={form.dryRun}
+              onChange={(e) => {
+                if (!e.target.checked && !window.confirm(LIVE_WARNING)) return;
+                set('dryRun', e.target.checked);
+              }}
+            />
+            DRY-RUN: zakup bez wysyłania transakcji (prawdziwe zapytania o cenę, zero wydanych SOL)
+          </label>
+          {!form.dryRun && (
+            <p className="notice warning">
+              DRY-RUN jest wyłączony: zakup wyśle prawdziwe transakcje.
             </p>
           )}
         </fieldset>
