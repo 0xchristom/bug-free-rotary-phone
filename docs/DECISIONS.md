@@ -709,3 +709,32 @@ Rejestr decyzji i rozbieżności z dokumentacją zewnętrzną. Nowe wpisy dopisu
     - po końcu okna wszystkie czekające portfele kończą jako FAILED `NO_ROUTE` bez dalszych zapytań. Dotyczy to też sytuacji, w której odpowiedź sondy przyszła już po końcu okna; sonda w backoffie nie wysyła już zapytania.
   - **STOP przy zamkniętej bramce:** czekające portfele i sonda w backoffie od razu dostają SKIPPED `STOPPED`, bez nowych `/order`.
 - Testy: scenariusz świeżego mintu; stałe 500; STOP; ponowne zamknięcie z nowym oknem; trasa znika na stałe po otwarciu; sonda w locie przez koniec okna; sonda czekająca na limiter Keyless. Symulacja (5000 ziaren, losowe 5% 503): 0 portfeli FAILED `NO_ROUTE`.
+
+## D-036: Strumień logów twórcy (Helius WebSocket)
+
+- Data: 2026-10-02
+- Zadanie: BUNNDLY-32
+- Kontekst: SPEC 3.4. Dokumentacja Helius WebSocket (`/docs/api-reference/rpc/websocket/llms.txt`): plan Free to 5 połączeń i 10 zapytań/s, połączenie zamyka się po 10 min bez aktywności, zalecany ping co 30–60 s. D-016, D-020, D-024 (URL z kluczem tylko w workerze, błędy WebSocket nie są czytane).
+- Decyzja:
+  - **`src/watcher/stream.ts`** (`startStream`): jedno połączenie, `logsSubscribe` z `{ mentions: [twórca] }` i `{ commitment: "processed" }`. Gniazdo, odczyt sygnatur, zegar i losowość są wstrzykiwane. Uruchomienie w workerze (uzbrajanie) dochodzi w BUNNDLY-34.
+  - **Powiadomienia:**
+    - z `err` różnym od `null` są pomijane;
+    - każda sygnatura przechodzi raz (pamięć ostatnich 2000);
+    - zdarzenie niesie log, źródło (`logs` albo `catch-up`) i `receivedAt` z `performance.now()` w workerze.
+  - **Podtrzymanie:**
+    - przeglądarkowy WebSocket nie wysyła ramek ping, więc co 30 s idzie żądanie JSON-RPC `getHealth`;
+    - to nie jest metoda pubsub, więc serwer od razu odpowiada błędem. Tyle wystarczy: każda odpowiedź z naszym `id` dowodzi, że połączenie żyje, a żądanie niczego nie subskrybuje i nie może ruszyć naszej subskrypcji;
+    - odrzuciłem `*Unsubscribe` z nieistniejącym id, bo id naszej subskrypcji może mieć tę samą wartość, oraz subskrypcję z natychmiastowym anulowaniem, bo to dwa zapytania i ryzyko powiadomień;
+    - brak odpowiedzi przez 10 s zamyka połączenie i uruchamia ponowne łączenie, więc martwe połączenie jest wykryte najpóźniej po 40 s.
+  - **Ponowne łączenie:**
+    - backoff wykładniczy z jitterem: krok 0,5 s × 2^(n−1), limit 30 s, opóźnienie od połowy do całego kroku, nie mniej niż 0,5 s;
+    - zerowany po otwarciu połączenia;
+    - po każdym otwarciu ponowne `logsSubscribe`;
+    - na zewnątrz tylko stany `connecting`, `connected`, `reconnecting` (z numerem próby) i `disconnected` oraz czas ostatniej wiadomości.
+  - **Nadrabianie przerwy:**
+    - przy uzbrojeniu najnowsza sygnatura twórcy (`getSignaturesForAddress`, `limit: 1`; przy błędzie RPC z ponowieniami) staje się dolną granicą;
+    - po każdym otwarciu połączenia (także pierwszym, co zamyka lukę między uzbrojeniem a subskrypcją) sygnatury `until` ostatnio widzianej (`confirmed`, strony po 1000 z `before`) przechodzą od najstarszej ze źródłem `catch-up`, bez logów (detektory użyją `getTransaction`, BUNNDLY-33);
+    - nieudane transakcje są pomijane;
+    - granica przesuwa się na najnowszą nadrobioną sygnaturę tylko wtedy, gdy w trakcie nie przyszedł nowszy log;
+    - bez granicy (RPC nie odpowiada od uzbrojenia) niczego nie przekazujemy, bo nie wiadomo, gdzie zaczyna się przerwa; przechodzą tylko logi na żywo.
+  - **Klucz:** URL z kluczem zna tylko moduł. Zdarzenia nie niosą URL-a ani treści błędów; test sprawdza zserializowane zdarzenia, także gdy utworzenie gniazda rzuca wyjątek z URL-em. CSP już zezwala na `wss://*.helius-rpc.com`.
