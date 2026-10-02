@@ -178,14 +178,43 @@ export function heliusWsUrl(apiKey: string): string {
   return `wss://mainnet.helius-rpc.com/?api-key=${encodeURIComponent(apiKey)}`;
 }
 
-/** Custom endpoint check: `https:` for RPC, `wss:` for WebSocket, no user/password. */
-export function isValidEndpointUrl(value: string, protocol: 'https:' | 'wss:'): boolean {
-  if (value.length === 0 || value.length > 512) return false;
+/**
+ * The only domain allowed for custom Helius endpoints: the CSP (SPEC 6.4) lets the app
+ * connect only to Helius, api.jup.ag and the fallback RPC, so any other host would fail
+ * silently in the production build.
+ */
+export const HELIUS_DOMAIN = 'helius-rpc.com';
+
+/** Exactly helius-rpc.com or a subdomain of it (not helius-rpc.com.evil.example). */
+export function isHeliusHost(hostname: string): boolean {
+  const host = hostname.toLowerCase().replace(/\.$/u, '');
+  return host === HELIUS_DOMAIN || host.endsWith(`.${HELIUS_DOMAIN}`);
+}
+
+/**
+ * Why a custom endpoint is not accepted, as a Polish message, or null if it is fine:
+ * `https:` for RPC or `wss:` for WebSocket, a Helius host, no user/password in the URL.
+ */
+export function endpointUrlProblem(value: string, protocol: 'https:' | 'wss:'): string | null {
+  const scheme = protocol === 'https:' ? 'https://' : 'wss://';
+  if (value.length === 0 || value.length > 512) {
+    return 'Adres musi mieć od 1 do 512 znaków.';
+  }
   let url: URL;
   try {
     url = new URL(value);
   } catch {
-    return false;
+    return `To nie jest prawidłowy adres URL. Zacznij od ${scheme}.`;
   }
-  return url.protocol === protocol && url.hostname !== '' && !url.username && !url.password;
+  if (url.protocol !== protocol) return `Adres musi zaczynać się od ${scheme}.`;
+  if (url.username || url.password) return 'Adres nie może zawierać nazwy użytkownika ani hasła.';
+  if (!isHeliusHost(url.hostname)) {
+    return `Dozwolone są tylko adresy Helius w domenie ${HELIUS_DOMAIN} (np. ${scheme}mainnet.${HELIUS_DOMAIN}/?api-key=…).`;
+  }
+  return null;
+}
+
+/** Custom endpoint check used by the keystore parser and the worker. */
+export function isValidEndpointUrl(value: string, protocol: 'https:' | 'wss:'): boolean {
+  return endpointUrlProblem(value, protocol) === null;
 }

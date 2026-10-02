@@ -246,7 +246,7 @@ Rejestr decyzji i rozbieżności z dokumentacją zewnętrzną. Nowe wpisy dopisu
 - Decyzja:
   - **Klucze nie wychodzą z workera.** Wywołania, które ich potrzebują (Helius HTTP i WSS, Jupiter), wykona worker (BUNNDLY-12, 13, 16).
   - **`VaultInfo.apiKeys` to tylko flagi** (`ApiKeyFlags`): czy ustawiono klucz Helius, klucz Jupiter, własny URL RPC i własny URL WebSocket.
-  - **Własne URL-e Helius** zawierają klucz, więc podlegają tej samej zasadzie. Są przechowywane obok kluczy (`ApiKeysV1.heliusRpcUrl`, `heliusWsUrl`). Walidacja: RPC tylko `https:`, WebSocket tylko `wss:`, bez użytkownika i hasła w URL.
+  - **Własne URL-e Helius** zawierają klucz, więc podlegają tej samej zasadzie. Są przechowywane obok kluczy (`ApiKeysV1.heliusRpcUrl`, `heliusWsUrl`). Walidacja: RPC tylko `https:`, WebSocket tylko `wss:`, bez użytkownika i hasła w URL, host tylko `helius-rpc.com` albo jego subdomena (dopisane w BUNNDLY-12, patrz D-020).
   - **`saveSettings.apiKeys` to zmiany:** brak pola zostawia wartość, `null` ją usuwa, a tekst zastępuje. Nieprawidłowa wartość daje `INVALID_SETTINGS`.
   - **UI:**
     - puste pole oznacza brak zmian;
@@ -285,3 +285,42 @@ Rejestr decyzji i rozbieżności z dokumentacją zewnętrzną. Nowe wpisy dopisu
   - **Auto-lock** w workerze korzysta z `autoLockMinutes` odblokowanej floty. Opcja `autoLockMs` handlera zostaje tylko do testów.
   - **Zapis pliku** po zmianie ustawień działa jak w D-017 i D-018: sejf ma nowe ustawienia od razu, a plik zapisuje się po kliknięciu, z ochroną przed utratą przy blokadzie i zamknięciu karty.
 - Konsekwencje: `FleetSettingsV1` zawsze zawiera wszystkie pola (domyślne uzupełnia parser), więc kod dalej nie musi sprawdzać braków.
+
+## D-020: Odczyty z sieci: `@solana/kit`, backoff i fallback w workerze
+
+- Data: 2026-10-02
+- Zadanie: BUNNDLY-12
+- Kontekst: SPEC 2.2, 3.2 i 6.1 oraz D-016 (klucz Helius nie wychodzi z workera). Plan Helius Free daje 10 zapytań/s i 1 mln kredytów miesięcznie.
+- Decyzja:
+  - **`@solana/kit` 8.4.0 (dokładna wersja):** oficjalny, modularny następca `@solana/web3.js` od Anza, z typami, `bigint` dla lamportów i tree-shakingiem.
+    - Używam tylko `createSolanaRpcFromTransport`, `createDefaultRpcTransport`, `address` i błędów transportu.
+    - Paczka jest wyłącznie w pakiecie workera (+25 kB), w głównym pakiecie jej nie ma.
+    - Zależności to wyłącznie paczki `@solana/*` tego samego wydania.
+  - **Gdzie działa:** `src/chain` to czysty moduł (bez DOM, testy w Node). Wywołuje go tylko worker sejfu w nowym żądaniu `refreshBalances`, bo tylko worker zna klucz.
+    - URL: własny URL RPC, jeśli jest ustawiony; inaczej adres z dokumentacji Helius z kluczem; bez klucza `HELIUS_KEY_MISSING` i żadnego zapytania.
+    - Odpowiedź zawiera tylko `{ index, lamports }[]`, źródło (`helius` albo `fallback`) i czas odczytu.
+  - **`refreshBalances` nie jest aktywnością** (tak jak `status`), więc cykliczne odświeżanie nie wyłącza auto-locka.
+    - W kolejce workera idzie tylko szybkie przygotowanie (sprawdzenie odblokowania, URL, adresy). Sam odczyt sieciowy idzie poza kolejką, więc `lock` nie czeka na sieć.
+    - Jeśli w trakcie odczytu flota zostanie zablokowana, wynik jest odrzucany (`VAULT_LOCKED`).
+  - **Paczkowanie:** `getMultipleAccounts` po maksymalnie 100 adresów, paczki kolejno, wyniki w kolejności wejścia. Brak konta liczy się jako `0n`. `dataSlice` o długości 0, bo potrzebne są tylko lamporty.
+  - **Backoff i fallback:**
+    - 429, 5xx i błąd sieci dają do 3 powtórzeń z opóźnieniem 250 → 500 → 1000 ms;
+    - inny błąd (np. 401 przy złym kluczu) od razu przechodzi do fallbacku;
+    - fallback to `https://api.mainnet.solana.com`, tylko do odczytów i tylko po błędzie Helius;
+    - UI pokazuje, że salda pochodzą z publicznego RPC.
+  - **Błędy bez klucza:** każdy błąd końcowy to `RPC_UNAVAILABLE` bez `cause`, bo oryginalny błąd `fetch` lub transportu może zawierać URL z kluczem. Do logów jest `redactUrl`, który obcina część query.
+  - **Odświeżanie w UI** (`useBalances`):
+    - co 12 s (konfigurowalne, SPEC: 10–15 s) i przyciskiem „Odśwież salda”;
+    - tylko gdy ekran Flota jest zamontowany (czyli flota odblokowana) i karta jest widoczna;
+    - powrót karty do widoku odświeża od razu;
+    - najwyżej jedno zapytanie naraz.
+  - **Testy bez sieci:** plik startowy testów (`tests/helpers/no-network.ts`) podmienia `fetch` i `WebSocket` na funkcje rzucające błąd. Testy używają tylko mocków transportu.
+  - **Własne URL-e tylko w domenie Helius** (wymaganie Andy'ego z review BUNNDLY-15):
+    - host musi być dokładnie `helius-rpc.com` albo jego subdomeną (`mainnet.helius-rpc.com`, `*.helius-rpc.com`);
+    - podobne nazwy, np. `helius-rpc.com.evil.example` i `evilhelius-rpc.com`, są odrzucane;
+    - powód: CSP (SPEC 6.4) przepuści w `connect-src` tylko Helius, `api.jup.ag` i awaryjny RPC, więc inny host w buildzie z CSP po cichu by nie działał;
+    - jedna reguła (`endpointUrlProblem` w `core/settings.ts`) daje polski komunikat w formularzu, a worker i parser pliku odrzucają takie URL-e (`INVALID_SETTINGS`, `KEYSTORE_INVALID_FORMAT`);
+    - awaryjny `https://api.mainnet.solana.com` jest stałą w kodzie, nie ustawieniem.
+- Konsekwencje:
+  - BUNNDLY-13 (salda tokenów) dołoży do tego samego mechanizmu kolejne zapytania.
+  - CSP aplikacji (`connect-src`) musi obejmować `https://*.helius-rpc.com`, `wss://*.helius-rpc.com` i `https://api.mainnet.solana.com`.

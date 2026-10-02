@@ -243,21 +243,47 @@ describe('saving', () => {
     expect(screen.getAllByText('Ustawiony.')).toHaveLength(1);
   });
 
-  it('a custom RPC URL is write-only too; a bad one is refused by the worker', async () => {
+  it('a custom RPC URL must be a Helius address (CSP); a good one is write-only too', async () => {
     const { handler, user } = await setup();
-    await user.type(field('Własny URL RPC (HTTPS, opcjonalnie)'), 'http://insecure.example.com');
-    await user.click(saveButton());
-    expect((await screen.findByRole('alert')).textContent).toContain('Ustawienia są nieprawidłowe');
-    expect(keysIn(handler)).toEqual({});
-    expect(field('Własny URL RPC (HTTPS, opcjonalnie)').value).toBe('');
-
-    await user.type(
-      field('Własny URL RPC (HTTPS, opcjonalnie)'),
+    const rpc = 'Własny URL RPC (HTTPS, opcjonalnie)';
+    for (const bad of [
       'https://rpc.example.com/?api-key=k1',
-    );
+      'https://helius-rpc.com.evil.example/?api-key=k1',
+      'https://evilhelius-rpc.com/?api-key=k1',
+    ]) {
+      await retype(user, rpc, bad);
+      expect(
+        screen.getByText(
+          'Dozwolone są tylko adresy Helius w domenie helius-rpc.com (np. https://mainnet.helius-rpc.com/?api-key=…).',
+        ),
+      ).toBeTruthy();
+      expect(saveButton().disabled).toBe(true);
+    }
+    await retype(user, rpc, 'http://mainnet.helius-rpc.com');
+    expect(screen.getByText('Adres musi zaczynać się od https://.')).toBeTruthy();
+    expect(keysIn(handler)).toEqual({});
+
+    await retype(user, rpc, 'https://staked.helius-rpc.com/?api-key=k1');
+    expect(saveButton().disabled).toBe(false);
     await saveSettings(user);
-    expect(keysIn(handler)).toEqual({ heliusRpcUrl: 'https://rpc.example.com/?api-key=k1' });
-    expect(document.body.innerHTML).not.toContain('rpc.example.com');
+    expect(keysIn(handler)).toEqual({ heliusRpcUrl: 'https://staked.helius-rpc.com/?api-key=k1' });
+    expect(field(rpc).value).toBe('');
+    expect(document.body.innerHTML).not.toContain('staked.helius-rpc.com');
+  });
+
+  it('the worker refuses a non-Helius URL even if the form check is bypassed', async () => {
+    const { handler } = await setup();
+    const err: unknown = await handler
+      .handle({
+        type: 'saveSettings',
+        settings: handler.inspect().unlocked?.settings,
+        apiKeys: { heliusWsUrl: 'wss://evilhelius-rpc.com' },
+      })
+      .then(
+        () => null,
+        (e: unknown) => e,
+      );
+    expect((err as { code?: string }).code).toBe('INVALID_SETTINGS');
   });
 
   it('keys never reach storage, the URL or the console', async () => {
