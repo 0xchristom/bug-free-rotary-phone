@@ -28,11 +28,17 @@ export {
   MIN_SCRYPT_N,
   MIN_SCRYPT_P,
   SCRYPT_R,
+  createSession,
   decryptSecrets,
+  decryptWithSession,
   encryptSecrets,
+  encryptWithSession,
   passwordLength,
+  unlockSession,
 } from './keystore/crypto.ts';
 export type {
+  AesKey,
+  KeystoreSession,
   CipherParams,
   CryptoOptions,
   EncryptOptions,
@@ -60,6 +66,7 @@ export type {
 } from './keystore/format.ts';
 export {
   buildKeystore,
+  buildKeystoreWithSession,
   createKeystore,
   defaultWalletLabel,
   openKeystore,

@@ -16,7 +16,8 @@ const storageProperties = GLOBAL_OBJECTS.flatMap((object) =>
   FORBIDDEN_STORAGE.map((property) => ({ object, property, message: STORAGE_MESSAGE })),
 );
 
-// SPEC 4: core, executor and jupiter must be testable in Node without a browser.
+// SPEC 4: core, executor and jupiter must be testable in Node without a browser;
+// the vault worker has no DOM either (BUNNDLY-7).
 const DOM_MESSAGE = 'Zakazane (SPEC 4): ten moduł musi działać w Node, bez DOM.';
 const domGlobals = ['window', 'document'].map((name) => ({ name, message: DOM_MESSAGE }));
 const domProperties = ['globalThis', 'self'].flatMap((object) =>
@@ -54,7 +55,7 @@ export default defineConfig(
   },
   {
     // Rule options are replaced, not merged, so storage restrictions are repeated here.
-    files: ['src/{core,executor,jupiter}/**/*.{ts,tsx}'],
+    files: ['src/{core,executor,jupiter,worker}/**/*.{ts,tsx}'],
     rules: {
       'no-restricted-globals': ['error', ...storageGlobals, ...domGlobals],
       'no-restricted-properties': ['error', ...storageProperties, ...domProperties],

@@ -18,6 +18,7 @@ import {
   type KeystoreSecretsV1,
   type OpenedKeystore,
 } from '../../../src/core/index.ts';
+import { valueWords } from '../../helpers/words.ts';
 
 // Real scrypt at the default N=2^17 for every encrypt/decrypt in this file.
 vi.setConfig({ testTimeout: 60_000, hookTimeout: 60_000 });
@@ -157,14 +158,11 @@ describe('createKeystore + parseKeystoreFile + openKeystore', () => {
       // the 32-byte private seed alone, too
       expect(json).not.toContain(base58.encode(base58.decode(w.secretKey).slice(0, 32)));
     }
-    // Outside base64 fields (where short words can occur by chance) no mnemonic word appears.
-    const outside = mutable(created.file);
-    delete outside.ciphertext;
-    delete outside.kdf.salt;
-    delete outside.cipher.iv;
-    const text = JSON.stringify(outside).toLowerCase();
+    // Outside base64 fields (where short words can occur by chance) no string value
+    // contains a mnemonic word.
+    const words = valueWords(created.file, ['ciphertext', 'salt', 'iv']);
     for (const word of new Set(mnemonic.split(' '))) {
-      expect(text).not.toMatch(new RegExp(`\\b${word}\\b`, 'u'));
+      expect(words.has(word)).toBe(false);
     }
   });
 

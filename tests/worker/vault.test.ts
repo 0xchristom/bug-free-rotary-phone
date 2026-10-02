@@ -1,0 +1,377 @@
+import { base58, base64 } from '@scure/base';
+import { beforeAll, describe, expect, it, vi } from 'vitest';
+import {
+  AppError,
+  MAX_FLEET_SIZE,
+  openKeystore,
+  parseKeystoreFile,
+  type KeystoreFileV1,
+} from '../../src/core/index.ts';
+import type { VaultFileResult, VaultStatus } from '../../src/worker/protocol.ts';
+import { createVaultHandler, type VaultHandler } from '../../src/worker/vault.ts';
+import { valueWords } from '../helpers/words.ts';
+
+// Real scrypt (N=2^17) on create/unlock and when re-opening files.
+vi.setConfig({ testTimeout: 60_000, hookTimeout: 60_000 });
+
+const PASSWORD = 'correct horse battery staple';
+const MNEMONIC_12 = `${'abandon '.repeat(11)}about`;
+const AUTO_LOCK_MS = 60_000;
+
+/** Every response the vault ever returned, for the leak scan at the end. */
+const responses: unknown[] = [];
+/** Secrets seen inside the vault (collected via inspect), never expected in responses. */
+const secretsSeen = new Set<string>();
+
+function clock(start = 1_000_000): { now: () => number; advance: (ms: number) => void } {
+  let t = start;
+  return {
+    now: () => t,
+    advance: (ms) => {
+      t += ms;
+    },
+  };
+}
+
+async function call<T>(handler: VaultHandler, request: unknown): Promise<T> {
+  const result = await handler.handle(request);
+  responses.push(result);
+  return result as T;
+}
+
+async function expectCode(promise: Promise<unknown>, code: AppError['code']): Promise<void> {
+  const caught: unknown = await promise.then(
+    () => undefined,
+    (e: unknown) => e,
+  );
+  expect(caught).toBeInstanceOf(AppError);
+  expect((caught as AppError).code).toBe(code);
+}
+
+/** Records the plaintext secrets currently held by the vault. */
+function collectSecrets(handler: VaultHandler): void {
+  const vault = handler.inspect().unlocked;
+  if (!vault) return;
+  secretsSeen.add(new TextDecoder().decode(vault.mnemonic));
+  for (const w of vault.wallets) {
+    secretsSeen.add(base58.encode(w.secretKey));
+    secretsSeen.add(base58.encode(w.secretKey.slice(0, 32)));
+  }
+}
+
+function heldBuffers(handler: VaultHandler): Uint8Array[] {
+  const vault = handler.inspect().unlocked;
+  if (!vault) throw new Error('vault is locked');
+  return [vault.mnemonic, ...vault.wallets.map((w) => w.secretKey)];
+}
+
+function ivOf(fileText: string): string {
+  return parseKeystoreFile(fileText).cipher.iv;
+}
+
+async function reopen(fileText: string): Promise<Awaited<ReturnType<typeof openKeystore>>> {
+  return openKeystore(parseKeystoreFile(fileText), PASSWORD);
+}
+
+let main: VaultHandler;
+let created: VaultFileResult;
+
+beforeAll(async () => {
+  main = createVaultHandler({ autoLockMs: AUTO_LOCK_MS });
+  created = await call<VaultFileResult>(main, {
+    type: 'create',
+    fleetName: 'Flota',
+    walletCount: 5,
+    password: PASSWORD,
+  });
+  collectSecrets(main);
+});
+
+describe('create', () => {
+  it('returns the encrypted file and public info only', async () => {
+    const file = parseKeystoreFile(created.fileText);
+    expect(file.public.wallets).toHaveLength(5);
+    expect(created.info.wallets).toEqual(file.public.wallets);
+    expect(created.info.fleetName).toBe('Flota');
+    expect(Object.keys(created.info).sort()).toEqual([
+      'apiKeys',
+      'createdAt',
+      'fleetName',
+      'settings',
+      'wallets',
+    ]);
+    const status = await call<VaultStatus>(main, { type: 'status' });
+    expect(status).toMatchObject({ locked: false, armed: false });
+    expect(status.info?.wallets).toHaveLength(5);
+  });
+
+  it('imports an existing mnemonic', async () => {
+    const h = createVaultHandler();
+    const res = await call<VaultFileResult>(h, {
+      type: 'create',
+      fleetName: 'Import',
+      walletCount: 1,
+      password: PASSWORD,
+      mnemonic: MNEMONIC_12,
+    });
+    collectSecrets(h);
+    expect(res.info.wallets[0]?.address).toBe('HAgk14JpMQLgt6rVgv7cBQFJWFto5Dqxi472uT3DKpqk');
+  });
+
+  it('keeps the vault locked when create fails', async () => {
+    const h = createVaultHandler();
+    await expectCode(
+      h.handle({ type: 'create', fleetName: 'a/b', walletCount: 1, password: PASSWORD }),
+      'INVALID_FLEET_NAME',
+    );
+    expect(h.inspect().unlocked).toBeNull();
+  });
+});
+
+describe('saveSettings', () => {
+  it('re-encrypts with the session key: same salt, new IV, opens with the password', async () => {
+    const res = await call<VaultFileResult>(main, {
+      type: 'saveSettings',
+      settings: {
+        maxSpend: [
+          { index: 0, lamports: 25_000_000n },
+          { index: 4, lamports: 1n },
+        ],
+      },
+      apiKeys: { helius: 'heliusapikey1', jupiter: 'jupiterapikey2' },
+    });
+    const before = parseKeystoreFile(created.fileText);
+    const after = parseKeystoreFile(res.fileText);
+    expect(after.cipher.iv).not.toBe(before.cipher.iv);
+    expect(after.kdf).toEqual(before.kdf);
+    expect(after.createdAt).toBe(before.createdAt);
+    expect(after.public).toEqual(before.public);
+    expect(res.info.settings.maxSpend[0]?.lamports).toBe(25_000_000n);
+
+    const opened = await reopen(res.fileText);
+    expect(opened.secrets.settings.maxSpend).toEqual([
+      { index: 0, lamports: 25_000_000n },
+      { index: 4, lamports: 1n },
+    ]);
+    expect(opened.secrets.apiKeys).toEqual({ helius: 'heliusapikey1', jupiter: 'jupiterapikey2' });
+  });
+
+  it('rejects settings for wallets outside the fleet and keeps the old state', async () => {
+    const before = (await call<VaultStatus>(main, { type: 'status' })).info?.settings;
+    await expectCode(
+      main.handle({
+        type: 'saveSettings',
+        settings: { maxSpend: [{ index: 50, lamports: 1n }] },
+        apiKeys: {},
+      }),
+      'KEYSTORE_INVALID_FORMAT',
+    );
+    expect((await call<VaultStatus>(main, { type: 'status' })).info?.settings).toEqual(before);
+  });
+});
+
+describe('addWallets', () => {
+  it('appends the next indices; the file opens and the IV changes', async () => {
+    const prev = await call<VaultFileResult>(main, {
+      type: 'saveSettings',
+      settings: { maxSpend: [] },
+      apiKeys: {},
+    });
+    const res = await call<VaultFileResult>(main, { type: 'addWallets', count: 3 });
+    collectSecrets(main);
+    expect(res.info.wallets.map((w) => w.index)).toEqual([0, 1, 2, 3, 4, 5, 6, 7]);
+    expect(res.info.wallets[7]?.label).toBe('W08');
+    expect(ivOf(res.fileText)).not.toBe(ivOf(prev.fileText));
+    const opened = await reopen(res.fileText);
+    expect(opened.file.public.wallets.map((w) => w.address)).toEqual(
+      res.info.wallets.map((w) => w.address),
+    );
+    // the first five addresses did not change
+    expect(res.info.wallets.slice(0, 5)).toEqual(created.info.wallets);
+  });
+
+  it('grows to exactly 100 wallets and refuses more', async () => {
+    const h = createVaultHandler();
+    await call(h, { type: 'create', fleetName: 'Duza', walletCount: 98, password: PASSWORD });
+    const full = await call<VaultFileResult>(h, { type: 'addWallets', count: 2 });
+    collectSecrets(h);
+    expect(full.info.wallets).toHaveLength(MAX_FLEET_SIZE);
+    await expectCode(h.handle({ type: 'addWallets', count: 1 }), 'INVALID_DERIVATION_INDEX');
+    await expectCode(h.handle({ type: 'addWallets', count: 0 }), 'INVALID_DERIVATION_INDEX');
+    expect(h.inspect().unlocked?.wallets).toHaveLength(MAX_FLEET_SIZE);
+    const opened = await reopen(full.fileText);
+    expect(opened.secrets.wallets).toHaveLength(100);
+  });
+
+  it('runs concurrent requests one after another', async () => {
+    const h = createVaultHandler();
+    await call(h, { type: 'create', fleetName: 'Kolejka', walletCount: 1, password: PASSWORD });
+    const [a, b] = await Promise.all([
+      call<VaultFileResult>(h, { type: 'addWallets', count: 1 }),
+      call<VaultFileResult>(h, { type: 'addWallets', count: 1 }),
+    ]);
+    collectSecrets(h);
+    expect(a.info.wallets.map((w) => w.index)).toEqual([0, 1]);
+    expect(b.info.wallets.map((w) => w.index)).toEqual([0, 1, 2]);
+  });
+});
+
+describe('unlock', () => {
+  let fileText: string;
+
+  beforeAll(async () => {
+    fileText = (await call<VaultFileResult>(main, { type: 'addWallets', count: 1 })).fileText;
+    collectSecrets(main);
+  });
+
+  it('opens the file with the right password', async () => {
+    const h = createVaultHandler();
+    const status = await call<VaultStatus>(h, { type: 'unlock', fileText, password: PASSWORD });
+    expect(status.locked).toBe(false);
+    expect(status.info?.wallets).toEqual(parseKeystoreFile(fileText).public.wallets);
+  });
+
+  it('wrong password → KEYSTORE_WRONG_PASSWORD_OR_CORRUPTED, stays locked', async () => {
+    const h = createVaultHandler();
+    await expectCode(
+      h.handle({ type: 'unlock', fileText, password: 'wrong password 123' }),
+      'KEYSTORE_WRONG_PASSWORD_OR_CORRUPTED',
+    );
+    expect(h.inspect().unlocked).toBeNull();
+  });
+
+  it('a modified file is rejected', async () => {
+    const h = createVaultHandler();
+    const swapped = JSON.parse(fileText) as KeystoreFileV1 & {
+      public: { wallets: { address: string }[] };
+    };
+    const [w0, w1] = swapped.public.wallets;
+    if (!w0 || !w1) throw new Error('fixture');
+    [w0.address, w1.address] = [w1.address, w0.address];
+    await expectCode(
+      h.handle({ type: 'unlock', fileText: JSON.stringify(swapped), password: PASSWORD }),
+      'KEYSTORE_TAMPERED',
+    );
+    const flipped = JSON.parse(fileText) as { ciphertext: string };
+    const bytes = base64.decode(flipped.ciphertext);
+    bytes[0] = (bytes[0] ?? 0) ^ 1;
+    flipped.ciphertext = base64.encode(bytes);
+    await expectCode(
+      h.handle({ type: 'unlock', fileText: JSON.stringify(flipped), password: PASSWORD }),
+      'KEYSTORE_WRONG_PASSWORD_OR_CORRUPTED',
+    );
+    await expectCode(
+      h.handle({ type: 'unlock', fileText: '{', password: PASSWORD }),
+      'KEYSTORE_INVALID_FORMAT',
+    );
+    expect(h.inspect().unlocked).toBeNull();
+  });
+
+  it('a failed unlock keeps an already unlocked fleet', async () => {
+    await expectCode(
+      main.handle({ type: 'unlock', fileText, password: 'wrong password 123' }),
+      'KEYSTORE_WRONG_PASSWORD_OR_CORRUPTED',
+    );
+    expect(main.inspect().unlocked).not.toBeNull();
+  });
+});
+
+describe('lock and auto-lock', () => {
+  async function unlockedHandler(c: ReturnType<typeof clock>): Promise<VaultHandler> {
+    const h = createVaultHandler({ now: c.now, autoLockMs: AUTO_LOCK_MS });
+    await call(h, { type: 'unlock', fileText: created.fileText, password: PASSWORD });
+    return h;
+  }
+
+  it('lock zeroes the secret buffers and key operations give VAULT_LOCKED', async () => {
+    const h = await unlockedHandler(clock());
+    const buffers = heldBuffers(h);
+    expect(buffers.some((b) => b.some((x) => x !== 0))).toBe(true);
+    const status = await call<VaultStatus>(h, { type: 'lock' });
+    expect(status).toEqual({ locked: true, armed: false, info: null });
+    expect(buffers.every((b) => b.every((x) => x === 0))).toBe(true);
+    expect(h.inspect().unlocked).toBeNull();
+    await expectCode(
+      h.handle({ type: 'saveSettings', settings: { maxSpend: [] }, apiKeys: {} }),
+      'VAULT_LOCKED',
+    );
+    await expectCode(h.handle({ type: 'addWallets', count: 1 }), 'VAULT_LOCKED');
+  });
+
+  it('auto-locks after the idle time; activity resets the timer', async () => {
+    const c = clock();
+    const h = await unlockedHandler(c);
+    const buffers = heldBuffers(h);
+    c.advance(AUTO_LOCK_MS - 1);
+    expect(h.checkAutoLock()).toBe(false);
+    await call(h, { type: 'activity' });
+    c.advance(AUTO_LOCK_MS - 1);
+    expect(h.checkAutoLock()).toBe(false);
+    // status polling does not count as activity
+    await call(h, { type: 'status' });
+    c.advance(1);
+    expect(h.checkAutoLock()).toBe(true);
+    expect(buffers.every((b) => b.every((x) => x === 0))).toBe(true);
+    await expectCode(h.handle({ type: 'addWallets', count: 1 }), 'VAULT_LOCKED');
+  });
+
+  it('locks on the next request even if the timer never fired', async () => {
+    const c = clock();
+    const h = await unlockedHandler(c);
+    c.advance(AUTO_LOCK_MS);
+    await expectCode(h.handle({ type: 'addWallets', count: 1 }), 'VAULT_LOCKED');
+  });
+
+  it('does not auto-lock while armed', async () => {
+    const c = clock();
+    const h = await unlockedHandler(c);
+    await call(h, { type: 'setArmed', armed: true });
+    for (let i = 0; i < 10; i++) {
+      c.advance(AUTO_LOCK_MS * 10);
+      expect(h.checkAutoLock()).toBe(false);
+    }
+    const status = await call<VaultStatus>(h, { type: 'status' });
+    expect(status).toMatchObject({ locked: false, armed: true });
+    await call(h, { type: 'setArmed', armed: false });
+    c.advance(AUTO_LOCK_MS);
+    expect(h.checkAutoLock()).toBe(true);
+  });
+});
+
+describe('request validation', () => {
+  it.each([
+    ['null', null],
+    ['unknown type', { type: 'signBytes', bytes: [1, 2, 3] }],
+    ['exportKeys', { type: 'exportKeys' }],
+    ['count as string', { type: 'addWallets', count: '3' }],
+    [
+      'lamports as number',
+      { type: 'saveSettings', settings: { maxSpend: [{ index: 0, lamports: 5 }] }, apiKeys: {} },
+    ],
+    ['armed as string', { type: 'setArmed', armed: 'yes' }],
+    ['password as number', { type: 'unlock', fileText: '{}', password: 1 }],
+  ])('%s → INTERNAL_ERROR', async (_label, request) => {
+    await expectCode(main.handle(request), 'INTERNAL_ERROR');
+  });
+});
+
+describe('no secrets in any response', () => {
+  it('serialized responses of all operations contain no mnemonic or private key', () => {
+    expect(responses.length).toBeGreaterThan(20);
+    expect(secretsSeen.size).toBeGreaterThan(100);
+    const text = JSON.stringify(responses, (_k, v: unknown) =>
+      typeof v === 'bigint' ? v.toString() : v,
+    );
+    for (const secret of secretsSeen) {
+      expect(text).not.toContain(secret);
+    }
+    // Mnemonic words in any string value outside the encrypted file text.
+    const words = valueWords(responses, ['fileText']);
+    for (const secret of secretsSeen) {
+      if (!secret.includes(' ')) continue;
+      for (const word of new Set(secret.split(' '))) {
+        expect(words.has(word)).toBe(false);
+      }
+    }
+  });
+});

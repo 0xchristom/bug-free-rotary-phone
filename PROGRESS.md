@@ -6,6 +6,7 @@ Format: `RRRR-MM-DD · BUNNDLY-<n> · <co działa>`
 
 ---
 
+- 2026-10-02 · BUNNDLY-7 · Sejf w Web Workerze (`src/worker`): create, unlock, lock, status, saveSettings, addWallets, setArmed, activity; auto-lock 15 min (wstrzymany, gdy armed); klient z timeoutem; `KeystoreSession` w `core/keystore` (ponowne szyfrowanie bez hasła). Sprawdzone w Chromium.
 - 2026-10-02 · BUNNDLY-18 · CI wstrzymane do odwołania: `ci.yml` tylko `workflow_dispatch` (brak minut GitHub Actions), lokalne kontrole przed PR opisane w README i D-012.
 - 2026-10-02 · BUNNDLY-6 · `src/core/keystore/format.ts` i `keystore.ts`: plik v1 wg SPEC 3.1, `parseKeystoreFile` (ścisła walidacja, limit 1 MB), `createKeystore` / `buildKeystore` / `openKeystore` z kontrolą spójności adresów (`KEYSTORE_TAMPERED`); 78 testów.
 - 2026-10-02 · BUNNDLY-5 · `src/core/keystore/crypto.ts`: `encryptSecrets` / `decryptSecrets` (scrypt N=2^17 + AES-256-GCM, WebCrypto), walidacja parametrów przed scrypt, hasło NFKC min. 12 znaków; 37 testów na domyślnych parametrach.
