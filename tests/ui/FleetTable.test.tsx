@@ -290,7 +290,7 @@ describe('bulk actions and summary', () => {
     expect(saved).toHaveLength(0);
     expect(summaryValue('Gotowe portfele')).toBe('3 / 3');
     expect(summaryValue('Łącznie do wydania')).toBe('1,5 SOL');
-    expect(summaryValue('Łącznie SOL')).toBe('3');
+    expect(summaryValue('Łącznie SOL')).toBe('3 SOL');
   });
 
   it('a wrong amount or percent gives a Polish message and changes nothing', async () => {

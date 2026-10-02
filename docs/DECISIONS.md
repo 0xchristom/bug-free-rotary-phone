@@ -412,3 +412,28 @@ Rejestr decyzji i rozbieżności z dokumentacją zewnętrzną. Nowe wpisy dopisu
   - **Dostęp:** z ekranu Flota („Kopia zapasowa”) i z ekranu końcowego kreatora („Zrób kopię zapasową mnemonika”), w obu miejscach ten sam dialog.
   - **Timeout klienta** jak dla `create` i `unlock` (scrypt).
 - Konsekwencje: test „brak sekretów w odpowiedziach” w workerze dalej obejmuje wszystkie inne operacje; `exportPlain` ma osobne testy.
+
+## D-024: Test połączeń i nagłówki limitów Jupitera
+
+- Data: 2026-10-02
+- Zadanie: BUNNDLY-16
+- Kontekst: SPEC 3.3 („Test połączeń”), 2.2 i 3.5 (limiter `/order` w sprincie 3), D-016 (klucze API tylko w workerze).
+- Decyzja:
+  - **Gdzie działa:** nowe żądanie workera `testConnections`. Jak w `refreshBalances`, w kolejce idzie tylko odczyt kluczy; trzy testy biegną równolegle poza kolejką, więc `lock` nie czeka na sieć. Kliknięcie to aktywność użytkownika. Zablokowanie floty w trakcie testu odrzuca wynik (`VAULT_LOCKED`).
+  - **Wynik:** dla każdej usługi `ok`, czas w ms, kod problemu i status HTTP oraz dane publiczne: slot, czas połączenia i pierwszego zdarzenia WSS, `outAmount`, `router`, nagłówki `x-ratelimit-*`. Nigdy klucz ani URL. Oryginalne błędy `fetch` i `WebSocket` są odrzucane, bo mogą zawierać URL z kluczem. Polskie komunikaty są w `core/connection.ts` (`CONNECTION_PROBLEMS`), wspólne dla workera i UI.
+  - **Helius HTTP:** `getHealth`, potem `getSlot` (POST JSON-RPC na URL z kluczem albo własny URL RPC). Bez klucza: `KEY_MISSING` i żadnego zapytania.
+  - **Helius WSS:** `slotSubscribe` → pierwsze `slotNotification` → `slotUnsubscribe` → zamknięcie; mierzę czas do `open` i do pierwszego zdarzenia. Przeglądarka nie podaje powodu nieudanego handshake'u (401 i zły host wyglądają tak samo), więc socket, który się nie otworzył, to `WS_REFUSED` z podpowiedzią (klucz, adres, limit połączeń).
+  - **Jupiter:** `GET https://api.jup.ag/swap/v2/order`, SOL → USDC, 0,01 SOL, **bez `taker`**. Według dokumentacji odpowiedź ma wtedy `transaction: null`, czyli to sam quote; odpowiedź z transakcją jest odrzucana jako nieoczekiwana. Nagłówek `x-api-key` tylko z kluczem; bez klucza plan Keyless. Nigdy `/execute`.
+  - **Minty:** wrapped SOL `So11111111111111111111111111111111111111112` z `declare_id!` w `solana-program/token` (`interface/src/native_mint.rs`); USDC `EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v` ze strony Circle (u mnie zablokowana, link w kodzie) i z przykładu SOL → USDC w dokumentacji Jupitera. To ten sam mint co w fixtures BUNNDLY-13 (SPL, 6 miejsc).
+  - **Limit czasu:** 10 s na test (`TIMEOUT`).
+  - **Nagłówki limitów są czytelne w przeglądarce (sprawdzone 2026-10-02):**
+    - preflight `OPTIONS /swap/v2/order` z `Origin` i `Access-Control-Request-Headers: x-api-key` daje `access-control-allow-headers: x-api-key` i `access-control-allow-origin` równe origin strony;
+    - `GET` Keyless (bez klucza, bez `taker`) daje 200 z `access-control-expose-headers: x-ratelimit-remaining, x-ratelimit-current, x-ratelimit-reset, x-api-gateway-request-id, server-timing`, więc `fetch` w przeglądarce i w workerze odczyta wszystkie trzy;
+    - według dokumentacji nagłówki są tylko przy 200 i 429 (nie przy 401, 403, 5xx) i mogą zniknąć przy planach bez limitu; `x-ratelimit-reset` to sekundy Unix, kiedy zwalnia się jedno miejsce w oknie 60 s;
+    - wniosek dla limitera (sprint 3): można czytać `remaining` i `reset`, ale limiter nie może od nich zależeć, bo bywają nieobecne. Podstawą jest token bucket z `ORDER_RPS`.
+  - **Rozbieżności z opisem zadania i SPEC (wygrywa dokumentacja):**
+    - Keyless zwrócił `x-ratelimit-current: 1` i `x-ratelimit-remaining: 4`, czyli okno 5 zapytań, a tabela planów podaje 30/min. Możliwa reguła firewalla per IP. Do sprawdzenia w teście ręcznym z kluczem Krystiana.
+    - Helius WebSocket: według aktualnej dokumentacji otwarcie połączenia kosztuje 1 kredyt, a strumień 2 kredyty za 0,1 MB danych. „1 kredyt za zdarzenie” dotyczy Parsed Streams. Limit planu Free: 5 równoczesnych połączeń i 10 zapytań/s. Test trwa ułamek sekundy i używa jednego połączenia.
+- Konsekwencje:
+  - CSP (`connect-src`) musi obejmować również `https://api.jup.ag` (D-020 wymienia Helius HTTPS/WSS i awaryjny RPC).
+  - Test ręczny z prawdziwymi kluczami robi Krystian (etykieta `blocked:krystian`); wynik i nagłówki opisujemy w komentarzu zadania.

@@ -26,3 +26,10 @@ export {
   readU64LE,
 } from './tokens.ts';
 export type { MintInfo, TokenBalances, TokenProgram } from './tokens.ts';
+export { checkHeliusHttp, checkHeliusWs } from './connection-test.ts';
+export type {
+  HttpCheckOptions,
+  WebSocketFactory,
+  WebSocketLike,
+  WsCheckOptions,
+} from './connection-test.ts';
