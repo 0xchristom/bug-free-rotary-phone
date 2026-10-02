@@ -17,6 +17,7 @@ const SCRYPT_WAIT = { timeout: 20_000 };
 function clientOf(handler: ReturnType<typeof createVaultHandler>): VaultClient {
   return {
     request: (request: unknown, options?: object) => handler.handle(request, options),
+    onEvent: (l) => handler.onEvent(l),
   } as VaultClient;
 }
 

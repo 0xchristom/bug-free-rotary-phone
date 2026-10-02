@@ -19,6 +19,7 @@
  * Events carry no keys and no signed transactions.
  */
 import type { JupiterClient, JupiterExecution, JupiterOrder } from '../jupiter/client.ts';
+import type { VerifyEvent } from './verify.ts';
 import {
   LANDING_POLL_MS,
   LANDING_TIMEOUT_MS,
@@ -92,6 +93,8 @@ export interface WalletTimes {
 export interface WalletEvent {
   readonly kind: 'wallet';
   readonly runId: number;
+  /** When it happened (Unix ms, executor clock). */
+  readonly at: number;
   readonly index: number;
   readonly state: WalletState;
   /** Attempts used so far (`/order` calls that counted). */
@@ -107,6 +110,7 @@ export type RunPhase = 'started' | 'stopping' | 'finished';
 export interface RunEvent {
   readonly kind: 'run';
   readonly runId: number;
+  readonly at: number;
   readonly phase: RunPhase;
   readonly mint: string;
   readonly dryRun: boolean;
@@ -114,7 +118,7 @@ export interface RunEvent {
   readonly counts: Readonly<Record<WalletState, number>>;
 }
 
-export type ExecutorEvent = WalletEvent | RunEvent;
+export type ExecutorEvent = WalletEvent | RunEvent | VerifyEvent;
 
 export interface ExecutorDeps {
   readonly jupiter: JupiterClient;
@@ -274,6 +278,7 @@ export function startRun(deps: ExecutorDeps, options: RunOptions): ExecutorRun {
     deps.emit({
       kind: 'run',
       runId: options.runId,
+      at: clock.now(),
       phase,
       mint: options.mint,
       dryRun: options.dryRun,
@@ -290,6 +295,7 @@ export function startRun(deps: ExecutorDeps, options: RunOptions): ExecutorRun {
     deps.emit({
       kind: 'wallet',
       runId: options.runId,
+      at: clock.now(),
       index,
       state: to,
       attempt: slot.attempt,

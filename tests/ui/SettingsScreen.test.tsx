@@ -31,6 +31,7 @@ async function setup() {
       requests.push(request);
       return handler.handle(request, options);
     },
+    onEvent: (l) => handler.onEvent(l),
   } as VaultClient;
   const storage = mockStorage();
   render(<App vault={client} storage={storage.env} statusPollMs={60_000} />);

@@ -7,7 +7,14 @@ import type { RpcTransport } from '@solana/kit';
 import { getBase64Encoder, getTransactionDecoder } from '@solana/kit';
 import { describe, expect, it, vi } from 'vitest';
 import { AppError, defaultFleetSettings, type FleetSettingsV1 } from '../../src/core/index.ts';
-import type { ExecutorEvent, WalletEvent } from '../../src/executor/index.ts';
+import {
+  logEntry,
+  toCsv,
+  toJson,
+  type ExecutorEvent,
+  type VerifyEvent,
+  type WalletEvent,
+} from '../../src/executor/index.ts';
 import type { BuyStatus, VaultPort, VaultStatus } from '../../src/worker/protocol.ts';
 import {
   attachVaultHandler,
@@ -70,7 +77,11 @@ async function setup(o: Setup = {}) {
   });
   const h = createVaultHandler({
     chain,
-    executor: { jupiter, clock, ...(o.withChain ? { landing: fakeChain.checker } : {}) },
+    executor: {
+      jupiter,
+      clock,
+      ...(o.withChain ? { landing: fakeChain.checker, tokens: fakeChain.tokens } : {}),
+    },
     now: () => clock.now(),
     autoLockMs: 60_000,
   });
@@ -202,6 +213,57 @@ describe('startBuy', () => {
     for (const taker of takers) expect(fakeChain.successfulBuys(taker)).toHaveLength(1);
   });
 
+  it('after CONFIRMED the token balance confirms the buy (verify events, live only)', async () => {
+    const { clock, h, events } = await setup({
+      dryRun: false,
+      withChain: true,
+      script: { executeDelayMs: () => 1_000 },
+    });
+    await h.handle({ type: 'startBuy', mint: USDC });
+    await runToEnd(clock, events);
+    const verify = (): VerifyEvent[] => events.filter((e): e is VerifyEvent => e.kind === 'verify');
+    for (let i = 0; i < 100 && verify().length < 2; i++) await clock.runUntil();
+    expect(verify().map((e) => [e.index, e.status, e.observed === e.expected])).toEqual([
+      [0, 'MATCH', true],
+      [1, 'MATCH', true],
+    ]);
+
+    const dry = await setup({ withChain: true });
+    await dry.h.handle({ type: 'startBuy', mint: USDC });
+    await runToEnd(dry.clock, dry.events);
+    expect(dry.events.filter((e) => e.kind === 'verify')).toHaveLength(0);
+  });
+
+  it('the exported log (CSV and JSON) has no mnemonic, keys, API key or signed transaction', async () => {
+    const { clock, jupiter, h, events, secrets } = await setup({
+      dryRun: false,
+      withChain: true,
+      script: {
+        execute: (c) => (c.nth === 1 ? { fail: 'TIMEOUT', lands: { afterMs: 500 } } : 'ok'),
+      },
+    });
+    const held = secrets();
+    await h.handle({ type: 'startBuy', mint: USDC });
+    await runToEnd(clock, events);
+    const addresses = ((await h.handle({ type: 'status' })) as VaultStatus).info?.wallets ?? [];
+    const entries = events.map((e) =>
+      logEntry(e, {
+        addressOf: (i) => addresses.find((w) => w.index === i)?.address ?? null,
+        decimals: 6,
+      }),
+    );
+    for (const text of [toCsv(entries), toJson(entries)]) {
+      expect(text).toContain('CONFIRMED');
+      expect(text).toContain(addresses[0]?.address);
+      for (const secret of held) expect(text).not.toContain(secret);
+      expect(text).not.toContain('heliusBuyKey');
+      expect(text.toLowerCase()).not.toContain('api-key');
+      for (const call of jupiter.executions()) {
+        expect(text).not.toContain(call.signedTransaction);
+      }
+    }
+  });
+
   it('wallets without a balance read are skipped before /order', async () => {
     const { clock, jupiter, h, events } = await setup({ refresh: false });
     await h.handle({ type: 'startBuy', mint: USDC });
@@ -309,14 +371,9 @@ describe('events over the message port', () => {
     await client.request({ type: 'refreshBalances' });
     await client.request({ type: 'startBuy', mint: USDC });
     await runToEnd(clock, received);
-    expect(received.map((e) => (e.kind === 'run' ? e.phase : e.state))).toEqual([
-      'started',
-      'QUEUED',
-      'QUOTING',
-      'SIGNING',
-      'SKIPPED',
-      'finished',
-    ]);
+    expect(
+      received.map((e) => (e.kind === 'run' ? e.phase : e.kind === 'wallet' ? e.state : e.status)),
+    ).toEqual(['started', 'QUEUED', 'QUOTING', 'SIGNING', 'SKIPPED', 'finished']);
     off();
   });
 });

@@ -4,6 +4,7 @@ import { DEFAULT_AUTO_LOCK_MS, type VaultStatus } from '../worker/protocol.ts';
 import type { StorageEnv } from '../storage/keystore-file.ts';
 import type { VaultClient } from '../worker/vault-client.ts';
 import { AppHeader } from './AppHeader.tsx';
+import { createOperationsLog } from './operations-log.ts';
 import { FleetScreen } from './screens/FleetScreen.tsx';
 import { OpenScreen } from './screens/OpenScreen.tsx';
 import { SettingsScreen } from './screens/SettingsScreen.tsx';
@@ -50,6 +51,12 @@ export function App({
   const lastActivity = useRef(0);
   /** A keystore file not saved yet (new fleet or added wallets): never drop it silently. */
   const [unsavedFile, setUnsavedFile] = useState(false);
+  // One log per session, outside React state: it survives screens and the auto-lock.
+  const [operationsLog] = useState(() => createOperationsLog(vault));
+  const wallets = status?.info?.wallets;
+  useEffect(() => {
+    if (wallets) operationsLog.setWallets(wallets);
+  }, [operationsLog, wallets]);
 
   const applyStatus = useCallback((next: VaultStatus, reason: 'auto' | 'user') => {
     setStatus(next);
@@ -226,6 +233,7 @@ export function App({
                   info={status.info}
                   storage={storage}
                   onUnsavedChange={setUnsavedFile}
+                  operationsLog={operationsLog}
                   {...(balanceRefreshMs === undefined ? {} : { balanceRefreshMs })}
                   {...(rowProbe === undefined ? {} : { rowProbe })}
                 />

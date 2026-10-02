@@ -28,6 +28,7 @@ import {
 } from '../chain/index.ts';
 import { startRun, type ExecutorEvent, type ExecutorRun } from '../executor/executor.ts';
 import type { LandingChecker } from '../executor/landing.ts';
+import { createVerifier, type TokenReader } from '../executor/verify.ts';
 import { ExecuteLimiter, OrderLimiter, realClock, type LimiterClock } from '../executor/limiter.ts';
 import { checkOrderTransaction, type OrderCheckProblem } from '../executor/order-check.ts';
 import {
@@ -110,6 +111,8 @@ export interface ExecutorOptions {
   readonly steady?: boolean;
   /** Chain check before retries; by default over Helius with the public fallback. */
   readonly landing?: LandingChecker;
+  /** Token balance reads for the confirmation after a buy; by default over Helius. */
+  readonly tokens?: TokenReader;
 }
 
 export interface VaultOptions {
@@ -554,20 +557,52 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
         balance: balances.get(w.index) ?? null,
       }));
     if (wallets.length === 0) throw new AppError('NO_WALLETS_TO_BUY');
-    // Live mode never retries without the chain check, which needs the RPC.
+    const live = !global.dryRun;
+    const injected = options.executor;
     const rpcUrl = rpcUrlOf(vault.apiKeys);
-    let landing = options.executor?.landing;
-    if (landing === undefined && !global.dryRun) {
-      if (rpcUrl === null) throw new AppError('HELIUS_KEY_MISSING');
-      const transport = createResilientTransport({
-        primary: createTransport(rpcUrl),
-        fallback: createTransport(PUBLIC_RPC_URL),
-        ...(options.chain?.sleep ? { sleep: options.chain.sleep } : {}),
-      });
-      landing = createLandingChecker(createLandingRpc(transport), { now });
+    // Live mode never retries without the chain check, which needs the RPC.
+    if (live && rpcUrl === null && injected?.landing === undefined) {
+      throw new AppError('HELIUS_KEY_MISSING');
     }
-    // DRY-RUN never calls /execute, so it never checks the chain.
-    landing ??= () => Promise.resolve({ status: 'pending' });
+    const transport =
+      rpcUrl === null
+        ? null
+        : createResilientTransport({
+            primary: createTransport(rpcUrl),
+            fallback: createTransport(PUBLIC_RPC_URL),
+            ...(options.chain?.sleep ? { sleep: options.chain.sleep } : {}),
+          });
+    const landing: LandingChecker =
+      injected?.landing ??
+      (transport === null
+        ? // DRY-RUN never calls /execute, so it never checks the chain.
+          () => Promise.resolve({ status: 'pending' })
+        : createLandingChecker(createLandingRpc(transport), { now }));
+    const tokens: TokenReader | null =
+      injected?.tokens ??
+      (transport === null
+        ? null
+        : async (owners) => {
+            const t = await fetchTokenBalances(createBalancesRpc(transport), mint, owners);
+            return { amounts: t.amounts, slot: t.slot };
+          });
+    const clock = injected?.clock ?? realClock;
+    const runId = nextRunId++;
+    // After CONFIRMED: the token balance must have grown (BUNNDLY-25). Live mode only.
+    const verifier =
+      live && tokens !== null
+        ? createVerifier({ read: tokens, clock, emit }, { runId, wallets })
+        : null;
+    const runEmit = (event: ExecutorEvent): void => {
+      emit(event);
+      if (verifier !== null && event.kind === 'wallet' && event.state === 'CONFIRMED') {
+        verifier.confirmed(
+          event.index,
+          event.result?.slot ?? null,
+          event.result?.totalOutputAmount ?? null,
+        );
+      }
+    };
     const net = options.net ?? {};
     const jupiter =
       options.executor?.jupiter ??
@@ -576,7 +611,6 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
         fetch: net.fetch ?? ((url, init) => globalThis.fetch(url, init)),
       });
     const pair = limitersFor(global.jupiterPlan, global.orderRpm);
-    const runId = nextRunId++;
     const run = startRun(
       {
         jupiter,
@@ -584,8 +618,8 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
         executeLimiter: pair.execute,
         sign: signOrder,
         landing,
-        clock: options.executor?.clock ?? realClock,
-        emit,
+        clock,
+        emit: runEmit,
       },
       {
         runId,

@@ -61,7 +61,10 @@ async function setup(helius: (body: { id: number; method: string }) => FetchRepl
     settings: defaultFleetSettings(),
     apiKeys: { helius: HELIUS, jupiter: JUPITER },
   });
-  const client = { request: (r: unknown, o?: object) => handler.handle(r, o) } as VaultClient;
+  const client = {
+    request: (r: unknown, o?: object) => handler.handle(r, o),
+    onEvent: (l) => handler.onEvent(l),
+  } as VaultClient;
   render(<App vault={client} storage={mockStorage().env} statusPollMs={60_000} />);
   const user = userEvent.setup();
   const nav = await screen.findByRole('navigation', {}, { timeout: 10_000 });

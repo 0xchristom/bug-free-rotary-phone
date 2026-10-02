@@ -58,6 +58,7 @@ beforeAll(async () => {
 function realClient(handler: VaultHandler): VaultClient {
   return {
     request: (request, options) => handler.handle(request, options),
+    onEvent: (l) => handler.onEvent(l),
   } as VaultClient;
 }
 

@@ -588,3 +588,37 @@ Rejestr decyzji i rozbieżności z dokumentacją zewnętrzną. Nowe wpisy dopisu
     - test pokrycia pilnuje, że przebiegi przeszły przez wszystkie ścieżki;
     - kontrola mutacją: ponowienie bez czekania na łańcuch daje 38 z 52 testów zestawu na czerwono (podwójne zakupy, przekroczony max spend).
 - Konsekwencje: tryb na żywo jest od strony logiki gotowy, ale **dalej go nie używamy**, dopóki Krystian nie zgodzi się na transakcje na mainnecie (smoke test BUNNDLY-28). BUNNDLY-25 dopisze do dziennika wynik i sygnaturę z łańcucha; BUNNDLY-27 pokaże UNKNOWN jako „sprawdzam łańcuch”, a `LANDING_UNRESOLVED` z linkiem do eksploratora.
+
+## D-031: Wynik zakupu, potwierdzenie saldem tokenu i dziennik operacji
+
+- Data: 2026-10-02
+- Zadanie: BUNNDLY-25
+- Kontekst: SPEC 3.5, 3.6 i 6.1; `order-and-execute.md` (odpowiedź `/execute`: `totalInputAmount` to SOL zabrany z portfela, `totalOutputAmount` to tokeny, które do niego trafiły, po opłacie po stronie wyjścia); D-021 (salda tokenów), D-029 i D-030.
+- Decyzja:
+  - **Wynik:** zdarzenie CONFIRMED niesie sygnaturę, slot, `totalInputAmount` i `totalOutputAmount` jako `bigint`. Każde zdarzenie ma teraz czas `at` (Unix ms, zegar executora).
+  - **Cena efektywna** (`formatPrice`) to SOL za cały token: `lamporty × 10^decimals / (jednostki × 10^9)`, liczona na `bigint`, zaokrąglona w dół do 12 miejsc, z przecinkiem.
+  - **Potwierdzenie saldem tokenu** (`src/executor/verify.ts`, tylko tryb na żywo):
+    - punkt odniesienia to salda tokenu całej floty, czytane raz, równolegle z pierwszym `/order`; nie ma dodatkowego czekania na ścieżce krytycznej;
+    - po każdym CONFIRMED odczyt salda portfela, do 5 razy co 2 s, aż wzrost zgadza się z `totalOutputAmount`;
+    - wyniki:
+      - `MATCH`: wzrost zgadza się z `totalOutputAmount`;
+      - `INCREASED`: saldo wzrosło, ale ilość jest nieznana (potwierdzenie z łańcucha, D-030);
+      - `MISMATCH`: wzrost o inną ilość;
+      - `NO_INCREASE`: saldo nie wzrosło;
+      - `UNVERIFIABLE`: brak punktu odniesienia albo błędy RPC;
+    - **punkt odniesienia odczytany w slocie równym albo późniejszym niż slot zakupu mógł już zawierać zakup**, więc wtedy wynik to `UNVERIFIABLE` zamiast fałszywego alarmu. Dlatego `fetchTokenBalances` zwraca też najniższy slot odczytu;
+    - wynik to zdarzenie `verify` (ostrzeżenie w dzienniku, a w UI od BUNNDLY-27). **Stan portfela się nie zmienia.** Treść błędu RPC nie wychodzi.
+  - **Dziennik operacji** (`src/executor/oplog.ts`):
+    - jeden wpis na zdarzenie (start, zatrzymanie i koniec zakupu, każde przejście stanu portfela, weryfikacja);
+    - pola: czas ISO, portfel i jego publiczny adres z chwili zdarzenia, stan, powód z kodem, szczegółem i komunikatem, próba, quote, router, sygnatura, slot, wydany SOL, kupione tokeny, cena, czasy kroków, oczekiwany i zaobserwowany wzrost;
+    - zdarzenia nie niosą sekretów (D-029), a dziennik dokłada tylko adresy publiczne.
+  - **Eksport:**
+    - **CSV** wg RFC 4180 (przecinek, CRLF, cudzysłowy). Komórka zaczynająca się od `=`, `+`, `-`, `@`, tabulatora albo CR dostaje prefiks `'` (OWASP „CSV injection”); dlatego ujemne kody w szczegółach, np. `-1000`, też go dostają;
+    - **JSON**: tablica, `bigint` jako napisy dziesiętne;
+    - kwoty zawsze jako pełne liczby całkowite (lamporty, jednostki tokena);
+    - nazwa pliku: `bunndly-log-<zakup>-<czas UTC>.csv|json`.
+  - **UI:**
+    - dziennik żyje w pamięci karty przez całą sesję, poza stanem React, więc przetrwa zmianę ekranu i auto-lock po zakupie;
+    - nie trafia do storage (SPEC 6.1);
+    - panel „Dziennik operacji” na ekranie Flota pokazuje liczbę wpisów i ma przyciski „Pobierz CSV” i „Pobierz JSON” (pobranie jak w BUNNDLY-11). BUNNDLY-27 przeniesie go do widoku postępu.
+- Konsekwencje: BUNNDLY-27 pokazuje cenę i ostrzeżenia `MISMATCH`, `NO_INCREASE` i `UNVERIFIABLE` przy portfelu.

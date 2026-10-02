@@ -65,3 +65,23 @@ export type { Decision } from './policy.ts';
 export { LANDING_POLL_MS, LANDING_TIMEOUT_MS } from './landing.ts';
 export type { Landing, LandingChecker, LandingQuery } from './landing.ts';
 export { EXECUTE_FATAL, EXECUTE_NOT_SENT } from './policy.ts';
+export { VERIFY_INTERVAL_MS, VERIFY_MESSAGES, VERIFY_READS, createVerifier } from './verify.ts';
+export type {
+  TokenReader,
+  Verifier,
+  VerifierOptions,
+  VerifyEvent,
+  VerifyStatus,
+  VerifyWallet,
+} from './verify.ts';
+export {
+  LOG_COLUMNS,
+  PRICE_DIGITS,
+  csvCell,
+  formatPrice,
+  logEntry,
+  logFileName,
+  toCsv,
+  toJson,
+} from './oplog.ts';
+export type { LogContext, LogEntry } from './oplog.ts';
