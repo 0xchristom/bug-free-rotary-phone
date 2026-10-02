@@ -622,3 +622,13 @@ Rejestr decyzji i rozbieżności z dokumentacją zewnętrzną. Nowe wpisy dopisu
     - nie trafia do storage (SPEC 6.1);
     - panel „Dziennik operacji” na ekranie Flota pokazuje liczbę wpisów i ma przyciski „Pobierz CSV” i „Pobierz JSON” (pobranie jak w BUNNDLY-11). BUNNDLY-27 przeniesie go do widoku postępu.
 - Konsekwencje: BUNNDLY-27 pokazuje cenę i ostrzeżenia `MISMATCH`, `NO_INCREASE` i `UNVERIFIABLE` przy portfelu.
+
+## D-033: Bez klucza Jupitera obowiązują limity Keyless
+
+- Data: 2026-10-02
+- Zadanie: poprawka wymagana w review PR #22 (BUNNDLY-21 i 23)
+- Kontekst: D-027 (limiter). Plan z Ustawień (domyślnie Free) był używany także bez klucza Jupitera. Bez klucza API Jupiter liczy jednak każde zapytanie jako Keyless. Przebieg DRY-RUN Andy'ego na prawdziwym API (30 portfeli) dał przy planie Free 6 × 429, a przy Keyless 0 × 429.
+- Decyzja:
+  - `effectiveJupiterPlan(global, maKluczJupitera)` zwraca plan z Ustawień tylko wtedy, gdy klucz Jupitera jest zapisany. Bez klucza zwraca Keyless: budżet `/order` 27 na 60 s, `/execute` 18 na sekundę.
+  - `startBuy` bierze limitery dla tego planu.
+  - Podsumowanie przed startem (BUNNDLY-27) pokazuje plan, który faktycznie obowiązuje.

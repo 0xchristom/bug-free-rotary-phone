@@ -103,6 +103,20 @@ export interface SettingsProblem {
   readonly message: string;
 }
 
+/**
+ * The Jupiter plan that actually applies: without a Jupiter API key every request is
+ * Keyless, whatever plan the settings name (Andy's run on the real API: 30 wallets on
+ * "Free" without a key got 429s, on Keyless none). D-033.
+ */
+export function effectiveJupiterPlan(
+  global: { readonly jupiterPlan: JupiterPlan; readonly orderRpm: number },
+  hasJupiterKey: boolean,
+): { readonly plan: JupiterPlan; readonly orderRpm: number } {
+  return hasJupiterKey
+    ? { plan: global.jupiterPlan, orderRpm: global.orderRpm }
+    : { plan: 'keyless', orderRpm: JUPITER_PLAN_RPM.keyless };
+}
+
 /** Requests per second allowed on Jupiter `/order` for a per-minute limit. */
 export function orderRps(orderRpm: number): number {
   return orderRpm / 60;

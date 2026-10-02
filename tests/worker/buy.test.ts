@@ -65,6 +65,8 @@ interface Setup {
   readonly settings?: Partial<FleetSettingsV1>;
   readonly withChain?: boolean;
   readonly heliusKey?: boolean;
+  readonly walletCount?: number;
+  readonly jupiterKey?: boolean;
 }
 
 async function setup(o: Setup = {}) {
@@ -90,7 +92,7 @@ async function setup(o: Setup = {}) {
   await h.handle({
     type: 'create',
     fleetName: 'Zakup',
-    walletCount: 3,
+    walletCount: o.walletCount ?? 3,
     password: PASSWORD,
     mnemonic: MNEMONIC_12,
   });
@@ -107,7 +109,14 @@ async function setup(o: Setup = {}) {
   await h.handle({
     type: 'saveSettings',
     settings,
-    ...(o.heliusKey === false ? {} : { apiKeys: { helius: 'heliusBuyKey' } }),
+    ...(o.heliusKey === false
+      ? {}
+      : {
+          apiKeys: {
+            helius: 'heliusBuyKey',
+            ...(o.jupiterKey ? { jupiter: 'jupiterBuyKey' } : {}),
+          },
+        }),
   });
   if (o.refresh !== false) await h.handle({ type: 'refreshBalances' });
   const status = async () => (await h.handle({ type: 'status' })) as VaultStatus;
@@ -262,6 +271,23 @@ describe('startBuy', () => {
         expect(text).not.toContain(call.signedTransaction);
       }
     }
+  });
+
+  it('without a Jupiter key the Keyless limits apply, whatever plan the settings name', async () => {
+    const thirty = {
+      maxSpend: Array.from({ length: 30 }, (_, index) => ({ index, lamports: MAX })),
+    };
+    const startsAtOnce = async (jupiterKey: boolean): Promise<number> => {
+      const t = await setup({ walletCount: 30, jupiterKey, settings: thirty });
+      const global = (await t.status()).info?.settings.global;
+      expect(global?.jupiterPlan).toBe('free'); // default plan in the settings
+      await t.h.handle({ type: 'startBuy', mint: USDC });
+      await runToEnd(t.clock, t.events);
+      const first = t.jupiter.calls.filter((c) => c.kind === 'order').map((c) => c.start);
+      return first.filter((at) => at === Math.min(...first)).length;
+    };
+    expect(await startsAtOnce(false)).toBe(27); // Keyless budget: 90 % of 30 per minute
+    expect(await startsAtOnce(true)).toBe(30); // Free with a key: 54, all 30 at once
   });
 
   it('wallets without a balance read are skipped before /order', async () => {

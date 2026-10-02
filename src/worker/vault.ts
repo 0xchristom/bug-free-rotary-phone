@@ -56,6 +56,7 @@ import {
   CONNECTION_TEST_TIMEOUT_MS,
   heliusRpcUrl,
   heliusWsUrl,
+  effectiveJupiterPlan,
   validateGlobalSettings,
   wipe,
   type ApiKeyName,
@@ -610,7 +611,9 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
         apiKey: vault.apiKeys.jupiter ?? null,
         fetch: net.fetch ?? ((url, init) => globalThis.fetch(url, init)),
       });
-    const pair = limitersFor(global.jupiterPlan, global.orderRpm);
+    // Without a Jupiter key the API applies Keyless limits, not the plan in the settings.
+    const effective = effectiveJupiterPlan(global, vault.apiKeys.jupiter !== undefined);
+    const pair = limitersFor(effective.plan, effective.orderRpm);
     const run = startRun(
       {
         jupiter,
