@@ -55,6 +55,13 @@
       "data": "",
       "executable": false,
       "space": 0
+    },
+    "AEcFjuNWuG77oVT5rxhLmpKomq3tDKo2qzr9SyDwkEA4": {
+      "owner": "11111111111111111111111111111111",
+      "lamports": "650240",
+      "data": "",
+      "executable": false,
+      "space": 0
     }
   },
   "expected": {
@@ -66,5 +73,12 @@
     "splAtaOwner": "5gUuDFHswKi2QMA1qJHf6FEVhNCrHnyAdfWniMaUUPE4",
     "token2022AtaOwner": "5gUuDFHswKi2QMA1qJHf6FEVhNCrHnyAdfWniMaUUPE4",
     "token2022AtaExtensions": ["immutableOwner", "transferFeeAmount", "transferHookAccount"]
+  },
+  "fundedBeforeCreation": {
+    "_comment": "Simulation only, nothing was sent: simulateTransaction (sigVerify false, replaceRecentBlockhash true) of a System transfer of 650240 lamports (getMinimumBalanceForRentExemption(0)) to the not yet created PYUSD ATA of wallet 0 of the \"abandon … about\" test mnemonic, via Helius at slot 452679627. The account state after the transfer is stored in accounts[ata].",
+    "slot": 452679627,
+    "owner": "HAgk14JpMQLgt6rVgv7cBQFJWFto5Dqxi472uT3DKpqk",
+    "mint": "2b1kV6DkPAnxd5ixfnxCpjxmKwqjjaYmCZfHsFu24GXo",
+    "ata": "AEcFjuNWuG77oVT5rxhLmpKomq3tDKo2qzr9SyDwkEA4"
   }
 }

@@ -233,6 +233,7 @@ describe('refreshBalances with a token mint (BUNNDLY-13)', () => {
   ) as {
     spl: { mint: string };
     token2022: { mint: string };
+    fundedBeforeCreation: { owner: string; ata: string };
     accounts: Record<string, Stored | null>;
   };
 
@@ -289,6 +290,24 @@ describe('refreshBalances with a token mint (BUNNDLY-13)', () => {
       expect(text).not.toContain('helius-rpc');
     },
   );
+
+  it('an ATA funded before creation: SOL balances come back and the token is 0n', async () => {
+    const h = createVaultHandler({ chain: network({ [HELIUS_URL]: fromFixture }).chain });
+    await fleet(h); // wallet 0 of the "abandon … about" mnemonic owns that ATA
+    expect(h.inspect().unlocked?.publicWallets[0]?.address).toBe(
+      fixture.fundedBeforeCreation.owner,
+    );
+    const res = (await h.handle({
+      type: 'refreshBalances',
+      mint: fixture.token2022.mint,
+    })) as VaultBalances;
+    expect(res.balances).toHaveLength(3);
+    expect(res.token?.balances).toEqual([
+      { index: 0, amount: 0n },
+      { index: 1, amount: 0n },
+      { index: 2, amount: 0n },
+    ]);
+  });
 
   it('a mint that is not a token mint gives NOT_A_TOKEN_MINT', async () => {
     const h = createVaultHandler({ chain: network({ [HELIUS_URL]: fromFixture }).chain });
