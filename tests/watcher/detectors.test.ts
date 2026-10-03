@@ -13,7 +13,11 @@ import {
   type SignatureInput,
 } from '../../src/watcher/detectors/detector.ts';
 import { detectFromLogs, programData } from '../../src/watcher/detectors/log-path.ts';
-import { PUMP_FUN_PROGRAM } from '../../src/watcher/detectors/programs.ts';
+import {
+  METEORA_DBC_PROGRAM,
+  PUMP_FUN_PROGRAM,
+  RAYDIUM_LAUNCHLAB_PROGRAM,
+} from '../../src/watcher/detectors/programs.ts';
 import {
   asTransaction,
   detectFromTransaction,
@@ -71,6 +75,37 @@ describe('fixtures', () => {
     const text = readFileSync('tests/fixtures/detectors.mainnet.json', 'utf8');
     expect(text).not.toMatch(/api-key=/u);
   });
+});
+
+describe('slow path: inner instructions (CPI)', () => {
+  // Every launchpad create in the fixtures initializes its mint only through a CPI to the
+  // token program. With the launchpad's program id swapped for an unknown program, its
+  // detector cannot match, and only the generic path reading inner instructions finds
+  // the mint (review of PR #26).
+  const UNKNOWN_PROGRAM = 'Stake11111111111111111111111111111111111111';
+  const launchpads = {
+    [PUMP_FUN_PROGRAM]: positives.filter(([, f]) => f.expectedSource === 'pump.fun'),
+    [METEORA_DBC_PROGRAM]: positives.filter(([, f]) => f.expectedSource === 'meteora-dbc'),
+    [RAYDIUM_LAUNCHLAB_PROGRAM]: positives.filter(
+      ([, f]) => f.expectedSource === 'raydium-launchlab',
+    ),
+  };
+  const cases = Object.entries(launchpads).flatMap(([program, list]) =>
+    list.map(([name, f]) => [name, program, f] as const),
+  );
+
+  it.each(cases)(
+    '%s: unknown launchpad, mint found by the inner InitializeMint',
+    (_n, program, f) => {
+      const swapped = asTransaction(
+        JSON.parse(JSON.stringify(f.tx).replaceAll(program, UNKNOWN_PROGRAM)) as unknown,
+      );
+      if (!swapped) throw new Error('fixture is not a transaction');
+      expect(detectFromTransaction(swapped, f.watched)).toEqual([
+        { mint: f.expectedMint, source: 'initialize-mint' },
+      ]);
+    },
+  );
 });
 
 describe('slow path (getTransaction)', () => {
