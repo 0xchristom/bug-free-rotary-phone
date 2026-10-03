@@ -43,6 +43,7 @@ interface Setup {
   readonly noRouteWindowMs?: number;
   readonly maxAttempts?: number;
   readonly dryRun?: boolean;
+  readonly plan?: 'free' | 'keyless';
 }
 
 function setup(o: Setup = {}) {
@@ -53,8 +54,12 @@ function setup(o: Setup = {}) {
   const run = startRun(
     {
       jupiter,
-      orderLimiter: new OrderLimiter({ orderRpm: JUPITER_PLAN_RPM.free, clock }),
-      executeLimiter: new ExecuteLimiter({ plan: 'free', orderRpm: JUPITER_PLAN_RPM.free, clock }),
+      orderLimiter: new OrderLimiter({ orderRpm: JUPITER_PLAN_RPM[o.plan ?? 'free'], clock }),
+      executeLimiter: new ExecuteLimiter({
+        plan: o.plan ?? 'free',
+        orderRpm: JUPITER_PLAN_RPM[o.plan ?? 'free'],
+        clock,
+      }),
       sign: signer,
       landing: chain.checker,
       clock,
@@ -163,7 +168,7 @@ describe('fresh mint: 500, then "no route", then a route (30 wallets)', () => {
     expect(orders(jupiter)).toHaveLength(before);
   });
 
-  it('a 500 after the gate opened closes it again; the window counts from the first "no route"', async () => {
+  it('a 500 after the gate opened closes it again with a fresh window from that moment', async () => {
     let calls = 0;
     const { jupiter, finish, finals } = setup({
       n: 5,
@@ -179,16 +184,77 @@ describe('fresh mint: 500, then "no route", then a route (30 wallets)', () => {
     const failedAt = finals()
       .filter((e) => e.state === 'FAILED')
       .map((e) => e.at - T0);
-    // first "no route" at 100 ms → the window ends at 2 400 ms. Counted from the
-    // reopening (800 ms) it would last until 3 100 ms.
-    expect(Math.min(...failedAt)).toBeGreaterThanOrEqual(2_400);
-    expect(Math.max(...failedAt)).toBeLessThan(3_100);
+    // re-closed at 800 ms (the 4 wallets' answers) → the window ends at 3 100 ms, not at
+    // 2 400 ms as it would counted from the first "no route" (100 ms)
+    expect(Math.min(...failedAt)).toBeGreaterThanOrEqual(800 + 2_300);
     // after the reopening the gate was closed again: the 4 wallets sent once together,
     // then only sequential probes
     const afterOpen = orders(jupiter).filter((c) => c.start >= T0 + 700);
     const burst = afterOpen.filter((c) => c.start === T0 + 700);
     expect(burst).toHaveLength(4);
     expect(sequential(afterOpen.filter((c) => c.start > T0 + 700))).toBe(true);
+  });
+
+  it('the route goes for good after opening: FAILED (NO_ROUTE) a window after the re-close, then silence', async () => {
+    let calls = 0;
+    const { jupiter, finish, finals } = setup({
+      n: 5,
+      // the first /order (the opening probe) has a route, then 500 for good
+      script: () => ({
+        order: () => (++calls === 1 ? 'ok' : { fail: 'SERVER_ERROR', httpStatus: 500 }),
+      }),
+    });
+    const s = await finish();
+    expect(s.counts.CONFIRMED).toBe(1);
+    expect(s.counts.FAILED).toBe(4);
+    expect(finals().every((e) => e.state !== 'FAILED' || e.reason?.code === 'NO_ROUTE')).toBe(true);
+    // opened at 100 ms, the other 4 sent at 100 ms, all 500 at 200 ms: re-closed at 200 ms
+    const windowEnd = T0 + 200 + 20_000;
+    const failedAt = finals()
+      .filter((e) => e.state === 'FAILED')
+      .map((e) => e.at);
+    expect(Math.min(...failedAt)).toBeGreaterThanOrEqual(windowEnd);
+    expect(orders(jupiter).filter((c) => c.start >= windowEnd)).toHaveLength(0);
+  });
+
+  it('a probe still in flight when the window ends: everyone waiting fails, no new /order', async () => {
+    const { jupiter, finish, finals } = setup({
+      n: 5,
+      noRouteWindowMs: 2_000,
+      script: () => ({
+        // the second probe (600 ms) answers only at 3 600 ms, after the window (100 + 2 000)
+        orderDelayMs: (c) => (c.nth === 1 && c.taker === 'Wallet000' ? 100 : 3_000),
+        order: () => ({ fail: 'SERVER_ERROR', httpStatus: 500 }),
+      }),
+    });
+    const s = await finish();
+    expect(s.counts.FAILED).toBe(5);
+    expect(finals().every((e) => e.reason?.code === 'NO_ROUTE')).toBe(true);
+    const starts = orders(jupiter).map((c) => c.start - T0);
+    expect(starts).toEqual([0, 600]);
+  });
+});
+
+describe('waiting for the limiter does not count as time without a route', () => {
+  it('Keyless: a probe that waited ~60 s for its slot and gets one more 500 does not end the window', async () => {
+    let calls = 0;
+    const { jupiter, finish, finals } = setup({
+      n: 30,
+      plan: 'keyless', // 27 /order per 60 s
+      // the opening probe has a route; the 26 sent right after it get 500 (re-close);
+      // the next probe, sent only when the limiter frees a slot at 60 s, gets 500 too
+      script: () => ({
+        order: () => {
+          calls += 1;
+          return calls >= 2 && calls <= 28 ? { fail: 'SERVER_ERROR', httpStatus: 500 } : 'ok';
+        },
+      }),
+    });
+    const s = await finish();
+    expect(finals().some((e) => e.reason?.code === 'NO_ROUTE')).toBe(false);
+    expect(s.counts.CONFIRMED).toBe(30);
+    const second = orders(jupiter)[27];
+    expect((second?.start ?? 0) - T0).toBeGreaterThanOrEqual(60_000); // it did wait
   });
 });
 

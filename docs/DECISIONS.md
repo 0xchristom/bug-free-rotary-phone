@@ -702,9 +702,10 @@ Rejestr decyzji i rozbieżności z dokumentacją zewnętrzną. Nowe wpisy dopisu
     - Zadanie mówi, że bramkę zamyka pierwszy brak trasy. Wtedy jednak cała seria startowa (do budżetu limitera) poszłaby, zanim wróci pierwsza odpowiedź, i zużyłaby budżet Keyless na zapytania bez trasy, czyli dokładnie problem z zadania.
     - Kryterium „łącznie co najwyżej 30 + liczba sond” też da się spełnić tylko tak.
     - Koszt w trybie A dla tokenu z trasą: jedna odpowiedź `/order` (ok. 0,1–0,3 s) opóźnienia dla portfeli 2…N.
-  - **Okno** liczy się od pierwszego braku trasy w przebiegu, wspólnie dla wszystkich, i nie zaczyna się od nowa. Po końcu okna wszystkie czekające portfele kończą jako FAILED `NO_ROUTE` bez dalszych zapytań; sonda w backoffie nie wysyła już zapytania.
+  - **Okno** (decyzja z review PR #25):
+    - pierwsze okno, gdy bramka jeszcze nigdy nie była otwarta, liczy się od pierwszego braku trasy w przebiegu;
+    - gdy bramka była już choć raz otwarta, każde ponowne zamknięcie zaczyna nowe okno `noRouteWindowMs`, liczone od tego zamknięcia. Pojedynczy 500 w długim przebiegu nie kończy więc czekających;
+    - czas, w którym gotowa sonda czeka na limiter `/order`, nie liczy się do okna (początek okna przesuwa się o ten czas). Bez tego przy Keyless sonda czekała ok. 60 s na miejsce w limiterze, a jej jedna odpowiedź 500 kończyła okno i wszystkich czekających. Wykryła to symulacja z losowym 5% 503;
+    - po końcu okna wszystkie czekające portfele kończą jako FAILED `NO_ROUTE` bez dalszych zapytań. Dotyczy to też sytuacji, w której odpowiedź sondy przyszła już po końcu okna; sonda w backoffie nie wysyła już zapytania.
   - **STOP przy zamkniętej bramce:** czekające portfele i sonda w backoffie od razu dostają SKIPPED `STOPPED`, bez nowych `/order`.
-- **Ryzyko do decyzji Andy'ego:**
-  - Zgodnie z zadaniem pojedynczy 500 lub brak trasy po końcu okna (np. 25 s po starcie długiego przebiegu Keyless, już po pierwszych zakupach) od razu kończy wszystkie czekające portfele jako FAILED `NO_ROUTE`.
-  - W symulacji z losowym 5% 503 na `/order` (400 przebiegów na żywo) tak skończyło 309 przebiegów i 20% portfeli. Częstości 500 dla tokenu, który już ma trasę, nie znamy.
-  - Propozycja: po pierwszym otwarciu bramki ponowne zamknięcie dostaje nowe, krótsze okno (np. `noRouteWindowMs`). Zmiana to 2 linie i test.
+- Testy: scenariusz świeżego mintu; stałe 500; STOP; ponowne zamknięcie z nowym oknem; trasa znika na stałe po otwarciu; sonda w locie przez koniec okna; sonda czekająca na limiter Keyless. Symulacja (5000 ziaren, losowe 5% 503): 0 portfeli FAILED `NO_ROUTE`.

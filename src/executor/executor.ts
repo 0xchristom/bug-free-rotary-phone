@@ -14,8 +14,9 @@
  *   Until then the wallet is UNKNOWN and checked every 2 s (`landing.ts`).
  * - Mint gate (D-035): the run starts with one probe `/order`; "no route" or HTTP 500
  *   closes the gate again later. While closed, one probe at a time (with backoff after
- *   "no route") and everyone else waits in the queue without requests; a route opens it. The window counts from the first "no route"
- *   of the run; when it ends, the waiting wallets fail without further requests.
+ *   "no route") and everyone else waits in the queue without requests; a route opens it.
+ *   The window counts from the first "no route" of the run, and once the gate has opened,
+ *   from each re-close; when it ends, the waiting wallets fail without further requests.
  * - Price ceiling: after the first fill, a quote above it by more than the ceiling skips.
  *
  * Pure logic with injected Jupiter client, signer, limiters and clock; no DOM, no keys.
@@ -234,8 +235,18 @@ export function startRun(deps: ExecutorDeps, options: RunOptions): ExecutorRun {
     // Starts closed: the run's first /order is a probe, so a mint without a route yet
     // costs one request, not a burst that spends the whole limiter budget (D-035).
     closed: true,
-    /** First "no route" of the run: the window counts from here and never restarts. */
+    /**
+     * Start of the current window: the first "no route" of the run, or, once the gate has
+     * opened, the moment it closed again (each re-close gets a fresh window).
+     */
     since: null as number | null,
+    /** A route was seen in this run. */
+    everOpened: false,
+    /**
+     * When the next probe became ready to go. The time until it actually goes (waiting
+     * for the limiter) is not time without a route: the window moves on by it (D-035).
+     */
+    readyAt: null as number | null,
     /** Backoff steps since the gate last closed. */
     backoffs: 0,
     /** A probe /order is in flight. */
@@ -368,7 +379,11 @@ export function startRun(deps: ExecutorDeps, options: RunOptions): ExecutorRun {
    */
   const noRoute = (index: number, detail: string, wasProbe: boolean): void => {
     const slot = slotOf(index);
-    gate.since ??= clock.now();
+    if (!gate.closed && gate.everOpened) {
+      gate.since = clock.now(); // the route was there and is gone: a fresh window
+    } else {
+      gate.since ??= clock.now();
+    }
     if (windowOver()) {
       fail(index, 'NO_ROUTE', detail);
       failWaiting(detail);
@@ -404,6 +419,7 @@ export function startRun(deps: ExecutorDeps, options: RunOptions): ExecutorRun {
         failWaiting(detail);
       } else {
         queue.unshift(index); // the probe goes first
+        gate.readyAt = clock.now();
       }
       nudge();
     });
@@ -515,14 +531,20 @@ export function startRun(deps: ExecutorDeps, options: RunOptions): ExecutorRun {
     if (probe) gate.probing = false;
     if (!ordered.ok) {
       const decision = afterOrderFailure(ordered);
-      if (decision.action === 'noRoute') noRoute(index, decision.detail, probe);
-      else apply(index, decision);
+      if (decision.action === 'noRoute') {
+        noRoute(index, decision.detail, probe);
+      } else {
+        // A probe that learned nothing (timeout, 429): the next one is ready now.
+        if (probe && gate.closed) gate.readyAt = clock.now();
+        apply(index, decision);
+      }
       nudge();
       return;
     }
     // A route (even with a build error for this wallet) opens the gate for everyone.
     if (gate.closed) {
       gate.closed = false;
+      gate.everOpened = true;
       gate.backoffs = 0;
       nudge();
     }
@@ -656,7 +678,11 @@ export function startRun(deps: ExecutorDeps, options: RunOptions): ExecutorRun {
       const index = queue.shift();
       if (index === undefined) continue;
       const probe = gate.closed;
-      if (probe) gate.probing = true;
+      if (probe) {
+        gate.probing = true;
+        if (gate.readyAt !== null && gate.since !== null) gate.since += clock.now() - gate.readyAt;
+        gate.readyAt = null;
+      }
       inFlight += 1;
       void attempt(index, probe)
         .catch((e: unknown) => {

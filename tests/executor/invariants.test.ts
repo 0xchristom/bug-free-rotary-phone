@@ -197,6 +197,10 @@ export async function simulate(s: Scenario): Promise<SimResult> {
     if (!FINAL_STATES.has(w.state)) broken.push(`${taker}: not final (${w.state})`);
     if (w.state !== 'CONFIRMED' && w.reason === null) broken.push(`${taker}: no reason`);
     if (w.state === 'UNKNOWN') broken.push(`${taker}: UNKNOWN with a healthy chain`);
+    // The route comes within the window (≤ 8,6 s of 500 and "no route" vs 20 s), and later
+    // random 503s re-close the gate with a fresh window each time (D-035): nobody may
+    // end without a route.
+    if (w.reason?.code === 'NO_ROUTE') broken.push(`${taker}: FAILED NO_ROUTE with a route`);
     // "no route" and HTTP 500 from /order never use attempts (D-035)
     if (
       w.reason?.code === 'MAX_ATTEMPTS' &&
