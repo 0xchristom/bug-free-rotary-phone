@@ -743,3 +743,28 @@ Rejestr decyzji i rozbieżności z dokumentacją zewnętrzną. Nowe wpisy dopisu
       - najwyżej 10 stron (10 000 sygnatur);
     - bez granicy (RPC nie odpowiada od uzbrojenia) niczego nie przekazujemy, bo nie wiadomo, gdzie zaczyna się przerwa; przechodzą tylko logi na żywo.
   - **Klucz:** URL z kluczem zna tylko moduł. Zdarzenia nie niosą URL-a ani treści błędów; test sprawdza zserializowane zdarzenia, także gdy utworzenie gniazda rzuca wyjątek z URL-em. CSP już zezwala na `wss://*.helius-rpc.com`.
+
+## D-037: Detektory nowego mintu (szybka i wolna ścieżka)
+
+- Data: 2026-10-03
+- Zadanie: BUNNDLY-33
+- Kontekst: SPEC 3.4. Oficjalne IDL pump.fun, Meteora DBC i Raydium LaunchLab (linki w `src/watcher/detectors/programs.ts`). Fixtures z prawdziwych transakcji mainnetu (`tests/fixtures/detectors.mainnet.json`), pobrane skryptami poza testami przez Helius; testy działają bez sieci. Ustalenia na prawdziwych transakcjach:
+  - pump.fun zapisuje `CreateEvent` w logu (`Program data:`), ale długi log bywa ucięty przez runtime („Log truncated”);
+  - Meteora DBC emituje `EvtInitializePool` przez self-CPI (`emit_cpi!`), więc zdarzenia nie ma w logu;
+  - transakcje tworzące LaunchLab są v1 (tablice adresów), więc `getTransaction` wymaga `maxSupportedTransactionVersion`;
+  - program SPL Token (p-token) nie loguje już nazw instrukcji, więc `InitializeMint` rozpoznajemy tylko z danych instrukcji;
+  - Moonshot: w ostatnich 287 transakcjach programu nie było tworzenia, a oficjalnego IDL nie udało się potwierdzić. Jego tokeny łapie ścieżka ogólna.
+- Decyzja:
+  - **Szybka ścieżka (log, bez RPC):**
+    - tylko pump.fun `CreateEvent`;
+    - `Program data:` liczy się tylko wtedy, gdy według stosu `invoke` pochodzi z programu pump.fun, więc inny program nie podrobi zdarzenia;
+    - `user` w zdarzeniu musi być obserwowanym adresem.
+  - **Wolna ścieżka (`getTransaction`):**
+    - parametry: `json`, `confirmed`, `maxSupportedTransactionVersion: 1`; pytanie co 200 ms do 15 s, bo transakcja z logu `processed` nie jest od razu czytelna. Po limicie zdarzenie `transaction-unavailable`;
+    - najpierw instrukcje launchpadów z IDL: pump.fun `create` i `create_v2` (mint na koncie 0), DBC `initialize_virtual_pool_*` (konto 3), LaunchLab `initialize*` (konto 6), także instrukcje wewnętrzne;
+    - potem ścieżka ogólna: `InitializeMint` (0) i `InitializeMint2` (20) programów Token i Token-2022, mint na koncie 0;
+    - obserwowany adres musi podpisać transakcję; transakcja z `meta.err` nic nie wykrywa; WSOL, USDC i USDT nigdy nie są nowym mintem.
+  - **Każda sygnatura przechodzi wolną ścieżkę**, także po szybkiej. Wolna ścieżka wykrywa to, czego log nie pokaże (DBC, LaunchLab, ścieżka ogólna, nadrabianie przerwy, ucięty log), i sprawdza szybką. Niezgodność to ostrzeżenie (`verified` z `match: false`), nie zatrzymanie, bo zakup już ruszył.
+  - **Jeden mint raz na uzbrojenie**, niezależnie od tego, która ścieżka zobaczy go pierwsza.
+  - **Fixtures:** oczekiwany mint to token z `postTokenBalances`, którego nie było w `preTokenBalances`, a nie wynik detektora. Przypadek „nie podpisujący” to prawdziwe tworzenie sprawdzane z obserwowanym adresem, który nie podpisał. W fixtures nie ma `api-key` (test to sprawdza).
+- Testy: dodatnie i ujemne przypadki wolnej ścieżki na prawdziwych transakcjach (pump.fun, DBC, LaunchLab v1, oba `InitializeMint`, kupno, nieudane tworzenie, nie podpisujący), szybka ścieżka na trzech prawdziwych `logsNotification`, podrobione `Program data:` spod innego programu, detektor z fałszywym zegarem (szybka ścieżka przed RPC, transakcja dostępna po kilku próbach, limit 15 s, deduplikacja logu i nadrabiania, ostrzeżenie o niezgodności).
