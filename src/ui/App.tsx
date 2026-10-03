@@ -12,6 +12,16 @@ import { SettingsScreen } from './screens/SettingsScreen.tsx';
 import { StartScreen } from './screens/StartScreen.tsx';
 import { WizardScreen } from './screens/WizardScreen.tsx';
 import { UNLOCKED_SCREENS, VaultContext, type Screen, type VaultState } from './vault-state.ts';
+import { WatchGuard } from './WatchGuard.tsx';
+import {
+  ALARM_REPEAT_MS,
+  AlarmSound,
+  WatchRuntimeContext,
+  browserWatchApis,
+  useWakeLock,
+  type WatchBrowser,
+  type WatchRuntime,
+} from './watch-runtime.ts';
 
 export interface AppProps {
   readonly vault: VaultClient;
@@ -25,6 +35,10 @@ export interface AppProps {
   readonly balanceRefreshMs?: number;
   /** Test hook: called on each fleet table row render. */
   readonly rowProbe?: (index: number) => void;
+  /** Web Audio and Wake Lock for mode B; the browser's own by default (tests pass mocks). */
+  readonly watchBrowser?: WatchBrowser;
+  /** How often the alarm tone repeats (tests use a short one). */
+  readonly alarmRepeatMs?: number;
 }
 
 const DEFAULT_STATUS_POLL_MS = 5_000;
@@ -44,7 +58,11 @@ export function App({
   activityThrottleMs = DEFAULT_ACTIVITY_THROTTLE_MS,
   balanceRefreshMs,
   rowProbe,
+  watchBrowser,
+  alarmRepeatMs = ALARM_REPEAT_MS,
 }: AppProps) {
+  const [browser] = useState(() => watchBrowser ?? browserWatchApis());
+  const [alarm] = useState(() => new AlarmSound(browser.createAudioContext));
   const [status, setStatus] = useState<VaultStatus | null>(null);
   const [screen, setScreen] = useState<Screen>('start');
   const [notice, setNotice] = useState<string | null>(null);
@@ -170,6 +188,12 @@ export function App({
     () => ({ client: vault, status, refresh }),
     [vault, status, refresh],
   );
+  // The screen stays on while the watcher is armed (SPEC 3.4).
+  const wake = useWakeLock(status?.watch?.armed ?? false, browser.wakeLock);
+  const watchRuntime = useMemo<WatchRuntime>(
+    () => ({ alarm, wake, alarmRepeatMs }),
+    [alarm, wake, alarmRepeatMs],
+  );
 
   const unlocked = status !== null && !status.locked && status.info !== null;
   // Never render an unlocked-only screen without an unlocked fleet.
@@ -177,88 +201,91 @@ export function App({
 
   return (
     <VaultContext.Provider value={context}>
-      <div className="app">
-        <header className="app-header">
-          <h1>Bunndly</h1>
-          {status && (
-            <AppHeader
-              status={status}
-              screen={visible}
-              autoLockMinutes={
-                status.info?.settings.global.autoLockMinutes ?? DEFAULT_AUTO_LOCK_MS / 60_000
-              }
-              onNavigate={navigate}
-              onLock={() => void lock()}
-            />
-          )}
-        </header>
-        <main>
-          {notice && (
-            <p className="notice" role="alert">
-              {notice}
-            </p>
-          )}
-          {status === null ? (
-            <p className="muted">Łączenie z sejfem…</p>
-          ) : (
-            <>
-              {visible === 'start' && (
-                <StartScreen
-                  onCreate={() => {
-                    navigate('wizard');
-                  }}
-                  onOpen={() => {
-                    navigate('open');
-                  }}
-                />
-              )}
-              {visible === 'wizard' && (
-                <WizardScreen
-                  storage={storage}
-                  onBack={() => {
-                    navigate(unlocked ? 'fleet' : 'start');
-                  }}
-                  onDone={() => {
-                    navigate('fleet');
-                  }}
-                  onUnsavedChange={setUnsavedFile}
-                />
-              )}
-              {visible === 'open' && (
-                <OpenScreen
-                  storage={storage}
-                  onBack={() => {
-                    navigate('start');
-                  }}
-                  onUnlocked={() => {
-                    navigate('fleet');
-                  }}
-                />
-              )}
-              {visible === 'fleet' && status.info && (
-                <FleetScreen
-                  info={status.info}
-                  storage={storage}
-                  onUnsavedChange={setUnsavedFile}
-                  operationsLog={operationsLog}
-                  buyView={buyView}
-                  mintDecimals={mintDecimals}
-                  onMintDecimals={onMintDecimals}
-                  {...(balanceRefreshMs === undefined ? {} : { balanceRefreshMs })}
-                  {...(rowProbe === undefined ? {} : { rowProbe })}
-                />
-              )}
-              {visible === 'settings' && status.info && (
-                <SettingsScreen
-                  info={status.info}
-                  storage={storage}
-                  onUnsavedChange={setUnsavedFile}
-                />
-              )}
-            </>
-          )}
-        </main>
-      </div>
+      <WatchRuntimeContext.Provider value={watchRuntime}>
+        <div className="app">
+          <header className="app-header">
+            <h1>Bunndly</h1>
+            {status && (
+              <AppHeader
+                status={status}
+                screen={visible}
+                autoLockMinutes={
+                  status.info?.settings.global.autoLockMinutes ?? DEFAULT_AUTO_LOCK_MS / 60_000
+                }
+                onNavigate={navigate}
+                onLock={() => void lock()}
+              />
+            )}
+          </header>
+          <main>
+            {unlocked && <WatchGuard />}
+            {notice && (
+              <p className="notice" role="alert">
+                {notice}
+              </p>
+            )}
+            {status === null ? (
+              <p className="muted">Łączenie z sejfem…</p>
+            ) : (
+              <>
+                {visible === 'start' && (
+                  <StartScreen
+                    onCreate={() => {
+                      navigate('wizard');
+                    }}
+                    onOpen={() => {
+                      navigate('open');
+                    }}
+                  />
+                )}
+                {visible === 'wizard' && (
+                  <WizardScreen
+                    storage={storage}
+                    onBack={() => {
+                      navigate(unlocked ? 'fleet' : 'start');
+                    }}
+                    onDone={() => {
+                      navigate('fleet');
+                    }}
+                    onUnsavedChange={setUnsavedFile}
+                  />
+                )}
+                {visible === 'open' && (
+                  <OpenScreen
+                    storage={storage}
+                    onBack={() => {
+                      navigate('start');
+                    }}
+                    onUnlocked={() => {
+                      navigate('fleet');
+                    }}
+                  />
+                )}
+                {visible === 'fleet' && status.info && (
+                  <FleetScreen
+                    info={status.info}
+                    storage={storage}
+                    onUnsavedChange={setUnsavedFile}
+                    operationsLog={operationsLog}
+                    buyView={buyView}
+                    mintDecimals={mintDecimals}
+                    onMintDecimals={onMintDecimals}
+                    {...(balanceRefreshMs === undefined ? {} : { balanceRefreshMs })}
+                    {...(rowProbe === undefined ? {} : { rowProbe })}
+                  />
+                )}
+                {visible === 'settings' && status.info && (
+                  <SettingsScreen
+                    info={status.info}
+                    storage={storage}
+                    onUnsavedChange={setUnsavedFile}
+                  />
+                )}
+              </>
+            )}
+          </main>
+        </div>
+      </WatchRuntimeContext.Provider>
     </VaultContext.Provider>
   );
 }

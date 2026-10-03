@@ -299,6 +299,18 @@ describe('balances and the socket', () => {
     expect(t.refreshes()).toBe(2);
   });
 
+  it('the status has the time of the last message, also keep-alive answers', async () => {
+    const t = setup({ mode: 'continuous' });
+    await t.connect();
+    await t.clock.runUntil(t.clock.now() + 30_000); // keep-alive sent
+    const ping = t.socket().sent.at(-1);
+    expect(ping?.method).toBe('getHealth');
+    t.socket().reply(ping?.id);
+    expect(t.watch.status().lastMessageAt).toBe(t.clock.now());
+    t.watch.disarm();
+    expect(t.watch.status().lastMessageAt).toBe(t.clock.now()); // kept after disarm
+  });
+
   it('connection states go out without the URL', async () => {
     const t = setup();
     await t.connect();

@@ -2,8 +2,12 @@ import { vi } from 'vitest';
 import { AppError } from '../../src/core/errors.ts';
 import { DEFAULT_GLOBAL_SETTINGS } from '../../src/core/settings.ts';
 import type { DirectoryHandleLike, StorageEnv } from '../../src/storage/keystore-file.ts';
-import type { ExecutorEvent } from '../../src/executor/executor.ts';
-import type { VaultInfo, VaultRequest, VaultStatus } from '../../src/worker/protocol.ts';
+import type {
+  VaultInfo,
+  VaultRequest,
+  VaultStatus,
+  WorkerEvent,
+} from '../../src/worker/protocol.ts';
 import type { VaultClient, VaultRequestOptions } from '../../src/worker/vault-client.ts';
 
 export const LOCKED: VaultStatus = {
@@ -80,8 +84,8 @@ export function mockVault(initial: VaultStatus, onCreate?: CreateHandler) {
       }
     },
   );
-  const eventListeners = new Set<(event: ExecutorEvent) => void>();
-  const onEvent = (listener: (event: ExecutorEvent) => void) => {
+  const eventListeners = new Set<(event: WorkerEvent) => void>();
+  const onEvent = (listener: (event: WorkerEvent) => void) => {
     eventListeners.add(listener);
     return () => {
       eventListeners.delete(listener);
@@ -91,7 +95,7 @@ export function mockVault(initial: VaultStatus, onCreate?: CreateHandler) {
     client: { request, onEvent } as unknown as VaultClient,
     request,
     /** Pushes an executor event to the UI, like the worker does. */
-    emit: (event: ExecutorEvent) => {
+    emit: (event: WorkerEvent) => {
       for (const l of eventListeners) l(event);
     },
     setStatus: (next: VaultStatus) => {
