@@ -7,6 +7,7 @@ import { formatSol } from './sol.ts';
 import type { BuyView } from './use-buy.ts';
 import { useVault } from './vault-state.ts';
 import { WatchPanel } from './WatchPanel.tsx';
+import { WATCH_FROZEN } from './watch-labels.ts';
 
 export interface BuyPanelProps {
   readonly view: BuyView;
@@ -59,6 +60,8 @@ export function BuyPanel({
   const { client, status, refresh } = useVault();
   const ids = useId();
   const [tab, setTab] = useState<'A' | 'B'>(() => (status?.watch?.armed ? 'B' : 'A'));
+  // An armed watcher buys with the settings confirmed at arming: no mode switch (D-039).
+  const watchArmed = status?.watch?.armed ?? false;
   const [confirmLive, setConfirmLive] = useState(false);
   const [busy, setBusy] = useState<'start' | 'stop' | 'mode' | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -161,7 +164,9 @@ export function BuyPanel({
           : 'Tryb na żywo: zakup wysyła prawdziwe transakcje i wydaje SOL z portfeli.'}
       </p>
 
+      {watchArmed && !running && <p className="muted">{WATCH_FROZEN}</p>}
       {!running &&
+        !watchArmed &&
         (dryRun ? (
           confirmLive ? (
             <div

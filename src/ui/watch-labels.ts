@@ -40,6 +40,9 @@ export const PATH_LABELS: Readonly<Record<DetectionPath, string>> = {
   'catch-up': 'nadrabianie',
 };
 
+/** Why settings cannot change now: the armed watcher buys with what was confirmed. */
+export const WATCH_FROZEN = 'Rozbrój watcher, żeby zmienić tryb lub ustawienia.';
+
 export function problemLabel(problem: DetectionProblem): string {
   if (problem === 'STALE') return 'transakcja sprzed uzbrojenia, bez zakupu';
   if (problem === 'DISARMED') return 'rozbrojono przed zakupem';

@@ -160,7 +160,8 @@ Tryb B obserwuje portfel twórcy i kupuje sam, gdy ten portfel utworzy token. Et
 6. **Ekran i karta:**
    - uzbrojony watcher prosi przeglądarkę, żeby ekran nie gasł (Wake Lock), i ponawia prośbę po powrocie do karty. Gdy przeglądarka odmówi, panel pokaże „Ekran może zgasnąć”: wyłącz wtedy usypianie komputera;
    - **nie zamykaj ani nie przeładowuj karty**, dopóki watcher jest uzbrojony: obserwacja i zakup działają tylko w niej, a przeglądarka zapyta przed zamknięciem;
-   - uzbrojony watcher wstrzymuje automatyczną blokadę; ręczna blokada wymaga wcześniejszego **ROZBRÓJ**.
+   - uzbrojony watcher wstrzymuje automatyczną blokadę; ręczna blokada wymaga wcześniejszego **ROZBRÓJ**;
+   - uzbrojony watcher zamraża ustawienia: tryb DRY-RUN/na żywo, tabelę, portfele i **Ustawienia** zmienisz dopiero po **ROZBRÓJ**, bo zakup po wykryciu idzie z tym, co potwierdziłeś przy uzbrojeniu.
 7. **Wykrycia:** tabela pokazuje czas, mint (skrócony, z przyciskiem **Kopiuj**), źródło (pump.fun, LaunchLab, DBC, InitializeMint), ścieżkę, czas reakcji i weryfikację:
    - ścieżka **log**: mint odczytany od razu z logu transakcji (pump.fun), zakup rusza w kilka milisekund;
    - ścieżka **transakcja**: mint odczytany z pełnej transakcji, gdy sieć ją potwierdzi (zwykle po kilkuset ms; LaunchLab, DBC, inne tokeny);

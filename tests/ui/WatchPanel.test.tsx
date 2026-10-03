@@ -11,20 +11,18 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { FleetSettingsV1 } from '../../src/core/index.ts';
 import type { RunEvent } from '../../src/executor/index.ts';
 import { App } from '../../src/ui/App.tsx';
-import type {
-  AudioContextLike,
-  WakeLockLike,
-  WakeLockSentinelLike,
-  WatchBrowser,
+import {
+  ALARM_REPEAT_MS,
+  type AudioContextLike,
+  type WakeLockLike,
+  type WakeLockSentinelLike,
+  type WatchBrowser,
 } from '../../src/ui/watch-runtime.ts';
 import type { WatchDetection, WatchStatus } from '../../src/watcher/watch.ts';
 import type { VaultInfo, VaultRequest, VaultStatus } from '../../src/worker/protocol.ts';
 import { fleetInfo, mockStorage, mockVault } from './fakes.ts';
 
-afterEach(() => {
-  cleanup();
-  vi.useRealTimers();
-});
+afterEach(cleanup);
 
 const CREATOR = 'FQ6WmS5szfK1NRVcGkAqeVbwNeL9kt4xJXhwviyWTB7K';
 const FLEET_ADDRESS = '9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM';
@@ -93,6 +91,7 @@ interface Setup {
   readonly helius?: boolean;
   readonly maxSpend?: boolean;
   readonly browser?: Partial<WatchBrowser>;
+  readonly alarmRepeatMs?: number;
 }
 
 function detection(extra: Partial<WatchDetection> = {}): WatchDetection {
@@ -185,6 +184,7 @@ function setup(o: Setup = {}) {
       statusPollMs={60_000}
       balanceRefreshMs={60_000}
       watchBrowser={browser}
+      {...(o.alarmRepeatMs === undefined ? {} : { alarmRepeatMs: o.alarmRepeatMs })}
     />,
   );
   /** The worker's watcher changes: new status, then an event (the UI re-reads). */
@@ -298,6 +298,35 @@ describe('UZBRÓJ / ROZBRÓJ', () => {
   });
 });
 
+describe('an armed watcher freezes the settings', () => {
+  it('no mode switch, no table, wallet or settings save until ROZBRÓJ', async () => {
+    const { user } = setup();
+    await arm(user);
+    expect(screen.queryByRole('button', { name: 'Przełącz na tryb na żywo…' })).toBeNull();
+    expect(screen.getAllByText(/Rozbrój watcher, żeby zmienić tryb lub ustawienia/u).length).toBe(
+      3, // mode, table, wallets
+    );
+    expect(screen.getByRole('button', { name: 'Zapisz zmiany w tabeli' })).toHaveProperty(
+      'disabled',
+      true,
+    );
+    expect(screen.getByRole('button', { name: 'Dodaj portfele' })).toHaveProperty('disabled', true);
+    await user.click(
+      within(screen.getByRole('navigation')).getByRole('button', { name: 'Ustawienia' }),
+    );
+    expect(await screen.findByRole('button', { name: 'Zapisz ustawienia' })).toHaveProperty(
+      'disabled',
+      true,
+    );
+    expect(screen.getByText(/Rozbrój watcher, żeby zmienić/u)).toBeTruthy();
+    await user.click(within(screen.getByRole('navigation')).getByRole('button', { name: 'Flota' }));
+    await user.click(screen.getByRole('button', { name: 'Tryb B: obserwacja twórcy' }));
+    await user.click(screen.getByRole('button', { name: 'ROZBRÓJ' }));
+    expect(await screen.findByRole('button', { name: 'Przełącz na tryb na żywo…' })).toBeTruthy();
+    expect(screen.queryByText(/Rozbrój watcher, żeby zmienić/u)).toBeNull();
+  });
+});
+
 describe('connection, alarm and Wake Lock', () => {
   it('connection states as text; losing it while armed: banner and tone until it is back', async () => {
     const { user, update, audio } = setup();
@@ -326,25 +355,23 @@ describe('connection, alarm and Wake Lock', () => {
     expect(audio.tones).toHaveLength(after);
   });
 
-  it('the tone repeats every 3 s until "Wycisz"', async () => {
-    const { user, update, audio } = setup();
+  it('the tone repeats until "Wycisz"; the banner stays', async () => {
+    const { user, update, audio } = setup({ alarmRepeatMs: 20 });
     await arm(user);
-    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
     update({ connection: 'disconnected' });
     await screen.findByText(/Utracono połączenie z Helius/u);
-    expect(audio.tones).toHaveLength(1);
-    act(() => {
-      vi.advanceTimersByTime(6_000);
+    await waitFor(() => {
+      expect(audio.tones.length).toBeGreaterThanOrEqual(3);
     });
-    expect(audio.tones).toHaveLength(3);
-    vi.useRealTimers();
     await user.click(screen.getByRole('button', { name: 'Wycisz' }));
-    expect(screen.getByText(/Utracono połączenie z Helius/u)).toBeTruthy(); // banner stays
-    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
-    act(() => {
-      vi.advanceTimersByTime(9_000);
-    });
-    expect(audio.tones).toHaveLength(3);
+    const muted = audio.tones.length;
+    await new Promise((r) => setTimeout(r, 150));
+    expect(audio.tones).toHaveLength(muted);
+    expect(screen.getByText(/Utracono połączenie z Helius/u)).toBeTruthy();
+  });
+
+  it('the default repeat is every 3 s', () => {
+    expect(ALARM_REPEAT_MS).toBe(3_000);
   });
 
   it('Wake Lock: held while armed, requested again after the tab is visible again, released on disarm', async () => {

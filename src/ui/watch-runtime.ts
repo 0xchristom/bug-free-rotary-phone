@@ -104,6 +104,8 @@ export class AlarmSound {
 export interface WatchRuntime {
   readonly alarm: AlarmSound;
   readonly wake: WakeState;
+  /** How often the tone repeats while the connection is lost. */
+  readonly alarmRepeatMs: number;
 }
 
 export const WatchRuntimeContext = createContext<WatchRuntime | null>(null);

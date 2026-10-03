@@ -20,6 +20,7 @@ import { formatSol, formatUnits, parseSolAmount } from '../sol.ts';
 import { useBalances } from '../use-balances.ts';
 import { EMPTY_BUY, type BuyView } from '../use-buy.ts';
 import { useVault } from '../vault-state.ts';
+import { WATCH_FROZEN } from '../watch-labels.ts';
 
 const MAX_WALLETS = 100;
 
@@ -90,7 +91,8 @@ export function FleetScreen({
   mintDecimals,
   onMintDecimals,
 }: FleetScreenProps) {
-  const { client, refresh } = useVault();
+  const { client, status, refresh } = useVault();
+  const watchArmed = status?.watch?.armed ?? false;
   const [mintText, setMintText] = useState('');
   const [mint, setMint] = useState<string | null>(null);
   const [mintError, setMintError] = useState<string | null>(null);
@@ -475,13 +477,20 @@ export function FleetScreen({
           type="button"
           className="primary"
           disabled={
-            !tableDirty || tableInvalid || (phase.kind !== 'idle' && phase.kind !== 'saved')
+            watchArmed ||
+            !tableDirty ||
+            tableInvalid ||
+            (phase.kind !== 'idle' && phase.kind !== 'saved')
           }
           onClick={() => void saveTable()}
         >
           {phase.kind === 'savingTable' ? 'Zapisywanie…' : 'Zapisz zmiany w tabeli'}
         </button>
-        {tableDirty && <span className="muted">Masz niezapisane zmiany w tabeli.</span>}
+        {watchArmed ? (
+          <span className="muted">{WATCH_FROZEN}</span>
+        ) : (
+          tableDirty && <span className="muted">Masz niezapisane zmiany w tabeli.</span>
+        )}
       </div>
 
       {phase.kind === 'unsaved' && (
@@ -541,10 +550,11 @@ export function FleetScreen({
             <button
               type="submit"
               className="primary"
-              disabled={!countValid || phase.kind === 'adding'}
+              disabled={watchArmed || !countValid || phase.kind === 'adding'}
             >
               {phase.kind === 'adding' ? 'Dodawanie…' : 'Dodaj portfele'}
             </button>
+            {watchArmed && <span className="muted">{WATCH_FROZEN}</span>}
           </div>
         </form>
       )}

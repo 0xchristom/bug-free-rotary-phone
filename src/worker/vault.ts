@@ -774,6 +774,11 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
       if (buy !== null) throw new AppError('BUY_RUNNING');
       if (watchActive()) throw new AppError('WATCH_ARMED');
     }
+    // An armed watcher buys on its own with the settings confirmed at arming: they stay
+    // frozen (DRY-RUN or live, max spend, wallets) until it is disarmed (D-039).
+    if ((request.type === 'saveSettings' || request.type === 'addWallets') && watchActive()) {
+      throw new AppError('WATCH_ARMED');
+    }
 
     switch (request.type) {
       case 'create': {

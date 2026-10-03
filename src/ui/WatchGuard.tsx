@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useVault } from './vault-state.ts';
-import { ALARM_REPEAT_MS, useWatchRuntime } from './watch-runtime.ts';
+import { useWatchRuntime } from './watch-runtime.ts';
 import { connectionLabel } from './watch-labels.ts';
 
 /**
@@ -11,7 +11,7 @@ import { connectionLabel } from './watch-labels.ts';
  */
 export function WatchGuard() {
   const { client, status, refresh } = useVault();
-  const { alarm } = useWatchRuntime();
+  const { alarm, alarmRepeatMs } = useWatchRuntime();
   const watch = status?.watch ?? null;
   const armed = watch?.armed ?? false;
   const lostIn =
@@ -43,11 +43,11 @@ export function WatchGuard() {
     alarm.beep();
     const timer = setInterval(() => {
       alarm.beep();
-    }, ALARM_REPEAT_MS);
+    }, alarmRepeatMs);
     return () => {
       clearInterval(timer);
     };
-  }, [lost, muted, alarm]);
+  }, [lost, muted, alarm, alarmRepeatMs]);
 
   // Closing the tab disarms the watcher with it.
   useEffect(() => {

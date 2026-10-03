@@ -167,6 +167,17 @@ async function setup(o: Setup = {}) {
     );
   const runs = () =>
     events.filter((e): e is Extract<ExecutorEvent, { kind: 'run' }> => e.kind === 'run');
+  /**
+   * Moves the fake clock until no buy runs. The vault signs with real WebCrypto, which
+   * needs real time: a fixed fake-clock jump can end before a loaded machine finishes.
+   */
+  const untilNoBuy = async (maxSteps = 600): Promise<void> => {
+    for (let i = 0; i < maxSteps; i++) {
+      await clock.runUntil(clock.now() + 1_000);
+      if ((await status()).buy === null) return;
+    }
+    throw new Error('the buy did not finish');
+  };
   return {
     clock,
     h,
@@ -180,6 +191,7 @@ async function setup(o: Setup = {}) {
     rpcLog,
     watchEvents,
     runs,
+    untilNoBuy,
   };
 }
 
@@ -287,7 +299,7 @@ describe('modes', () => {
     expect(s.watch?.armed).toBe(false);
     expect(s.buy).toMatchObject({ mint: MINT });
     expect(s.armed).toBe(true); // the buy keeps the vault armed
-    await t.clock.runUntil(t.clock.now() + 30_000);
+    await t.untilNoBuy();
     expect(t.runs().map((r) => r.phase)).toEqual(['started', 'finished']);
     expect(t.sockets).toHaveLength(1);
   });
@@ -309,7 +321,7 @@ describe('modes', () => {
     expect(t.watchEvents('queued').map((e) => e.detection.mint)).toEqual([MINT_2]);
     expect((await t.status()).watch?.queued).toEqual([MINT_2]);
 
-    await t.clock.runUntil(t.clock.now() + 60_000);
+    await t.untilNoBuy();
     const started = t.runs().filter((r) => r.phase === 'started');
     expect(started.map((r) => r.mint)).toEqual([MINT, MINT_2]);
     const finished = t.runs().filter((r) => r.phase === 'finished');
@@ -326,7 +338,7 @@ describe('modes', () => {
     t.socket().message(N.message);
     await t.clock.settle();
     await t.h.handle({ type: 'stop' });
-    await t.clock.runUntil(t.clock.now() + 30_000);
+    await t.untilNoBuy();
     const s = await t.status();
     expect(s.buy).toBeNull();
     expect(s.watch?.armed).toBe(true);
@@ -338,7 +350,7 @@ describe('modes', () => {
     const t = await setup();
     await t.arm();
     t.socket().message(N.message);
-    await t.clock.runUntil(t.clock.now() + 30_000);
+    await t.untilNoBuy();
     expect(t.runs().at(-1)).toMatchObject({ phase: 'finished', dryRun: true });
     expect(t.fake.calls.filter((c) => c.kind === 'order').length).toBeGreaterThan(0);
     expect(t.fake.calls.filter((c) => c.kind === 'execute')).toEqual([]);
@@ -360,6 +372,20 @@ describe('auto-lock and lock', () => {
     await t.clock.runUntil(t.clock.now() + 61_000);
     expect(t.h.checkAutoLock()).toBe(true);
     expect((await t.status()).locked).toBe(true);
+  });
+
+  it('armed: settings and wallets are frozen (WATCH_ARMED) until disarm', async () => {
+    const t = await setup({ mode: 'continuous' });
+    const settings = (await t.status()).info?.settings;
+    if (!settings) throw new Error('no settings');
+    await t.arm();
+    const live = { ...settings, global: { ...settings.global, dryRun: false } };
+    await rejectsWith(t.h.handle({ type: 'saveSettings', settings: live }), 'WATCH_ARMED');
+    await rejectsWith(t.h.handle({ type: 'addWallets', count: 1 }), 'WATCH_ARMED');
+    expect((await t.status()).info?.settings.global.dryRun).toBe(true);
+    await t.h.handle({ type: 'disarm' });
+    await t.h.handle({ type: 'saveSettings', settings: live });
+    expect((await t.status()).info?.settings.global.dryRun).toBe(false);
   });
 
   it('reads balances before arming and every 30 s', async () => {
@@ -400,7 +426,7 @@ describe('arm validation', () => {
     await read;
     await t.h.handle({ type: 'startBuy', mint: MINT });
     await rejectsWith(t.h.handle({ type: 'arm', creator: CREATOR }), 'BUY_RUNNING');
-    await t.clock.runUntil(t.clock.now() + 30_000);
+    await t.untilNoBuy();
     await t.arm();
     await rejectsWith(t.h.handle({ type: 'arm', creator: CREATOR }), 'WATCH_ARMED');
     await t.h.handle({ type: 'disarm' });

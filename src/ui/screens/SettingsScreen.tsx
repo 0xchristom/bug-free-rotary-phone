@@ -26,6 +26,7 @@ import { ConnectionTest } from '../ConnectionTest.tsx';
 import { SettingsResetNotice } from '../SettingsResetNotice.tsx';
 import { PLAN_LABELS } from '../plan-labels.ts';
 import { useVault } from '../vault-state.ts';
+import { WATCH_FROZEN } from '../watch-labels.ts';
 
 type KeyName = keyof ApiKeyFlags;
 
@@ -160,7 +161,8 @@ export interface SettingsScreenProps {
  * rules as in the worker (core/settings.ts).
  */
 export function SettingsScreen({ info, storage, onUnsavedChange }: SettingsScreenProps) {
-  const { client, refresh } = useVault();
+  const { client, status, refresh } = useVault();
+  const watchArmed = status?.watch?.armed ?? false;
   const ids = useId();
   const [form, setForm] = useState<Form>(() => formOf(info.settings.global));
   const [drafts, setDrafts] = useState<Record<KeyName, KeyDraft>>(EMPTY_DRAFTS);
@@ -504,9 +506,10 @@ export function SettingsScreen({ info, storage, onUnsavedChange }: SettingsScree
         </fieldset>
 
         <div className="actions">
-          <button type="submit" className="primary" disabled={invalid || locked}>
+          <button type="submit" className="primary" disabled={invalid || locked || watchArmed}>
             {phase.kind === 'saving' ? 'Zapisywanie…' : 'Zapisz ustawienia'}
           </button>
+          {watchArmed && <span className="muted">{WATCH_FROZEN}</span>}
         </div>
       </form>
 

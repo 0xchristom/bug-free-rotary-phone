@@ -39,7 +39,7 @@ export const ERROR_MESSAGES = {
   INVALID_CREATOR_ADDRESS:
     'To nie jest prawidłowy adres portfela twórcy (base58, 32 bajty, inny niż mint SOL).',
   WATCH_ARMED:
-    'Watcher jest uzbrojony. Najpierw go rozbrój przyciskiem ROZBRÓJ, potem zablokuj albo zmień flotę.',
+    'Watcher jest uzbrojony. Najpierw go rozbrój przyciskiem ROZBRÓJ, potem zablokuj flotę, zmień ustawienia albo flotę.',
   VAULT_TIMEOUT: 'Sejf z kluczami nie odpowiedział w wyznaczonym czasie. Spróbuj ponownie.',
   INTERNAL_ERROR: 'Wystąpił wewnętrzny błąd aplikacji. Spróbuj ponownie.',
   STORAGE_CANCELLED: 'Anulowano wybór pliku lub folderu. Plik nie został zapisany ani wczytany.',

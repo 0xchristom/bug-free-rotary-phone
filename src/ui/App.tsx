@@ -14,6 +14,7 @@ import { WizardScreen } from './screens/WizardScreen.tsx';
 import { UNLOCKED_SCREENS, VaultContext, type Screen, type VaultState } from './vault-state.ts';
 import { WatchGuard } from './WatchGuard.tsx';
 import {
+  ALARM_REPEAT_MS,
   AlarmSound,
   WatchRuntimeContext,
   browserWatchApis,
@@ -36,6 +37,8 @@ export interface AppProps {
   readonly rowProbe?: (index: number) => void;
   /** Web Audio and Wake Lock for mode B; the browser's own by default (tests pass mocks). */
   readonly watchBrowser?: WatchBrowser;
+  /** How often the alarm tone repeats (tests use a short one). */
+  readonly alarmRepeatMs?: number;
 }
 
 const DEFAULT_STATUS_POLL_MS = 5_000;
@@ -56,6 +59,7 @@ export function App({
   balanceRefreshMs,
   rowProbe,
   watchBrowser,
+  alarmRepeatMs = ALARM_REPEAT_MS,
 }: AppProps) {
   const [browser] = useState(() => watchBrowser ?? browserWatchApis());
   const [alarm] = useState(() => new AlarmSound(browser.createAudioContext));
@@ -186,7 +190,10 @@ export function App({
   );
   // The screen stays on while the watcher is armed (SPEC 3.4).
   const wake = useWakeLock(status?.watch?.armed ?? false, browser.wakeLock);
-  const watchRuntime = useMemo<WatchRuntime>(() => ({ alarm, wake }), [alarm, wake]);
+  const watchRuntime = useMemo<WatchRuntime>(
+    () => ({ alarm, wake, alarmRepeatMs }),
+    [alarm, wake, alarmRepeatMs],
+  );
 
   const unlocked = status !== null && !status.locked && status.info !== null;
   // Never render an unlocked-only screen without an unlocked fleet.
