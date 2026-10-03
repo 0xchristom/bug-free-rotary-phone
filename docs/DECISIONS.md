@@ -709,3 +709,62 @@ Rejestr decyzji i rozbieżności z dokumentacją zewnętrzną. Nowe wpisy dopisu
     - po końcu okna wszystkie czekające portfele kończą jako FAILED `NO_ROUTE` bez dalszych zapytań. Dotyczy to też sytuacji, w której odpowiedź sondy przyszła już po końcu okna; sonda w backoffie nie wysyła już zapytania.
   - **STOP przy zamkniętej bramce:** czekające portfele i sonda w backoffie od razu dostają SKIPPED `STOPPED`, bez nowych `/order`.
 - Testy: scenariusz świeżego mintu; stałe 500; STOP; ponowne zamknięcie z nowym oknem; trasa znika na stałe po otwarciu; sonda w locie przez koniec okna; sonda czekająca na limiter Keyless. Symulacja (5000 ziaren, losowe 5% 503): 0 portfeli FAILED `NO_ROUTE`.
+
+## D-036: Strumień logów twórcy (Helius WebSocket)
+
+- Data: 2026-10-02
+- Zadanie: BUNNDLY-32
+- Kontekst: SPEC 3.4. Dokumentacja Helius WebSocket (`/docs/api-reference/rpc/websocket/llms.txt`): plan Free to 5 połączeń i 10 zapytań/s, połączenie zamyka się po 10 min bez aktywności, zalecany ping co 30–60 s. D-016, D-020, D-024 (URL z kluczem tylko w workerze, błędy WebSocket nie są czytane).
+- Decyzja:
+  - **`src/watcher/stream.ts`** (`startStream`): jedno połączenie, `logsSubscribe` z `{ mentions: [twórca] }` i `{ commitment: "processed" }`. Gniazdo, odczyt sygnatur, zegar i losowość są wstrzykiwane. Uruchomienie w workerze (uzbrajanie) dochodzi w BUNNDLY-34.
+  - **Powiadomienia:**
+    - z `err` różnym od `null` są pomijane;
+    - każda sygnatura przechodzi raz (pamięć ostatnich 2000);
+    - zdarzenie niesie log, źródło (`logs` albo `catch-up`) i `receivedAt` z `performance.now()` w workerze.
+  - **Podtrzymanie:**
+    - przeglądarkowy WebSocket nie wysyła ramek ping, więc co 30 s idzie żądanie JSON-RPC `getHealth`;
+    - to nie jest metoda pubsub, więc serwer od razu odpowiada błędem. Tyle wystarczy: każda odpowiedź z naszym `id` dowodzi, że połączenie żyje, a żądanie niczego nie subskrybuje i nie może ruszyć naszej subskrypcji;
+    - odrzuciłem `*Unsubscribe` z nieistniejącym id, bo id naszej subskrypcji może mieć tę samą wartość, oraz subskrypcję z natychmiastowym anulowaniem, bo to dwa zapytania i ryzyko powiadomień;
+    - brak odpowiedzi przez 10 s zamyka połączenie i uruchamia ponowne łączenie, więc martwe połączenie jest wykryte najpóźniej po 40 s.
+  - **Ponowne łączenie:**
+    - backoff wykładniczy z jitterem: krok 0,5 s × 2^(n−1), limit 30 s, opóźnienie od połowy do całego kroku, nie mniej niż 0,5 s;
+    - po każdym otwarciu ponowne `logsSubscribe`;
+    - **`connected` dopiero po potwierdzeniu subskrypcji** (review PR #26): odpowiedź na `logsSubscribe` z `result` (id subskrypcji) daje `connected`, zeruje backoff i uruchamia podtrzymanie i nadrabianie. Odpowiedź z błędem albo brak odpowiedzi przez 10 s działa jak utrata połączenia (backoff, ponowne łączenie). Nie ma więc stanu „połączono” bez subskrypcji;
+    - na zewnątrz tylko stany `connecting`, `connected`, `reconnecting` (z numerem próby) i `disconnected` oraz czas ostatniej wiadomości.
+  - **Nadrabianie przerwy:**
+    - przy uzbrojeniu najnowsza sygnatura twórcy (`getSignaturesForAddress`, `limit: 1`; przy błędzie RPC z ponowieniami) staje się dolną granicą;
+    - po każdym potwierdzeniu subskrypcji (także pierwszym, co zamyka lukę między uzbrojeniem a subskrypcją) sygnatury `until` granicy (`confirmed`, strony po 1000 z `before`) przechodzą od najstarszej ze źródłem `catch-up`, bez logów (detektory użyją `getTransaction`, BUNNDLY-33);
+    - nieudane transakcje są pomijane;
+    - **granica tylko z historii `confirmed`** (review PR #26): ustawiają ją wyłącznie linia bazowa i najnowszy wynik nadrabiania, nigdy log `processed`. Sygnatury z logu może jeszcze nie być w `confirmed` albo nie będzie jej wcale (blok odpadnie), a `getSignaturesForAddress` z `until` spoza historii nie zatrzymuje się (Andy sprawdził na prawdziwym RPC: pełna strona). Ze stronicowaniem poszłaby cała historia twórcy, a w BUNNDLY-34 mógłby z tego wyjść zakup starego tokenu. Podwójne przekazanie tej samej sygnatury i tak blokuje deduplikacja;
+    - **twarda granica czasu** (review PR #26):
+      - przechodzą tylko sygnatury z `blockTime` ≥ czas uzbrojenia − 60 s;
+      - `blockTime: null` traktujemy jak nową, bo stare transakcje zawsze ją mają;
+      - stronicowanie kończy się na stronie, która sięga starszych sygnatur (lista jest od najnowszej);
+      - najwyżej 10 stron (10 000 sygnatur);
+    - bez granicy (RPC nie odpowiada od uzbrojenia) niczego nie przekazujemy, bo nie wiadomo, gdzie zaczyna się przerwa; przechodzą tylko logi na żywo.
+  - **Klucz:** URL z kluczem zna tylko moduł. Zdarzenia nie niosą URL-a ani treści błędów; test sprawdza zserializowane zdarzenia, także gdy utworzenie gniazda rzuca wyjątek z URL-em. CSP już zezwala na `wss://*.helius-rpc.com`.
+
+## D-037: Detektory nowego mintu (szybka i wolna ścieżka)
+
+- Data: 2026-10-03
+- Zadanie: BUNNDLY-33
+- Kontekst: SPEC 3.4. Oficjalne IDL pump.fun, Meteora DBC i Raydium LaunchLab (linki w `src/watcher/detectors/programs.ts`). Fixtures z prawdziwych transakcji mainnetu (`tests/fixtures/detectors.mainnet.json`), pobrane skryptami poza testami przez Helius; testy działają bez sieci. Ustalenia na prawdziwych transakcjach:
+  - pump.fun zapisuje `CreateEvent` w logu (`Program data:`), ale długi log bywa ucięty przez runtime („Log truncated”);
+  - Meteora DBC emituje `EvtInitializePool` przez self-CPI (`emit_cpi!`), więc zdarzenia nie ma w logu;
+  - transakcje tworzące LaunchLab są v1 (tablice adresów), więc `getTransaction` wymaga `maxSupportedTransactionVersion`;
+  - program SPL Token (p-token) nie loguje już nazw instrukcji, więc `InitializeMint` rozpoznajemy tylko z danych instrukcji;
+  - Moonshot: w ostatnich 287 transakcjach programu nie było tworzenia, a oficjalnego IDL nie udało się potwierdzić. Jego tokeny łapie ścieżka ogólna.
+- Decyzja:
+  - **Szybka ścieżka (log, bez RPC):**
+    - tylko pump.fun `CreateEvent`;
+    - `Program data:` liczy się tylko wtedy, gdy według stosu `invoke` pochodzi z programu pump.fun, więc inny program nie podrobi zdarzenia;
+    - `user` w zdarzeniu musi być obserwowanym adresem.
+  - **Wolna ścieżka (`getTransaction`):**
+    - parametry: `json`, `confirmed`, `maxSupportedTransactionVersion: 1`; pytanie co 200 ms do 15 s, bo transakcja z logu `processed` nie jest od razu czytelna. Po limicie zdarzenie `transaction-unavailable`;
+    - najpierw instrukcje launchpadów z IDL: pump.fun `create` i `create_v2` (mint na koncie 0), DBC `initialize_virtual_pool_*` (konto 3), LaunchLab `initialize*` (konto 6), także instrukcje wewnętrzne;
+    - potem ścieżka ogólna: `InitializeMint` (0) i `InitializeMint2` (20) programów Token i Token-2022, mint na koncie 0;
+    - obserwowany adres musi podpisać transakcję; transakcja z `meta.err` nic nie wykrywa; WSOL, USDC i USDT nigdy nie są nowym mintem.
+  - **Każda sygnatura przechodzi wolną ścieżkę**, także po szybkiej. Wolna ścieżka wykrywa to, czego log nie pokaże (DBC, LaunchLab, ścieżka ogólna, nadrabianie przerwy, ucięty log), i sprawdza szybką. Niezgodność to ostrzeżenie (`verified` z `match: false`), nie zatrzymanie, bo zakup już ruszył.
+  - **Jeden mint raz na uzbrojenie**, niezależnie od tego, która ścieżka zobaczy go pierwsza.
+  - **Fixtures:** oczekiwany mint to token z `postTokenBalances`, którego nie było w `preTokenBalances`, a nie wynik detektora. Przypadek „nie podpisujący” to prawdziwe tworzenie sprawdzane z obserwowanym adresem, który nie podpisał. W fixtures nie ma `api-key` (test to sprawdza).
+- Testy: dodatnie i ujemne przypadki wolnej ścieżki na prawdziwych transakcjach (pump.fun, DBC, LaunchLab v1, oba `InitializeMint`, kupno, nieudane tworzenie, nie podpisujący), szybka ścieżka na trzech prawdziwych `logsNotification`, podrobione `Program data:` spod innego programu, detektor z fałszywym zegarem (szybka ścieżka przed RPC, transakcja dostępna po kilku próbach, limit 15 s, deduplikacja logu i nadrabiania, ostrzeżenie o niezgodności).
