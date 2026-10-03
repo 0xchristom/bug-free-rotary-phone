@@ -728,13 +728,18 @@ Rejestr decyzji i rozbieżności z dokumentacją zewnętrzną. Nowe wpisy dopisu
     - brak odpowiedzi przez 10 s zamyka połączenie i uruchamia ponowne łączenie, więc martwe połączenie jest wykryte najpóźniej po 40 s.
   - **Ponowne łączenie:**
     - backoff wykładniczy z jitterem: krok 0,5 s × 2^(n−1), limit 30 s, opóźnienie od połowy do całego kroku, nie mniej niż 0,5 s;
-    - zerowany po otwarciu połączenia;
     - po każdym otwarciu ponowne `logsSubscribe`;
+    - **`connected` dopiero po potwierdzeniu subskrypcji** (review PR #26): odpowiedź na `logsSubscribe` z `result` (id subskrypcji) daje `connected`, zeruje backoff i uruchamia podtrzymanie i nadrabianie. Odpowiedź z błędem albo brak odpowiedzi przez 10 s działa jak utrata połączenia (backoff, ponowne łączenie). Nie ma więc stanu „połączono” bez subskrypcji;
     - na zewnątrz tylko stany `connecting`, `connected`, `reconnecting` (z numerem próby) i `disconnected` oraz czas ostatniej wiadomości.
   - **Nadrabianie przerwy:**
     - przy uzbrojeniu najnowsza sygnatura twórcy (`getSignaturesForAddress`, `limit: 1`; przy błędzie RPC z ponowieniami) staje się dolną granicą;
-    - po każdym otwarciu połączenia (także pierwszym, co zamyka lukę między uzbrojeniem a subskrypcją) sygnatury `until` ostatnio widzianej (`confirmed`, strony po 1000 z `before`) przechodzą od najstarszej ze źródłem `catch-up`, bez logów (detektory użyją `getTransaction`, BUNNDLY-33);
+    - po każdym potwierdzeniu subskrypcji (także pierwszym, co zamyka lukę między uzbrojeniem a subskrypcją) sygnatury `until` granicy (`confirmed`, strony po 1000 z `before`) przechodzą od najstarszej ze źródłem `catch-up`, bez logów (detektory użyją `getTransaction`, BUNNDLY-33);
     - nieudane transakcje są pomijane;
-    - granica przesuwa się na najnowszą nadrobioną sygnaturę tylko wtedy, gdy w trakcie nie przyszedł nowszy log;
+    - **granica tylko z historii `confirmed`** (review PR #26): ustawiają ją wyłącznie linia bazowa i najnowszy wynik nadrabiania, nigdy log `processed`. Sygnatury z logu może jeszcze nie być w `confirmed` albo nie będzie jej wcale (blok odpadnie), a `getSignaturesForAddress` z `until` spoza historii nie zatrzymuje się (Andy sprawdził na prawdziwym RPC: pełna strona). Ze stronicowaniem poszłaby cała historia twórcy, a w BUNNDLY-34 mógłby z tego wyjść zakup starego tokenu. Podwójne przekazanie tej samej sygnatury i tak blokuje deduplikacja;
+    - **twarda granica czasu** (review PR #26):
+      - przechodzą tylko sygnatury z `blockTime` ≥ czas uzbrojenia − 60 s;
+      - `blockTime: null` traktujemy jak nową, bo stare transakcje zawsze ją mają;
+      - stronicowanie kończy się na stronie, która sięga starszych sygnatur (lista jest od najnowszej);
+      - najwyżej 10 stron (10 000 sygnatur);
     - bez granicy (RPC nie odpowiada od uzbrojenia) niczego nie przekazujemy, bo nie wiadomo, gdzie zaczyna się przerwa; przechodzą tylko logi na żywo.
   - **Klucz:** URL z kluczem zna tylko moduł. Zdarzenia nie niosą URL-a ani treści błędów; test sprawdza zserializowane zdarzenia, także gdy utworzenie gniazda rzuca wyjątek z URL-em. CSP już zezwala na `wss://*.helius-rpc.com`.

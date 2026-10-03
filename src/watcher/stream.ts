@@ -20,6 +20,15 @@ export const RECONNECT_MAX_MS = 30_000;
 export const DEDUP_SIZE = 2_000;
 /** Page size of the gap catch-up (`getSignaturesForAddress` allows up to 1000). */
 export const CATCH_UP_PAGE = 1_000;
+/** The catch-up never reads more pages than this. */
+export const CATCH_UP_MAX_PAGES = 10;
+/**
+ * The catch-up passes on only transactions from at most this long before arming (block
+ * time); older ones are never a new launch to buy (review of PR #26).
+ */
+export const CATCH_UP_MAX_AGE_MS = 60_000;
+/** No answer to `logsSubscribe` within this: treated as a lost connection. */
+export const SUBSCRIBE_TIMEOUT_MS = 10_000;
 
 export type StreamStatus = 'connecting' | 'connected' | 'reconnecting' | 'disconnected';
 
@@ -45,6 +54,8 @@ export type StreamEvent =
 export interface SignatureInfo {
   readonly signature: string;
   readonly err: unknown;
+  /** Unix seconds; null when the node does not know it yet (a new transaction). */
+  readonly blockTime: number | bigint | null;
 }
 
 /** `getSignaturesForAddress(creator, …)` at `confirmed`, newest first. May throw. */
@@ -110,10 +121,17 @@ export function startStream(deps: StreamDeps, options: StreamOptions): Stream {
 
   const seen = new Set<string>();
   const seenOrder: string[] = [];
-  /** Newest signature known from the chain (the catch-up starts after it). */
+  /**
+   * Newest signature of the `confirmed` history known to us: the baseline or the newest
+   * catch-up result, never a `processed` log. `until` with a signature that is not in the
+   * history does not stop, so a live log here would read the creator's whole past.
+   */
   let lastSeen: string | null = null;
-  let liveSinceCatchUp = 0;
   let baselineDone = false;
+  /** Oldest block time (Unix ms) the catch-up passes on. */
+  const notBefore = clock.now() - CATCH_UP_MAX_AGE_MS;
+  const isRecent = (info: SignatureInfo): boolean =>
+    info.blockTime === null || Number(info.blockTime) * 1000 >= notBefore;
 
   const status = (s: StreamStatus): void => {
     deps.emit({
@@ -154,26 +172,27 @@ export function startStream(deps: StreamDeps, options: StreamOptions): Stream {
   };
 
   /**
-   * Signatures after `lastSeen`, oldest first, exactly once. Without a baseline there is
-   * no safe lower bound: nothing is forwarded (D-036).
+   * Signatures after `lastSeen`, oldest first, exactly once, and only from block times
+   * at most 60 s before arming; at most 10 pages. Without a baseline there is no safe
+   * lower bound: nothing is forwarded (D-036).
    */
   const catchUp = async (gen: number): Promise<void> => {
     if (!baselineDone) await baseline();
     if (stopped || gen !== generation) return;
     const until = lastSeen;
     if (until === null) return; // the creator had no transactions yet: nothing missed
-    const startedLive = liveSinceCatchUp;
     const found: SignatureInfo[] = [];
     let before: string | undefined;
     try {
-      for (;;) {
+      for (let pages = 0; pages < CATCH_UP_MAX_PAGES; pages++) {
         const page = await deps.signatures({
           limit: CATCH_UP_PAGE,
           until,
           ...(before === undefined ? {} : { before }),
         });
         found.push(...page);
-        if (page.length < CATCH_UP_PAGE) break;
+        // Newest first: once a page reaches older transactions, the rest is older too.
+        if (page.length < CATCH_UP_PAGE || !page.every(isRecent)) break;
         before = page.at(-1)?.signature;
         if (before === undefined) break;
       }
@@ -182,11 +201,10 @@ export function startStream(deps: StreamDeps, options: StreamOptions): Stream {
     }
     if (isStopped()) return;
     for (const info of [...found].reverse()) {
-      if (info.err === null) pass(info.signature, 'catch-up', null);
+      if (info.err === null && isRecent(info)) pass(info.signature, 'catch-up', null);
     }
-    // Only move forward if no newer live log arrived meanwhile.
     const newest = found[0]?.signature;
-    if (newest !== undefined && liveSinceCatchUp === startedLive) lastSeen = newest;
+    if (newest !== undefined) lastSeen = newest;
   };
 
   const onMessage = (gen: number, data: unknown): void => {
@@ -203,6 +221,10 @@ export function startStream(deps: StreamDeps, options: StreamOptions): Stream {
       pendingKeepalive = null; // any answer, result or error, proves the connection lives
       return;
     }
+    if (message.id === SUBSCRIBE_ID) {
+      onSubscribed(gen, typeof message.result === 'number' ? message.result : null);
+      return;
+    }
     if (message.method !== 'logsNotification' || !isRecord(message.params)) return;
     const result = message.params.result;
     const value = isRecord(result) ? result.value : undefined;
@@ -211,8 +233,6 @@ export function startStream(deps: StreamDeps, options: StreamOptions): Stream {
     const logs = Array.isArray(value.logs)
       ? value.logs.filter((l): l is string => typeof l === 'string')
       : [];
-    liveSinceCatchUp += 1;
-    lastSeen = value.signature;
     pass(value.signature, 'logs', logs);
   };
 
@@ -236,6 +256,28 @@ export function startStream(deps: StreamDeps, options: StreamOptions): Stream {
     }
   };
 
+  /** Waits for the subscription of the socket `gen` to be confirmed. */
+  let subscribedGen = 0;
+  const isSubscribed = (gen: number): boolean => subscribedGen === gen;
+
+  /**
+   * Answer to `logsSubscribe`: a subscription id makes the stream `connected` and starts
+   * the keep-alive and the catch-up; an error is a lost connection (backoff, reconnect).
+   */
+  const onSubscribed = (gen: number, subscription: number | null): void => {
+    if (gen !== generation || stopped || isSubscribed(gen)) return;
+    const ws = socket;
+    if (subscription === null || ws === null) {
+      lost(gen);
+      return;
+    }
+    subscribedGen = gen;
+    attempt = 0;
+    status('connected');
+    void keepalive(gen, ws);
+    void catchUp(gen);
+  };
+
   const connect = (): void => {
     if (stopped) return;
     generation += 1;
@@ -253,8 +295,7 @@ export function startStream(deps: StreamDeps, options: StreamOptions): Stream {
     socket = ws;
     ws.addEventListener('open', () => {
       if (gen !== generation || stopped) return;
-      attempt = 0;
-      status('connected');
+      // Not `connected` yet: only a confirmed subscription is (review of PR #26).
       ws.send(
         JSON.stringify({
           jsonrpc: '2.0',
@@ -263,8 +304,9 @@ export function startStream(deps: StreamDeps, options: StreamOptions): Stream {
           params: [{ mentions: [options.creator] }, { commitment: 'processed' }],
         }),
       );
-      void keepalive(gen, ws);
-      void catchUp(gen);
+      void clock.sleep(SUBSCRIBE_TIMEOUT_MS).then(() => {
+        if (!isSubscribed(gen)) lost(gen);
+      });
     });
     ws.addEventListener('message', (event) => {
       onMessage(gen, event.data);
