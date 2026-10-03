@@ -103,6 +103,8 @@ export interface StreamOptions {
 export interface Stream {
   /** Closes the socket and stops reconnecting; emits `disconnected`. */
   stop(): void;
+  /** Last message from any socket (clock ms), or null: also keep-alive answers. */
+  lastMessageAt(): number | null;
 }
 
 /** Reconnect delay for attempt n (1, 2, …): exponential, jittered, 0,5 s … 30 s. */
@@ -353,6 +355,7 @@ export function startStream(deps: StreamDeps, options: StreamOptions): Stream {
   connect();
 
   return {
+    lastMessageAt: () => lastMessageAt,
     stop() {
       if (stopped) return;
       stopped = true;

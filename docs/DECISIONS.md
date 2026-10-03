@@ -818,3 +818,35 @@ Rejestr decyzji i rozbieżności z dokumentacją zewnętrzną. Nowe wpisy dopisu
     - prawdziwy zegar: poniżej 50 ms;
     - transakcja sprzed uzbrojenia: wpis `stale` w dzienniku, 0 zakupów i 0 `/order`;
     - one-shot, continuous, STOP bez rozbrojenia, DRY-RUN bez `/execute`, auto-lock i `WATCH_ARMED`, walidacja.
+
+## D-039: UI trybu B: uzbrojenie, stan połączenia, alarm i Wake Lock
+
+- Data: 2026-10-03
+- Zadanie: BUNNDLY-35. Uzupełnia D-032 (UI trybu A) i D-038 (tryb B w workerze).
+- Decyzja:
+  - **Jeden panel zakupu z przełącznikiem** „Tryb A: mint” i „Tryb B: obserwacja twórcy”. Wspólne są etykieta DRY-RUN/NA ŻYWO, przejście na tryb na żywo, podsumowanie, STOP, postęp i dziennik. Zakładka B otwiera się sama, gdy watcher jest uzbrojony.
+  - **Tryb B (`WatchPanel`):**
+    - pole adresu twórcy (base58, 32 bajty, inny niż mint SOL) i ostrzeżenie, gdy to adres z floty;
+    - wybór jednorazowy/ciągły jako ustawienie `mode`, zapisywany w sejfie jak przełącznik DRY-RUN. Tryb ciągły wymaga potwierdzenia (SPEC 3.3), a przy uzbrojonym watcherze wybór jest zablokowany, bo worker czyta `mode` przy `arm`;
+    - przycisk UZBRÓJ podaje, czego brakuje: zapisanej tabeli, klucza Helius (URL WS i HTTP), gotowego portfela, poprawnego adresu albo końca trwającego zakupu;
+    - w trybie na żywo uzbrojenie wymaga dialogu `role="alertdialog"` z kwotą i liczbą portfeli, a „Anuluj” nic nie wysyła. W DRY-RUN nie ma dialogu.
+  - **Stan z workera:** UI czyta `status.watch` (D-038). Każde zdarzenie `watch` (zmiana połączenia, wykrycie, weryfikacja) od razu odświeża status, więc baner i lista nie czekają na odpytywanie co 5 s. Czas ostatniej wiadomości pochodzi teraz z gniazda na bieżąco (`Stream.lastMessageAt()`), także z odpowiedzi na podtrzymanie.
+  - **`WatchGuard` w `App`, na każdym ekranie:**
+    - utrata połączenia przy uzbrojonym watcherze (`reconnecting` albo `disconnected`) daje czerwony baner `role="alert"` i dźwięk co 3 s;
+    - dźwięk milknie po powrocie połączenia albo po „Wycisz”, a następna utrata znowu dzwoni;
+    - przy uzbrojonym watcherze zamknięcie karty pyta przeglądarkę (`beforeunload`).
+  - **Dźwięk:** Web Audio, oscylator 880 Hz przez 0,4 s, bez plików i zasobów zewnętrznych (CSP bez zmian). `AudioContext` powstaje przy kliknięciu UZBRÓJ (polityka autoplay). Błąd urządzenia audio nie psuje strony: zostaje baner.
+  - **Wake Lock:**
+    - `navigator.wakeLock.request("screen")` przy uzbrojeniu;
+    - ponowne żądanie po `visibilitychange`, bo przeglądarka zwalnia blokadę przy ukryciu karty;
+    - zwolnienie po rozbrojeniu;
+    - brak API albo odmowa to stan, nie błąd: panel dopisuje „Ekran może zgasnąć”. `screen-wake-lock=(self)` już jest w `_headers` (D-025);
+    - Web Audio i Wake Lock są wstrzykiwane do `App` (`watchBrowser`), więc testy używają mocków.
+  - **Lista wykryć:**
+    - kolumny: czas, skrócony mint z kopiowaniem, źródło, ścieżka (log, transakcja, nadrabianie), `reactionMs`, weryfikacja i wynik;
+    - wynik to: `zakup #n`, „w kolejce”, „transakcja sprzed uzbrojenia, bez zakupu” albo komunikat błędu.
+  - **Postęp:** zakup z wykrycia używa tego samego widoku. Gdy przebieg należy do wykrycia, opis czasu brzmi „Od wykrycia…”, bo worker liczy czasy od wykrycia (D-038).
+  - **Weryfikacja w Chromium:**
+    - `page.routeWebSocket` nie przechwytuje gniazda otwartego w Web Workerze, bo Playwright podmienia `WebSocket` tylko w stronie. Sprawdziłem to osobną próbą;
+    - zamiast tego test uruchamia lokalny serwer WSS, a Chromium kieruje na niego prawdziwą nazwę `mainnet.helius-rpc.com` (`--host-resolver-rules`, certyfikat testowy). Aplikacja łączy się więc z tym samym URL-em i pod tym samym CSP;
+    - zapytania HTTP (RPC, Jupiter) podstawia `context.route`, jak w BUNNDLY-27.

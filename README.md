@@ -17,6 +17,7 @@ Solana Multi-Wallet Buyer: statyczna aplikacja SPA (bez backendu) do zarządzani
 - [Cloudflare Access: dostęp tylko dla Ciebie](#cloudflare-access-dostęp-tylko-dla-ciebie)
 - [Pierwsze kroki w aplikacji](#pierwsze-kroki-w-aplikacji)
 - [Zakup: tryb A](#zakup-tryb-a)
+- [Zakup: tryb B](#zakup-tryb-b)
 - [Dla programistów](#dla-programistów)
 
 ## Uruchomienie lokalne
@@ -122,7 +123,7 @@ Otwórz `https://<project>.pages.dev` w oknie prywatnym. Powinna się pokazać s
 Tryb A kupuje token od razu wszystkimi gotowymi portfelami (aktywny, max spend > 0, rezerwa co najmniej `MIN_RESERVE_SOL`). Każdy portfel kupuje za swój max spend, najwyżej raz.
 
 1. **Mint:** na ekranie **Flota** wpisz adres tokenu w polu **Adres tokenu (mint)** i kliknij **Pokaż saldo tokenu**. Aplikacja sprawdza, że to mint SPL albo Token-2022. Dopiero wtedy **Kupuj teraz** staje się aktywny.
-2. **Podsumowanie:** panel **Zakup (tryb A)** pokazuje mint, liczbę gotowych portfeli, łączną kwotę do wydania i tryb. Zakup używa ustawień zapisanych w sejfie, więc najpierw zapisz zmiany w tabeli.
+2. **Podsumowanie:** panel **Zakup**, zakładka **Tryb A: mint**, pokazuje mint, liczbę gotowych portfeli, łączną kwotę do wydania i tryb. Zakup używa ustawień zapisanych w sejfie, więc najpierw zapisz zmiany w tabeli.
 3. **DRY-RUN (domyślnie):** etykieta **DRY-RUN** przy panelu. Aplikacja pyta Jupitera o cenę (`/order`), sprawdza i podpisuje transakcje, ale **niczego nie wysyła**. Każdy portfel kończy jako „DRY-RUN” z wyceną i czasami. Tak sprawdzisz klucze, limity i salda bez wydawania środków.
 4. **Tryb na żywo:**
    - przełączasz przyciskiem **Przełącz na tryb na żywo…**;
@@ -141,6 +142,34 @@ Tryb A kupuje token od razu wszystkimi gotowymi portfelami (aktywny, max spend >
    - każda zmiana stanu każdego portfela z czasem, kwotami (lamporty i jednostki tokena, bez zaokrągleń), routerem, sygnaturą i powodem;
    - bez kluczy i podpisanych transakcji;
    - dziennik żyje do zamknięcia karty.
+
+## Zakup: tryb B
+
+Tryb B obserwuje portfel twórcy i kupuje sam, gdy ten portfel utworzy token. Etykieta DRY-RUN/NA ŻYWO, STOP, postęp i dziennik są te same co w trybie A.
+
+1. **Adres twórcy:** w panelu **Zakup** wybierz **Tryb B: obserwacja twórcy** i wpisz adres portfela twórcy (base58, 32 bajty). Gdy to adres z Twojej floty, panel to pokaże.
+2. **Po wykryciu:**
+   - **jednorazowy** (domyślny): pierwszy wykryty token rozbraja watcher, a zakup trwa dalej;
+   - **ciągły**: watcher zostaje uzbrojony i kupuje każdy kolejny token twórcy, jeden zakup po drugim. Włączenie wymaga potwierdzenia, a zmiana zapisuje się w pliku floty.
+3. **UZBRÓJ:**
+   - wymaga zapisanej tabeli, klucza Helius i co najmniej jednego gotowego portfela; przycisk mówi, czego brakuje;
+   - w trybie na żywo dialog podaje kwotę i liczbę portfeli („flota kupi automatycznie: do X SOL z N portfeli”) i wymaga potwierdzenia **Tak, uzbrój**; w DRY-RUN nic nie jest wysyłane, więc potwierdzenia nie ma;
+   - przed uzbrojeniem aplikacja czyta salda portfeli, a potem odświeża je co 30 s, żeby zakup po wykryciu nie czekał na sieć.
+4. **Stan połączenia:** „Łączenie…”, „Połączono”, „Ponowne łączenie (próba n)” albo „Rozłączono”, z czasem od ostatniej wiadomości z Helius.
+5. **Alarm:** utrata połączenia przy uzbrojonym watcherze pokazuje czerwony baner i co 3 s gra krótki dźwięk, dopóki połączenie nie wróci albo nie klikniesz **Wycisz**. Po powrocie połączenia aplikacja nadrabia przerwę: sprawdza transakcje twórcy z czasu rozłączenia.
+6. **Ekran i karta:**
+   - uzbrojony watcher prosi przeglądarkę, żeby ekran nie gasł (Wake Lock), i ponawia prośbę po powrocie do karty. Gdy przeglądarka odmówi, panel pokaże „Ekran może zgasnąć”: wyłącz wtedy usypianie komputera;
+   - **nie zamykaj ani nie przeładowuj karty**, dopóki watcher jest uzbrojony: obserwacja i zakup działają tylko w niej, a przeglądarka zapyta przed zamknięciem;
+   - uzbrojony watcher wstrzymuje automatyczną blokadę; ręczna blokada wymaga wcześniejszego **ROZBRÓJ**.
+7. **Wykrycia:** tabela pokazuje czas, mint (skrócony, z przyciskiem **Kopiuj**), źródło (pump.fun, LaunchLab, DBC, InitializeMint), ścieżkę, czas reakcji i weryfikację:
+   - ścieżka **log**: mint odczytany od razu z logu transakcji (pump.fun), zakup rusza w kilka milisekund;
+   - ścieżka **transakcja**: mint odczytany z pełnej transakcji, gdy sieć ją potwierdzi (zwykle po kilkuset ms; LaunchLab, DBC, inne tokeny);
+   - **nadrabianie**: transakcja z przerwy w połączeniu;
+   - **zweryfikowane**: pełna transakcja potwierdziła mint z logu;
+   - „transakcja sprzed uzbrojenia”: stary token twórcy, bez zakupu.
+8. **Czas reakcji** to czas od odebrania logu do wysłania pierwszego zapytania do Jupitera; trafia też do dziennika. Postęp zakupu z wykrycia liczy czasy od wykrycia.
+9. **ROZBRÓJ:** zamyka połączenie z Helius i usuwa wykrycia czekające w kolejce. Trwający zakup zatrzymuje tylko **STOP**.
+10. **Limity Jupitera przy wielu portfelach:** każdy portfel to jedno zapytanie `/order`. Bez klucza (Keyless) aplikacja wysyła najwyżej 27 zapytań na minutę, na planie Free 54. Przy 30 portfelach Keyless kupi więc pierwszymi 27 portfelami od razu, a pozostałymi po upływie minuty. Do szybkiego zakupu całą flotą potrzebny jest wyższy plan i jego klucz.
 
 ## Dla programistów
 

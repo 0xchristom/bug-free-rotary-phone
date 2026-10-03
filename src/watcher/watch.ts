@@ -229,8 +229,11 @@ export function startWatch(deps: WatchDeps, options: WatchOptions): Watch {
   let stream: Stream | null = null;
 
   const stopStream = (): void => {
-    stream?.stop();
+    if (stream === null) return;
+    const last = stream.lastMessageAt();
+    stream.stop();
     stream = null;
+    connection = { ...connection, lastMessageAt: last ?? connection.lastMessageAt };
   };
 
   const onDetection = (d: Detection): void => {
@@ -358,7 +361,7 @@ export function startWatch(deps: WatchDeps, options: WatchOptions): Watch {
       armed,
       connection: connection.status,
       attempt: connection.attempt,
-      lastMessageAt: connection.lastMessageAt,
+      lastMessageAt: stream?.lastMessageAt() ?? connection.lastMessageAt,
       detections: entries.map((e) => e.detection),
       queued: queue.map((e) => e.detection.mint),
     }),

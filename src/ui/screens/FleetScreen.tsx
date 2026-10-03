@@ -253,6 +253,31 @@ export function FleetScreen({
     await refresh();
   };
 
+  /** One-shot or continuous (mode B): saved like the DRY-RUN switch. */
+  const setWatchMode = async (mode: typeof global.mode): Promise<void> => {
+    const result = await client.request({
+      type: 'saveSettings',
+      settings: {
+        maxSpend: info.settings.maxSpend,
+        active: info.settings.active,
+        global: { ...global, mode },
+      },
+    });
+    setPhase({
+      kind: 'unsaved',
+      fileText: result.fileText,
+      fleetName: result.info.fleetName,
+      note:
+        mode === 'continuous'
+          ? 'Tryb ciągły jest zapisany w sejfie.'
+          : 'Tryb jednorazowy jest zapisany w sejfie.',
+      savedNote: 'z nowym trybem obserwacji',
+      saving: false,
+    });
+    await refresh();
+  };
+  const fleetAddresses = useMemo(() => info.wallets.map((w) => w.address), [info.wallets]);
+
   const saveTable = async (): Promise<void> => {
     if (!tableDirty || tableInvalid || phase.kind === 'unsaved' || phase.kind === 'adding') return;
     const maxSpend = info.wallets.flatMap((w) => {
@@ -400,6 +425,10 @@ export function FleetScreen({
         blocked={buyBlocked}
         plan={effectiveJupiterPlan(global, info.apiKeys.jupiter)}
         onDryRun={setDryRun}
+        fleetAddresses={fleetAddresses}
+        apiKeys={info.apiKeys}
+        watchMode={global.mode}
+        onWatchMode={setWatchMode}
       >
         {operationsLog && (
           <OperationsLogPanel log={operationsLog} storage={storage} decimals={buyDecimals} />
