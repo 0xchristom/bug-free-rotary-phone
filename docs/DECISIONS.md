@@ -677,3 +677,35 @@ Rejestr decyzji i rozbieżności z dokumentacją zewnętrzną. Nowe wpisy dopisu
 - Zadanie: poprawka wymagana w review PR #22 (BUNNDLY-23)
 - Kontekst: D-030 (sygnatura nieznana: `getTransaction` każdego kandydata z historii portfela). Około 10% transakcji na mainnecie to v1 (D-026). Z `maxSupportedTransactionVersion: 0` Helius odpowiada wtedy błędem -32015. Sprawdzenie RFQ nie mogło się rozstrzygnąć i kończyło jako UNKNOWN, nawet gdy nasza transakcja (v0) leżała obok.
 - Decyzja: `getTransaction` w sprawdzaniu łańcucha używa `maxSupportedTransactionVersion: 1`. kit 8.4 dekoduje v1 poprawnie (Andy sprawdził na prawdziwej transakcji). Kontrole przed podpisem nadal przyjmują tylko v0 (D-028). Test: fałszywe RPC odpowiada -32015 dla zapytania z wersją 0.
+
+## D-035: Świeży mint: HTTP 500 jak „brak trasy” i bramka mintu
+
+- Data: 2026-10-02
+- Zadanie: BUNNDLY-38. Uzupełnia D-030 i zastępuje jego okno „no route” liczone osobno dla każdego portfela.
+- Kontekst: pomiar Andy'ego (BUNNDLY-30) na prawdziwych tokenach pump.fun, czas od logu `processed`:
+  - +2 ms: HTTP 500 „Something unexpected occurred”;
+  - do ok. +2 s: 400 „Failed to get quotes”;
+  - od +0,3 do +3 s: 200 z trasą;
+  - mint, którego nie ma na łańcuchu, daje zawsze 500.
+
+  Wcześniej 500 zużywał próby: 3 w 0,3–0,6 s, potem MAX_ATTEMPTS. Każdy portfel ponawiał osobno, więc przy Keyless pierwsze 27 zapytań bez trasy wyczerpywało budżet na minutę.
+
+- Decyzja:
+  - **Klasyfikacja:** `SERVER_ERROR` z `/order` idzie tą samą drogą co `NO_ROUTE`: okno `noRouteWindowMs`, backoff 500 ms → 2 s, bez zużywania prób. Po oknie portfel kończy jako FAILED `NO_ROUTE` z ostatnim kodem w `detail`. To bezpieczne, bo przed `/execute` nic nie zostało wysłane. Klient Jupitera (D-026) bez zmian. `TIMEOUT` i `NETWORK` dalej zużywają próby.
+  - **Bramka mintu (jedna na przebieg):**
+    - zamknięta bramka: w locie najwyżej jedno `/order` (sonda), a pozostałe portfele czekają w QUEUED bez zapytań i bez prób;
+    - sonda, która trafia na brak trasy, czeka backoff i idzie jako pierwsza w kolejce;
+    - zapytanie, które było już w locie, gdy bramka się zamknęła, wraca na koniec kolejki;
+    - odpowiedź 200 z trasą (także z błędem budowy dla danego portfela) otwiera bramkę, a reszta rusza w kolejności kolejki przez limiter;
+    - kolejny brak trasy albo 500 zamyka bramkę ponownie.
+  - **Bramka startuje zamknięta:** pierwsze `/order` przebiegu jest sondą.
+    - Zadanie mówi, że bramkę zamyka pierwszy brak trasy. Wtedy jednak cała seria startowa (do budżetu limitera) poszłaby, zanim wróci pierwsza odpowiedź, i zużyłaby budżet Keyless na zapytania bez trasy, czyli dokładnie problem z zadania.
+    - Kryterium „łącznie co najwyżej 30 + liczba sond” też da się spełnić tylko tak.
+    - Koszt w trybie A dla tokenu z trasą: jedna odpowiedź `/order` (ok. 0,1–0,3 s) opóźnienia dla portfeli 2…N.
+  - **Okno** (decyzja z review PR #25):
+    - pierwsze okno, gdy bramka jeszcze nigdy nie była otwarta, liczy się od pierwszego braku trasy w przebiegu;
+    - gdy bramka była już choć raz otwarta, każde ponowne zamknięcie zaczyna nowe okno `noRouteWindowMs`, liczone od tego zamknięcia. Pojedynczy 500 w długim przebiegu nie kończy więc czekających;
+    - czas, w którym gotowa sonda czeka na limiter `/order`, nie liczy się do okna (początek okna przesuwa się o ten czas). Bez tego przy Keyless sonda czekała ok. 60 s na miejsce w limiterze, a jej jedna odpowiedź 500 kończyła okno i wszystkich czekających. Wykryła to symulacja z losowym 5% 503;
+    - po końcu okna wszystkie czekające portfele kończą jako FAILED `NO_ROUTE` bez dalszych zapytań. Dotyczy to też sytuacji, w której odpowiedź sondy przyszła już po końcu okna; sonda w backoffie nie wysyła już zapytania.
+  - **STOP przy zamkniętej bramce:** czekające portfele i sonda w backoffie od razu dostają SKIPPED `STOPPED`, bez nowych `/order`.
+- Testy: scenariusz świeżego mintu; stałe 500; STOP; ponowne zamknięcie z nowym oknem; trasa znika na stałe po otwarciu; sonda w locie przez koniec okna; sonda czekająca na limiter Keyless. Symulacja (5000 ziaren, losowe 5% 503): 0 portfeli FAILED `NO_ROUTE`.

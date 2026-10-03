@@ -20,7 +20,7 @@ export type Decision =
   | { readonly action: 'requeue'; readonly countAttempt: boolean; readonly detail: string }
   | { readonly action: 'fail'; readonly reason: FailReason; readonly detail: string | null }
   | { readonly action: 'skip'; readonly reason: SkipReason; readonly detail: string | null }
-  /** "No route" from `/order`: retried inside the no-route window without using attempts. */
+  /** No route yet (400 "no route" or 500): the mint gate, inside its window, no attempts. */
   | { readonly action: 'noRoute'; readonly detail: string }
   /**
    * It may have been sent: check the chain. Landed → CONFIRMED; landed with an error or
@@ -28,11 +28,13 @@ export type Decision =
    */
   | { readonly action: 'check'; readonly detail: string };
 
-const RETRY_ORDER: ReadonlySet<JupiterFailureCode> = new Set([
-  'SERVER_ERROR',
-  'TIMEOUT',
-  'NETWORK',
-]);
+const RETRY_ORDER: ReadonlySet<JupiterFailureCode> = new Set(['TIMEOUT', 'NETWORK']);
+
+/**
+ * "No route yet" (D-035): for a fresh mint Jupiter first answers HTTP 500, then 400
+ * "Failed to get quotes", then a route. Both go to the run's mint gate, without attempts.
+ */
+const NO_ROUTE_YET: ReadonlySet<JupiterFailureCode> = new Set(['NO_ROUTE', 'SERVER_ERROR']);
 
 /** `/order` gave no usable answer. Nothing was sent, so a retry is always safe. */
 export function afterOrderFailure(failure: JupiterFailure): Decision {
@@ -40,7 +42,7 @@ export function afterOrderFailure(failure: JupiterFailure): Decision {
   if (failure.code === 'RATE_LIMITED') {
     return { action: 'requeue', countAttempt: false, detail: failure.code };
   }
-  if (failure.code === 'NO_ROUTE') return { action: 'noRoute', detail: failure.code };
+  if (NO_ROUTE_YET.has(failure.code)) return { action: 'noRoute', detail: failure.code };
   if (RETRY_ORDER.has(failure.code)) {
     return { action: 'requeue', countAttempt: true, detail: failure.code };
   }

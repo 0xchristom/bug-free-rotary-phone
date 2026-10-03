@@ -309,15 +309,19 @@ describe('DRY-RUN', () => {
     const { jupiter, finish } = setup({ n: 60, dryRun: true, plan: 'free' }); // budget 54
     await finish();
     const starts = jupiter.calls.filter((c) => c.kind === 'order').map((c) => c.start - T0);
-    expect(starts.filter((t) => t === 0)).toHaveLength(54);
-    expect(Math.min(...starts.filter((t) => t > 0))).toBe(60_000);
+    // the probe first (D-035), then the rest of the window budget right after its answer
+    expect(starts.filter((t) => t === 0)).toHaveLength(1);
+    expect(starts.filter((t) => t === 100)).toHaveLength(53);
+    expect(starts.filter((t) => t < 60_000)).toHaveLength(54);
+    expect(Math.min(...starts.filter((t) => t > 100))).toBe(60_000);
   });
 });
 
 describe('STOP', () => {
   it('empties the queue and starts no new /order; sent transactions finish', async () => {
     const { clock, jupiter, events, run, finish } = setup({ n: 40, plan: 'keyless' }); // 27 at once
-    await clock.runUntil(T0 + 150); // all 27 quoted, executing
+    // the probe at 0, the other 26 at 100 (D-035); at 250 all 27 are quoted and executing
+    await clock.runUntil(T0 + 250);
     run.stop();
     const stopAt = clock.now();
     const s = await finish();
