@@ -19,6 +19,9 @@ import {
   createLandingChecker,
   createLandingRpc,
   createResilientTransport,
+  createWatchRpc,
+  signatureReader,
+  transactionReader,
   fetchSolBalances,
   checkHeliusHttp,
   checkHeliusWs,
@@ -27,6 +30,7 @@ import {
   type WebSocketFactory,
 } from '../chain/index.ts';
 import { startRun, type ExecutorEvent, type ExecutorRun } from '../executor/executor.ts';
+import { startWatch, type BuyTrigger, type Watch } from '../watcher/watch.ts';
 import type { LandingChecker } from '../executor/landing.ts';
 import { createVerifier, type TokenReader } from '../executor/verify.ts';
 import { ExecuteLimiter, OrderLimiter, realClock, type LimiterClock } from '../executor/limiter.ts';
@@ -84,6 +88,7 @@ import type {
   VaultResponseEnvelope,
   VaultResultMap,
   VaultStatus,
+  WorkerEvent,
 } from './protocol.ts';
 
 export { DEFAULT_AUTO_LOCK_MS } from './protocol.ts';
@@ -116,12 +121,21 @@ export interface ExecutorOptions {
   readonly tokens?: TokenReader;
 }
 
+/** Mode B dependencies; the socket comes from `net.createWebSocket`, the clock from `executor`. */
+export interface WatchOptions {
+  /** High-resolution time for `reactionMs`; `performance.now()` by default. */
+  readonly perfNow?: () => number;
+  readonly random?: () => number;
+  readonly balanceRefreshMs?: number;
+}
+
 export interface VaultOptions {
   /** Clock in ms; injectable for tests. */
   readonly now?: () => number;
   readonly chain?: ChainOptions;
   readonly net?: NetOptions;
   readonly executor?: ExecutorOptions;
+  readonly watch?: WatchOptions;
   /**
    * Inactivity before auto-lock. Overrides the fleet's `autoLockMinutes` setting (tests);
    * without it the setting applies, and 15 minutes while locked.
@@ -186,8 +200,8 @@ export interface VaultHandler {
     request: OrderSignRequest,
     order: JupiterOrder,
   ): Promise<SignOrderResult>;
-  /** Executor progress (BUNNDLY-21). Returns the unsubscribe function. */
-  onEvent(listener: (event: ExecutorEvent) => void): () => void;
+  /** Executor and watcher progress (BUNNDLY-21, BUNNDLY-34). Returns the unsubscribe function. */
+  onEvent(listener: (event: WorkerEvent) => void): () => void;
   /** Locks if idle for longer than the auto-lock time and not armed. Returns true if it locked. */
   checkAutoLock(): boolean;
   /** For tests only. */
@@ -352,10 +366,13 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
   let balances = new Map<number, bigint>();
   let buy: { readonly run: ExecutorRun; status: BuyStatus } | null = null;
   let nextRunId = 1;
-  const listeners = new Set<(event: ExecutorEvent) => void>();
+  const listeners = new Set<(event: WorkerEvent) => void>();
   /** Limiters live across runs, so a new buy respects the window of the last one. */
   const limiters = new Map<string, { order: OrderLimiter; execute: ExecuteLimiter }>();
-  const isArmed = (): boolean => buy !== null;
+  /** The last arming of this session (mode B); kept after it disarms, for its status. */
+  let watch: Watch | null = null;
+  const watchActive = (): boolean => watch?.active() ?? false;
+  const isArmed = (): boolean => buy !== null || watchActive();
   let lastActivity = now();
   let tail: Promise<unknown> = Promise.resolve();
 
@@ -368,6 +385,7 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
     unlocked = null;
     session += 1;
     balances = new Map();
+    watch = null; // never active here: lock is refused while armed
   };
 
   const install = (opened: OpenedKeystore): void => {
@@ -381,6 +399,7 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
     armed: isArmed(),
     info: unlocked ? infoOf(unlocked) : null,
     buy: buy === null ? null : { ...buy.status },
+    watch: watch?.status() ?? null,
   });
 
   const requireUnlocked = (): UnlockedVault => {
@@ -516,7 +535,7 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
     };
   };
 
-  const emit = (event: ExecutorEvent): void => {
+  const emit = (event: WorkerEvent): void => {
     for (const listener of listeners) listener(event);
   };
 
@@ -538,15 +557,8 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
     return pair;
   };
 
-  /** startBuy (BUNNDLY-21): runs the executor in the worker; progress goes out as events. */
-  const startBuy = (rawMint: unknown): BuyStatus => {
-    const vault = requireUnlocked();
-    if (buy !== null) throw new AppError('BUY_RUNNING');
-    const mint = str(rawMint).trim();
-    if (!/^[1-9A-HJ-NP-Za-km-z]{32,44}$/u.test(mint) || mint === SOL_MINT) {
-      throw new AppError('INVALID_MINT_ADDRESS');
-    }
-    const { global } = vault.settings;
+  /** Active wallets with a max spend, with their last read balance. */
+  const buyWallets = (vault: UnlockedVault) => {
     const inactive = new Set(vault.settings.active.filter((a) => !a.active).map((a) => a.index));
     const spend = new Map(vault.settings.maxSpend.map((m) => [m.index, m.lamports]));
     const wallets = vault.publicWallets
@@ -558,13 +570,34 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
         balance: balances.get(w.index) ?? null,
       }));
     if (wallets.length === 0) throw new AppError('NO_WALLETS_TO_BUY');
+    // Live mode never retries without the chain check, which needs the RPC.
+    if (
+      !vault.settings.global.dryRun &&
+      rpcUrlOf(vault.apiKeys) === null &&
+      options.executor?.landing === undefined
+    ) {
+      throw new AppError('HELIUS_KEY_MISSING');
+    }
+    return wallets;
+  };
+
+  /**
+   * startBuy (BUNNDLY-21): runs the executor in the worker; progress goes out as events.
+   * Mode B passes the detection (`trigger`): times count from it and the first `/order`
+   * is reported back for `reactionMs` (BUNNDLY-34).
+   */
+  const startBuy = (rawMint: unknown, trigger: BuyTrigger | null = null): BuyStatus => {
+    const vault = requireUnlocked();
+    if (buy !== null) throw new AppError('BUY_RUNNING');
+    const mint = str(rawMint).trim();
+    if (!/^[1-9A-HJ-NP-Za-km-z]{32,44}$/u.test(mint) || mint === SOL_MINT) {
+      throw new AppError('INVALID_MINT_ADDRESS');
+    }
+    const { global } = vault.settings;
+    const wallets = buyWallets(vault);
     const live = !global.dryRun;
     const injected = options.executor;
     const rpcUrl = rpcUrlOf(vault.apiKeys);
-    // Live mode never retries without the chain check, which needs the RPC.
-    if (live && rpcUrl === null && injected?.landing === undefined) {
-      throw new AppError('HELIUS_KEY_MISSING');
-    }
     const transport =
       rpcUrl === null
         ? null
@@ -605,12 +638,23 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
       }
     };
     const net = options.net ?? {};
-    const jupiter =
+    const client =
       options.executor?.jupiter ??
       createJupiterClient({
         apiKey: vault.apiKeys.jupiter ?? null,
         fetch: net.fetch ?? ((url, init) => globalThis.fetch(url, init)),
       });
+    const jupiter: JupiterClient =
+      trigger === null
+        ? client
+        : {
+            getOrder: (request) => {
+              const answer = client.getOrder(request); // the request is on its way
+              trigger.onFirstOrder();
+              return answer;
+            },
+            execute: (request) => client.execute(request),
+          };
     // Without a Jupiter key the API applies Keyless limits, not the plan in the settings.
     const effective = effectiveJupiterPlan(global, vault.apiKeys.jupiter !== undefined);
     const pair = limitersFor(effective.plan, effective.orderRpm);
@@ -635,6 +679,7 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
         noRouteWindowMs: global.noRouteWindowMs,
         noRouteBackoffMinMs: global.noRouteBackoffMinMs,
         noRouteBackoffMaxMs: global.noRouteBackoffMaxMs,
+        ...(trigger === null ? {} : { triggeredAt: trigger.detectedAt }),
       },
     );
     const current = {
@@ -645,9 +690,71 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
     const finish = (): void => {
       if (buy === current) buy = null;
       touch(); // the user was busy with the buy: the auto-lock timer starts now
+      watch?.buyFinished(); // the next queued detection, if any
     };
     run.done.then(finish, finish);
     return { ...current.status };
+  };
+
+  /**
+   * arm (BUNNDLY-34): watch the creator; each detection starts a buy (D-038). The
+   * balances are read first: a buy without them skips every wallet (BALANCE_UNKNOWN), and
+   * a detection must not wait for the RPC.
+   */
+  const arm = async (rawCreator: unknown): Promise<VaultStatus> => {
+    const vault = requireUnlocked();
+    if (buy !== null) throw new AppError('BUY_RUNNING');
+    if (watchActive()) throw new AppError('WATCH_ARMED');
+    const creator = str(rawCreator).trim();
+    let bytes: Uint8Array | null;
+    try {
+      bytes = base58.decode(creator);
+    } catch {
+      bytes = null;
+    }
+    if (bytes?.length !== 32 || creator === SOL_MINT) {
+      throw new AppError('INVALID_CREATOR_ADDRESS');
+    }
+    const { apiKeys } = vault;
+    const wsUrl =
+      apiKeys.heliusWsUrl ?? (apiKeys.helius === undefined ? null : heliusWsUrl(apiKeys.helius));
+    const rpcUrl = rpcUrlOf(apiKeys);
+    if (wsUrl === null || rpcUrl === null) throw new AppError('HELIUS_KEY_MISSING');
+    buyWallets(vault); // the same checks as a buy, now rather than at the detection
+    await prepareRefresh(undefined)();
+    const rpc = createWatchRpc(
+      createResilientTransport({
+        primary: createTransport(rpcUrl),
+        fallback: createTransport(PUBLIC_RPC_URL),
+        ...(options.chain?.sleep ? { sleep: options.chain.sleep } : {}),
+      }),
+    );
+    const net = options.net ?? {};
+    const armSession = session;
+    watch = startWatch(
+      {
+        createWebSocket: net.createWebSocket ?? ((url) => new WebSocket(url)),
+        signatures: signatureReader(rpc, creator),
+        getTransaction: transactionReader(rpc),
+        clock: options.executor?.clock ?? realClock,
+        perfNow: options.watch?.perfNow ?? (() => performance.now()),
+        random: options.watch?.random ?? Math.random,
+        refreshBalances: () =>
+          session === armSession ? prepareRefresh(undefined)() : Promise.resolve(),
+        isBuying: () => buy !== null,
+        startBuy: (trigger) => startBuy(trigger.mint, trigger).runId,
+        emit,
+      },
+      {
+        url: wsUrl,
+        creator,
+        mode: vault.settings.global.mode,
+        ...(options.watch?.balanceRefreshMs === undefined
+          ? {}
+          : { balanceRefreshMs: options.watch.balanceRefreshMs }),
+      },
+    );
+    return status();
   };
 
   const dispatch = async (
@@ -661,12 +768,11 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
     // Reading the status or previewing a file is not user activity on the fleet.
     if (request.type !== 'status' && request.type !== 'preview') touch();
 
-    // Keys must stay while a buy signs: no lock and no other fleet until it ends.
-    if (
-      buy !== null &&
-      (request.type === 'create' || request.type === 'unlock' || request.type === 'lock')
-    ) {
-      throw new AppError('BUY_RUNNING');
+    // Keys must stay while a buy signs or the watcher may start one: no lock and no other
+    // fleet until it ends or is disarmed.
+    if (request.type === 'create' || request.type === 'unlock' || request.type === 'lock') {
+      if (buy !== null) throw new AppError('BUY_RUNNING');
+      if (watchActive()) throw new AppError('WATCH_ARMED');
     }
 
     switch (request.type) {
@@ -733,6 +839,11 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
       }
       case 'startBuy':
         return startBuy(request.mint);
+      case 'arm':
+        return await arm(request.creator);
+      case 'disarm':
+        watch?.disarm();
+        return status();
       case 'stop':
         if (buy !== null) {
           buy.status = { ...buy.status, accepting: false };

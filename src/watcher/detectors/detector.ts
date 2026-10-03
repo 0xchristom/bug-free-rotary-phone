@@ -23,6 +23,8 @@ export interface Detection {
   readonly signature: string;
   /** Known from the transaction; null on the fast path. */
   readonly slot: bigint | null;
+  /** Block time (Unix s) from the transaction; null on the fast path (a live log is new). */
+  readonly blockTime: number | null;
   /** When the signature reached the worker (`performance.now()`), for the reaction time. */
   readonly receivedAt: number;
 }
@@ -54,6 +56,8 @@ export const TRANSACTION_TIMEOUT_MS = 15_000;
 
 export interface Detector {
   onSignature(input: SignatureInput): void;
+  /** Disarm: no more `getTransaction` and no more events. */
+  stop(): void;
   /** Resolves when every slow path started so far has finished. */
   idle(): Promise<void>;
 }
@@ -74,9 +78,11 @@ export function createDetector(
   const timeoutMs = options.timeoutMs ?? TRANSACTION_TIMEOUT_MS;
   const detected = new Set<string>();
   const pending = new Set<Promise<void>>();
+  let stopped = false;
+  const isStopped = (): boolean => stopped;
 
   const detect = (d: Detection): void => {
-    if (detected.has(d.mint)) return;
+    if (isStopped() || detected.has(d.mint)) return;
     detected.add(d.mint);
     deps.emit({ kind: 'detection', detection: d });
   };
@@ -84,12 +90,14 @@ export function createDetector(
   const slowPath = async (input: SignatureInput, fastMints: readonly string[]): Promise<void> => {
     const deadline = deps.clock.now() + timeoutMs;
     for (;;) {
+      if (isStopped()) return;
       let answer: unknown;
       try {
         answer = await deps.getTransaction(input.signature);
       } catch {
         answer = null; // RPC trouble: ask again
       }
+      if (isStopped()) return;
       const tx = answer === null ? null : asTransaction(answer);
       if (tx !== null) {
         const found = detectFromTransaction(tx, options.watched);
@@ -101,6 +109,8 @@ export function createDetector(
             path: input.source === 'catch-up' ? 'catch-up' : 'transaction',
             signature: input.signature,
             slot: BigInt(tx.slot),
+            blockTime:
+              tx.blockTime === null || tx.blockTime === undefined ? null : Number(tx.blockTime),
             receivedAt: input.receivedAt,
           });
         }
@@ -124,6 +134,7 @@ export function createDetector(
 
   return {
     onSignature(input) {
+      if (stopped) return;
       const fast = input.logs === null ? [] : detectFromLogs(input.logs, options.watched);
       const fastMints: string[] = [];
       for (const f of fast) {
@@ -135,6 +146,7 @@ export function createDetector(
           path: 'log',
           signature: input.signature,
           slot: null,
+          blockTime: null,
           receivedAt: input.receivedAt,
         });
       }
@@ -142,6 +154,9 @@ export function createDetector(
         pending.delete(p);
       });
       pending.add(p);
+    },
+    stop() {
+      stopped = true;
     },
     async idle() {
       while (pending.size > 0) await Promise.all([...pending]);

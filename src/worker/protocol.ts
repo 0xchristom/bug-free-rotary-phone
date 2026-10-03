@@ -6,6 +6,7 @@
  * the encrypted file text and public data only; errors carry only a code (D-008).
  */
 import type { ExecutorEvent } from '../executor/executor.ts';
+import type { WatchEvent, WatchStatus } from '../watcher/watch.ts';
 import type {
   ApiKeyName,
   ConnectionReport,
@@ -77,6 +78,13 @@ export type VaultRequest =
   | { readonly type: 'startBuy'; readonly mint: string }
   /** STOP: no new `/order`; transactions already sent are followed to the end. */
   | { readonly type: 'stop' }
+  /**
+   * Mode B (SPEC 3.4 B, BUNNDLY-34): watch `creator` and buy every token it creates, by
+   * the `mode` setting. While armed: no auto-lock and no manual lock.
+   */
+  | { readonly type: 'arm'; readonly creator: string }
+  /** Closes the socket and empties the detection queue; a running buy goes on. */
+  | { readonly type: 'disarm' }
   /** User activity in the UI; resets the auto-lock timer. */
   | { readonly type: 'activity' };
 
@@ -141,11 +149,13 @@ export interface BuyStatus {
 
 export interface VaultStatus {
   readonly locked: boolean;
-  /** A buy is running (auto-lock and lock suspended). */
+  /** A buy is running or the watcher is armed (auto-lock and lock suspended). */
   readonly armed: boolean;
   readonly info: VaultInfo | null;
   /** The running buy, if any. */
   readonly buy: BuyStatus | null;
+  /** The last arming of this session (mode B), also after it disarmed; null if none. */
+  readonly watch: WatchStatus | null;
 }
 
 /** Encrypted keystore file text to save, plus the new public view. */
@@ -167,6 +177,8 @@ export interface VaultResultMap {
   readonly addWallets: VaultFileResult;
   readonly startBuy: BuyStatus;
   readonly stop: VaultStatus;
+  readonly arm: VaultStatus;
+  readonly disarm: VaultStatus;
   readonly activity: VaultStatus;
 }
 
@@ -183,12 +195,15 @@ export interface VaultProgressEnvelope {
   readonly progress: number;
 }
 
+/** Everything the worker pushes on its own: executor progress and the watcher (mode B). */
+export type WorkerEvent = ExecutorEvent | WatchEvent;
+
 /**
- * Executor progress, pushed by the worker without a request id (BUNNDLY-21). Carries no
- * keys and no signed transactions.
+ * Executor and watcher progress, pushed by the worker without a request id (BUNNDLY-21,
+ * BUNNDLY-34). Carries no keys, no signed transactions and no URLs.
  */
 export interface VaultEventEnvelope {
-  readonly event: ExecutorEvent;
+  readonly event: WorkerEvent;
 }
 
 export type VaultResponseEnvelope =

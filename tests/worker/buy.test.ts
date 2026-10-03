@@ -88,7 +88,9 @@ async function setup(o: Setup = {}) {
     autoLockMs: 60_000,
   });
   const events: ExecutorEvent[] = [];
-  h.onEvent((e) => events.push(e));
+  h.onEvent((e) => {
+    if (e.kind !== 'watch') events.push(e);
+  });
   await h.handle({
     type: 'create',
     fleetName: 'Zakup',
@@ -394,7 +396,9 @@ describe('events over the message port', () => {
     attachVaultHandler(port(1), handler);
     const client = createVaultClient(port(0));
     const received: ExecutorEvent[] = [];
-    const off = client.onEvent((e) => received.push(e));
+    const off = client.onEvent((e) => {
+      if (e.kind !== 'watch') received.push(e);
+    });
     await client.request({ type: 'create', fleetName: 'Port', walletCount: 1, password: PASSWORD });
     const base = defaultFleetSettings();
     await client.request({

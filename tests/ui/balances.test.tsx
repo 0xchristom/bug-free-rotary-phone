@@ -115,7 +115,7 @@ describe('SOL balance refresh on the fleet screen', () => {
     );
     await tick(REFRESH_MS);
     expect(screen.getByRole('alert').textContent).toBe(
-      'Brak klucza API Helius. Dodaj go w Ustawieniach, aby odczytać salda.',
+      'Brak klucza API Helius. Dodaj go w Ustawieniach: jest potrzebny do sald, zakupu na żywo i obserwacji twórcy.',
     );
   });
 });

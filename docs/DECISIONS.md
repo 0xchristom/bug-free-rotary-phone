@@ -768,3 +768,53 @@ Rejestr decyzji i rozbieżności z dokumentacją zewnętrzną. Nowe wpisy dopisu
   - **Jeden mint raz na uzbrojenie**, niezależnie od tego, która ścieżka zobaczy go pierwsza.
   - **Fixtures:** oczekiwany mint to token z `postTokenBalances`, którego nie było w `preTokenBalances`, a nie wynik detektora. Przypadek „nie podpisujący” to prawdziwe tworzenie sprawdzane z obserwowanym adresem, który nie podpisał. W fixtures nie ma `api-key` (test to sprawdza).
 - Testy: dodatnie i ujemne przypadki wolnej ścieżki na prawdziwych transakcjach (pump.fun, DBC, LaunchLab v1, oba `InitializeMint`, kupno, nieudane tworzenie, nie podpisujący), szybka ścieżka na trzech prawdziwych `logsNotification`, podrobione `Program data:` spod innego programu, detektor z fałszywym zegarem (szybka ścieżka przed RPC, transakcja dostępna po kilku próbach, limit 15 s, deduplikacja logu i nadrabiania, ostrzeżenie o niezgodności).
+
+## D-038: Tryb B: uzbrojenie, wykrycie, automatyczny zakup i czas reakcji
+
+- Data: 2026-10-03
+- Zadanie: BUNNDLY-34. Łączy D-036 (strumień), D-037 (detektory) i executor (D-029, D-035).
+- Decyzja:
+  - **Moduł `src/watcher/watch.ts`** (`startWatch`): czysta logika jednego uzbrojenia ze wstrzykniętymi zależnościami (gniazdo, odczyty RPC, zegar, `startBuy`). W workerze żądania `arm { creator }` i `disarm`, a status sejfu ma pole `watch`: twórca, czas uzbrojenia, tryb, czy uzbrojony, stan połączenia, ostatnia wiadomość, wykrycia i kolejka. Pole zostaje po rozbrojeniu (ostatnie uzbrojenie tej sesji) i znika przy blokadzie.
+  - **Walidacja `arm`** (każdy błąd ma polski komunikat):
+    - twórca to base58 dekodowany do 32 bajtów i różny od mintu SOL, inaczej `INVALID_CREATOR_ADDRESS`;
+    - potrzebny jest URL WebSocket (klucz Helius albo własny `heliusWsUrl`) i URL HTTP, bo `getTransaction` i odczyt sald idą przez RPC; bez nich `HELIUS_KEY_MISSING` (komunikat obejmuje teraz salda, zakup na żywo i obserwację);
+    - te same kontrole portfeli co zakup (`NO_WALLETS_TO_BUY`, a na żywo także RPC);
+    - w trakcie zakupu `BUY_RUNNING`, a przy już uzbrojonym watcherze `WATCH_ARMED`.
+  - **Salda przed uzbrojeniem:** `arm` najpierw czyta salda floty (jedno `getMultipleAccounts` na 100 portfeli) i dopiero potem otwiera gniazdo; błąd odczytu kończy `arm` kodem `RPC_UNAVAILABLE`. Potem odczyt idzie co 30 s, a jego błędy są pomijane (zostaje ostatni odczyt). Powód: executor bez znanego salda pomija portfel (`BALANCE_UNKNOWN`), więc wykrycie w pierwszej sekundzie po uzbrojeniu nic by nie kupiło. Wyszło to w teście z RPC odpowiadającym po 1 s.
+  - **Wykrycie → zakup:**
+    - ten sam `startBuy` co w trybie A (DRY-RUN, limitery, bramka świeżego mintu), wywołany synchronicznie z obsługi wiadomości gniazda, bez żadnego `await` na sieć przed pierwszym `/order`;
+    - szybka ścieżka nie czeka na weryfikację, a wolna (`getTransaction`) startuje zakup od razu po swoim wykryciu;
+    - Jupiter nie dostaje zapytań, dopóki nie ma wykrycia;
+    - czasy w widoku postępu liczą się od wykrycia: `RunOptions.triggeredAt`, a `sinceStartMs` mierzy od niego.
+  - **Ochrona przed starym tokenem** (druga warstwa po granicy czasu w nadrabianiu z D-036, review PR #26):
+    - wykrycie z transakcji, której `blockTime` jest wcześniejszy niż uzbrojenie − 60 s, nigdy nie uruchamia zakupu;
+    - trafia do dziennika jako `stale` (zdarzenie `stale`, `problem: STALE`, komunikat po polsku) i nie rozbraja trybu `one-shot`, bo to nie jest nowy token;
+    - dotyczy ścieżek `transaction` i `catch-up`. Log z szybkiej ścieżki przychodzi na żywo po uzbrojeniu, więc jest nowy z definicji;
+    - `blockTime` z `getTransaction` przechodzi w wykryciu (`Detection.blockTime`), a brak `blockTime` liczy się jak nowa transakcja.
+  - **Zegar strumienia to czas Unix w ms** (`Date.now()`, uwaga z review PR #26): granica nadrabiania i kontrola `stale` porównują `clock.now()` z `blockTime × 1000`. `performance.now()` zaczyna się blisko 0, więc przepuściłby wszystko. `startStream` i `startWatch` odrzucają zegar wskazujący czas sprzed 2020 (`assertUnixMsClock`), a `arm` kończy się wtedy błędem zamiast cichego przepuszczania. Czas reakcji mierzy osobny `perfNow` (`performance.now()`).
+  - **Czytniki RPC** (`src/chain/watch-rpc.ts`): `getTransaction` z `encoding: "json"`, `commitment: "confirmed"`, `maxSupportedTransactionVersion: 1`; `getSignaturesForAddress` z `confirmed`, `until` i `before`, z `blockTime` w wyniku. Test sprawdza dokładne parametry.
+  - **Kolejka:** wykrycie w trakcie zakupu (z trybu A albo B) czeka w kolejce FIFO, jeden wpis na mint (detektor i tak wykrywa mint raz na uzbrojenie), i startuje, gdy bieżący przebieg się skończy. STOP zatrzymuje tylko bieżący zakup: watcher zostaje uzbrojony, a kolejka rusza po jego końcu. `disarm` zamyka gniazdo, kończy odpytywanie `getTransaction` i opróżnia kolejkę (wpisy dostają `problem: DISARMED`).
+  - **Tryby** (`mode` czytany przy uzbrojeniu; zmiana ustawień działa od następnego `arm`):
+    - `one-shot`: pierwsze wykrycie rozbraja watcher i zamyka gniazdo, a zakup trwa. Wolna ścieżka tej sygnatury kończy jeszcze weryfikację, ale nowych wykryć już nie ma;
+    - `continuous`: watcher zostaje uzbrojony.
+  - **Blokada:** uzbrojony watcher albo wykrycie w kolejce wyłącza auto-lock. `lock`, `create` i `unlock` dostają `WATCH_ARMED` z prośbą o rozbrojenie.
+  - **`reactionMs`:**
+    - liczony od `receivedAt` logu (`performance.now()` w workerze, D-036) do wywołania `getOrder` pierwszego `/order` przebiegu;
+    - pomiar robi cienka nakładka na klienta Jupitera, wołana zaraz po wysłaniu zapytania;
+    - zdarzenie `detection` wychodzi właśnie wtedy i niesie `reactionMs` i `runId`, a status i dziennik mają tę samą wartość;
+    - wykrycie, które czeka w kolejce, dostaje osobne zdarzenie `queued`, a jego `reactionMs` obejmuje czekanie;
+    - gdy zakup nie wysłał żadnego `/order` (STOP od razu, błąd startu), `detection` ma `reactionMs: null` i ewentualny kod błędu.
+  - **Zdarzenia i dziennik:**
+    - worker wysyła zdarzenia `kind: "watch"`: `armed`, `disarmed` (`user` albo `one-shot`), `connection`, `queued`, `detection`, `stale`, `verified`;
+    - dziennik operacji ma kolumny `mint`, `source`, `path`, `reactionMs`, a `runId` jest pusty dla wpisów bez zakupu;
+    - niezgodność weryfikacji to wpis z ostrzeżeniem;
+    - bez kluczy i URL-i (test sprawdza zdarzenia i status).
+  - **Poprawka przy okazji:** klient workera przekazywał do UI tylko zdarzenia `wallet` i `run`, więc zdarzenia `verify` z BUNNDLY-25 (potwierdzenie saldem) nie docierały do UI. Ta sama linia przepuszcza teraz `verify` i `watch`.
+- Testy:
+  - kontroler na prawdziwych logach i transakcjach pump.fun: transakcja sprzed uzbrojenia z nadrabiania (`stale`, 0 zakupów, one-shot dalej uzbrojony) i z ostatnich 60 s (zakup), one-shot, czekanie za zakupem trybu A, continuous z kolejką i deduplikacją, `disarm`, błąd startu, zakup bez `/order`, salda co 30 s, brak klucza w zdarzeniach;
+  - worker z prawdziwym sejfem, fałszywym gniazdem i RPC odpowiadającym po 1 s:
+    - pierwsze `/order` dla właściwego mintu w tej samej chwili co log;
+    - `reactionMs` w zdarzeniu, statusie i dzienniku;
+    - prawdziwy zegar: poniżej 50 ms;
+    - transakcja sprzed uzbrojenia: wpis `stale` w dzienniku, 0 zakupów i 0 `/order`;
+    - one-shot, continuous, STOP bez rozbrojenia, DRY-RUN bez `/execute`, auto-lock i `WATCH_ARMED`, walidacja.

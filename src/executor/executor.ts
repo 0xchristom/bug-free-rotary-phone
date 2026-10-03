@@ -90,7 +90,7 @@ export interface WalletTimes {
   readonly signMs: number | null;
   /** Duration of `/execute`. */
   readonly executeMs: number | null;
-  /** Since the run started. */
+  /** Since the run started, or since the detection in mode B (`triggeredAt`). */
   readonly sinceStartMs: number;
 }
 
@@ -148,6 +148,11 @@ export interface RunOptions {
   readonly noRouteWindowMs: number;
   readonly noRouteBackoffMinMs: number;
   readonly noRouteBackoffMaxMs: number;
+  /**
+   * Mode B: when the token was detected (executor clock). Wallet times count from it
+   * instead of from the start of the run (SPEC 3.6).
+   */
+  readonly triggeredAt?: number;
   /** Defaults: `LANDING_POLL_MS`, `LANDING_TIMEOUT_MS`. */
   readonly landingPollMs?: number;
   readonly landingTimeoutMs?: number;
@@ -210,7 +215,7 @@ function emptyCounts(): Record<WalletState, number> {
 
 export function startRun(deps: ExecutorDeps, options: RunOptions): ExecutorRun {
   const { clock, jupiter } = deps;
-  const startedAt = clock.now();
+  const startedAt = Math.min(options.triggeredAt ?? clock.now(), clock.now());
   const slots = new Map<number, Slot>(
     options.wallets.map((wallet) => [
       wallet.index,

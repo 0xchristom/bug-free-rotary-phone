@@ -3,7 +3,6 @@
  * keep-alive, gap catch-up and no key in events. Fake WebSocket, fake clock, no network.
  */
 import { describe, expect, it } from 'vitest';
-import type { WebSocketLike } from '../../src/chain/connection-test.ts';
 import {
   CATCH_UP_MAX_PAGES,
   CATCH_UP_PAGE,
@@ -17,64 +16,10 @@ import {
   type StreamEvent,
 } from '../../src/watcher/stream.ts';
 import { FakeClock, T0 } from '../helpers/fake-clock.ts';
+import { FakeSocket } from '../helpers/fake-socket.ts';
 
 const CREATOR = '9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM';
 const URL = 'wss://mainnet.helius-rpc.com/?api-key=streamSecretKey123';
-
-type Listener = (event: { readonly data: unknown }) => void;
-
-class FakeSocket implements WebSocketLike {
-  readonly sent: Record<string, unknown>[] = [];
-  closed = false;
-  private readonly listeners = new Map<string, Listener[]>();
-
-  constructor(readonly createdAt: number) {}
-
-  send(data: string): void {
-    this.sent.push(JSON.parse(data) as Record<string, unknown>);
-  }
-  close(): void {
-    this.closed = true;
-  }
-  addEventListener(type: string, listener: Listener): void {
-    this.listeners.set(type, [...(this.listeners.get(type) ?? []), listener]);
-  }
-  fire(type: string, data?: unknown): void {
-    for (const l of this.listeners.get(type) ?? []) l({ data });
-  }
-  open(): void {
-    this.fire('open');
-  }
-  /** The server confirms `logsSubscribe` with a subscription id. */
-  subscribed(): void {
-    this.fire('message', JSON.stringify({ jsonrpc: '2.0', id: 1, result: 7 }));
-  }
-  /** Opens and confirms the subscription: the stream is `connected`. */
-  connect(): void {
-    this.open();
-    this.subscribed();
-  }
-  /** The server answers a request (any JSON-RPC message with its id). */
-  reply(id: unknown): void {
-    this.fire('message', JSON.stringify({ jsonrpc: '2.0', id, error: { code: -32601 } }));
-  }
-  notify(signature: string, err: unknown = null, logs: string[] = ['Program log: x']): void {
-    this.fire(
-      'message',
-      JSON.stringify({
-        jsonrpc: '2.0',
-        method: 'logsNotification',
-        params: {
-          result: { context: { slot: 1 }, value: { signature, err, logs } },
-          subscription: 7,
-        },
-      }),
-    );
-  }
-  sentMethods(): unknown[] {
-    return this.sent.map((m) => m.method);
-  }
-}
 
 interface Setup {
   /** Creator's signatures on the chain, newest first. */
@@ -427,5 +372,27 @@ describe('connected only with a subscription (review of PR #26)', () => {
     expect(statuses()).toEqual(['connecting', 'reconnecting:1']);
     await clock.runUntil(clock.now() + 500);
     expect(sockets).toHaveLength(2);
+  });
+});
+
+describe('the clock is Unix time in ms (review of PR #26)', () => {
+  it('a performance.now()-like clock fails at once: block times would all look recent', () => {
+    // `sleep` never resolves: without the guard the test fails instead of spinning
+    const clock = { now: () => 12_345.6, sleep: () => new Promise<void>(() => undefined) };
+    expect(() =>
+      startStream(
+        {
+          createWebSocket: () => {
+            throw new Error('must not connect');
+          },
+          signatures: () => Promise.resolve([]),
+          clock,
+          receivedAt: () => 0,
+          random: () => 0,
+          emit: () => undefined,
+        },
+        { url: URL, creator: CREATOR },
+      ),
+    ).toThrow(/Unix time in ms/u);
   });
 });

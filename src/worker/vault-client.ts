@@ -3,8 +3,13 @@
  * Errors from the worker arrive as a code only and are rebuilt as AppError.
  */
 import { AppError, ERROR_MESSAGES, type ErrorCode } from '../core/index.ts';
-import type { ExecutorEvent } from '../executor/executor.ts';
-import type { VaultPort, VaultRequestOf, VaultRequestType, VaultResultMap } from './protocol.ts';
+import type {
+  VaultPort,
+  VaultRequestOf,
+  VaultRequestType,
+  VaultResultMap,
+  WorkerEvent,
+} from './protocol.ts';
 
 /** scrypt runs on create and unlock (about 1 s in Node, slower on weak devices). */
 export const DEFAULT_SLOW_TIMEOUT_MS = 120_000;
@@ -27,7 +32,7 @@ export interface VaultClient {
     options?: VaultRequestOptions,
   ): Promise<VaultResultMap[T]>;
   /** Executor progress pushed by the worker (BUNNDLY-21). Returns the unsubscribe function. */
-  onEvent(listener: (event: ExecutorEvent) => void): () => void;
+  onEvent(listener: (event: WorkerEvent) => void): () => void;
 }
 
 interface Pending {
@@ -53,14 +58,14 @@ export function createVaultClient(port: VaultPort, options: VaultClientOptions =
   const pending = new Map<number, Pending>();
   let nextId = 1;
 
-  const listeners = new Set<(event: ExecutorEvent) => void>();
+  const listeners = new Set<(event: WorkerEvent) => void>();
 
   port.addEventListener('message', (event) => {
     const data = event.data;
     if (isRecord(data) && data.id === undefined && isRecord(data.event)) {
       const kind = data.event.kind;
-      if (kind === 'wallet' || kind === 'run') {
-        for (const listener of listeners) listener(data.event as unknown as ExecutorEvent);
+      if (kind === 'wallet' || kind === 'run' || kind === 'verify' || kind === 'watch') {
+        for (const listener of listeners) listener(data.event as unknown as WorkerEvent);
       }
       return;
     }

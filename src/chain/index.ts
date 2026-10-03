@@ -40,3 +40,5 @@ export {
   createLandingRpc,
 } from './landing.ts';
 export type { LandingCheckerOptions, LandingRpc } from './landing.ts';
+export { createWatchRpc, signatureReader, transactionReader } from './watch-rpc.ts';
+export type { WatchRpc } from './watch-rpc.ts';
