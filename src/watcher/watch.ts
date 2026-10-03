@@ -28,6 +28,7 @@ import {
 import type { DetectionSource } from './detectors/programs.ts';
 import {
   CATCH_UP_MAX_AGE_MS,
+  assertUnixMsClock,
   startStream,
   type SignatureReader,
   type Stream,
@@ -156,6 +157,7 @@ interface Entry {
 
 export function startWatch(deps: WatchDeps, options: WatchOptions): Watch {
   const { clock } = deps;
+  assertUnixMsClock(clock);
   const armedAt = clock.now();
   let armed = true;
   let connection: { status: StreamStatus; attempt: number; lastMessageAt: number | null } = {

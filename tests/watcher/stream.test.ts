@@ -374,3 +374,25 @@ describe('connected only with a subscription (review of PR #26)', () => {
     expect(sockets).toHaveLength(2);
   });
 });
+
+describe('the clock is Unix time in ms (review of PR #26)', () => {
+  it('a performance.now()-like clock fails at once: block times would all look recent', () => {
+    // `sleep` never resolves: without the guard the test fails instead of spinning
+    const clock = { now: () => 12_345.6, sleep: () => new Promise<void>(() => undefined) };
+    expect(() =>
+      startStream(
+        {
+          createWebSocket: () => {
+            throw new Error('must not connect');
+          },
+          signatures: () => Promise.resolve([]),
+          clock,
+          receivedAt: () => 0,
+          random: () => 0,
+          emit: () => undefined,
+        },
+        { url: URL, creator: CREATOR },
+      ),
+    ).toThrow(/Unix time in ms/u);
+  });
+});

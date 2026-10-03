@@ -66,8 +66,21 @@ export type SignatureReader = (options: {
 }) => Promise<readonly SignatureInfo[]>;
 
 export interface StreamClock {
+  /** Unix time in ms (`Date.now()`): compared with block times, never `performance.now()`. */
   now(): number;
   sleep(ms: number): Promise<void>;
+}
+
+/** 2020-01-01: any Unix-ms clock is past it; `performance.now()` never is. */
+const UNIX_MS_FLOOR = Date.UTC(2020, 0, 1);
+
+/**
+ * The catch-up bound and the stale-transaction check compare `clock.now()` with
+ * `blockTime × 1000`; a monotonic clock starting near 0 would let everything through
+ * (review of PR #26). Fails arming instead.
+ */
+export function assertUnixMsClock(clock: StreamClock): void {
+  if (!(clock.now() >= UNIX_MS_FLOOR)) throw new Error('stream clock must be Unix time in ms');
 }
 
 export interface StreamDeps {
@@ -107,6 +120,7 @@ function isRecord(v: unknown): v is Record<string, unknown> {
 
 export function startStream(deps: StreamDeps, options: StreamOptions): Stream {
   const { clock } = deps;
+  assertUnixMsClock(clock);
   let stopped = false;
   /** Bumped for every socket: callbacks of an older socket are ignored. */
   let generation = 0;

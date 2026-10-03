@@ -240,6 +240,9 @@ describe('arm → real pump.fun log → buy', () => {
   it('real clock: from delivering the log to the /order call in the mock takes under 50 ms', async () => {
     const t = await setup({ realClock: true });
     await t.arm();
+    // the default wiring gives the watcher a Unix-ms clock (block times are compared with it)
+    const armedAt = Date.parse((await t.status()).watch?.armedAt ?? '');
+    expect(Math.abs(armedAt - Date.now())).toBeLessThan(60_000);
     const start = performance.now();
     t.socket().message(N.message);
     await new Promise((r) => setTimeout(r, 0));
