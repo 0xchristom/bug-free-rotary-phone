@@ -41,6 +41,8 @@ describe('ERROR_MESSAGES', () => {
         'BUY_RUNNING',
         'NO_WALLETS_TO_BUY',
         'INVALID_MINT_ADDRESS',
+        'INVALID_CREATOR_ADDRESS',
+        'WATCH_ARMED',
       ].sort(),
     );
   });

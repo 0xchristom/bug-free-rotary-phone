@@ -337,7 +337,7 @@ describe('lock and auto-lock', () => {
     const buffers = heldBuffers(h);
     expect(buffers.some((b) => b.some((x) => x !== 0))).toBe(true);
     const status = await call<VaultStatus>(h, { type: 'lock' });
-    expect(status).toEqual({ locked: true, armed: false, info: null, buy: null });
+    expect(status).toEqual({ locked: true, armed: false, info: null, buy: null, watch: null });
     expect(buffers.every((b) => b.every((x) => x === 0))).toBe(true);
     expect(h.inspect().unlocked).toBeNull();
     await expectCode(

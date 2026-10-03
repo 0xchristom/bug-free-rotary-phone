@@ -37,7 +37,13 @@ function setup({ count = 3, global = {}, probe, jupiterKey = false }: Setup = {}
     apiKeys: { ...base.apiKeys, helius: true, jupiter: jupiterKey },
   };
   let buy: VaultStatus['buy'] = null;
-  const status = (): VaultStatus => ({ locked: false, armed: buy !== null, info, buy });
+  const status = (): VaultStatus => ({
+    locked: false,
+    armed: buy !== null,
+    info,
+    buy,
+    watch: null,
+  });
   const vault = mockVault(status());
   const requests: VaultRequest[] = [];
   vault.request.mockImplementation((req: VaultRequest) => {

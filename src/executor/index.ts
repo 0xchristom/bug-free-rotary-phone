@@ -84,4 +84,4 @@ export {
   toCsv,
   toJson,
 } from './oplog.ts';
-export type { LogContext, LogEntry } from './oplog.ts';
+export type { LogContext, LogEntry, LoggedEvent } from './oplog.ts';

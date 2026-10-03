@@ -199,6 +199,7 @@ describe('detector (both paths)', () => {
           path: 'log',
           signature: n.message.params.result.value.signature,
           slot: null,
+          blockTime: null,
           receivedAt: 42,
         },
       },
@@ -238,6 +239,7 @@ describe('detector (both paths)', () => {
           path: 'catch-up',
           signature: f.signature,
           slot: BigInt((f.tx as { slot: number }).slot),
+          blockTime: (f.tx as { blockTime: number }).blockTime,
           receivedAt: 7,
         },
       },
@@ -252,6 +254,20 @@ describe('detector (both paths)', () => {
     expect(events).toEqual([{ kind: 'transaction-unavailable', signature: 'Sig' }]);
     expect(calls.length).toBeGreaterThanOrEqual(15_000 / 200);
     expect(clock.now() - T0).toBeGreaterThanOrEqual(15_000);
+  });
+
+  it('stop (disarm): polling ends, no more events, new signatures ignored', async () => {
+    const { clock, events, calls, detector } = setup(() => null);
+    detector.onSignature({ signature: 'Sig', source: 'logs', logs: [], receivedAt: 0 });
+    await clock.runUntil(T0 + 1_000);
+    const asked = calls.length;
+    detector.stop();
+    detector.onSignature({ signature: 'Other', source: 'logs', logs: [], receivedAt: 0 });
+    await clock.runUntil();
+    await detector.idle();
+    expect(calls.length).toBeLessThanOrEqual(asked + 1);
+    expect(calls).not.toContain('Other');
+    expect(events).toEqual([]);
   });
 
   it('the same mint from the log and from catch-up: one detection', async () => {

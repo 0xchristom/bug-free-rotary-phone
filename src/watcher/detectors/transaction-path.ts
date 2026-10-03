@@ -25,6 +25,8 @@ interface JsonInstruction {
 /** The parts of a `getTransaction` (json) answer the detectors read. Validated at runtime. */
 export interface TransactionJson {
   readonly slot: number | bigint;
+  /** Unix seconds; null or missing when the node does not know it. */
+  readonly blockTime?: number | bigint | null;
   readonly transaction: {
     readonly message: {
       readonly accountKeys: readonly string[];

@@ -28,13 +28,18 @@ export const ERROR_MESSAGES = {
     'Nie udało się odczytać danych z sieci Solana (ani przez Helius, ani przez publiczny RPC). Spróbuj ponownie za chwilę.',
   NOT_A_TOKEN_MINT:
     'Podany adres nie jest mintem tokenu (SPL Token ani Token-2022). Sprawdź adres tokenu.',
-  HELIUS_KEY_MISSING: 'Brak klucza API Helius. Dodaj go w Ustawieniach, aby odczytać salda.',
+  HELIUS_KEY_MISSING:
+    'Brak klucza API Helius. Dodaj go w Ustawieniach: jest potrzebny do sald, zakupu na żywo i obserwacji twórcy.',
   VAULT_LOCKED: 'Plik floty jest zablokowany. Odblokuj go hasłem, aby kontynuować.',
   BUY_RUNNING:
     'Trwa zakup. Zatrzymaj go przyciskiem STOP i poczekaj, aż wysłane transakcje się zakończą.',
   NO_WALLETS_TO_BUY:
     'Żaden portfel nie może kupować: zaznacz aktywne portfele i ustaw im max spend.',
   INVALID_MINT_ADDRESS: 'To nie jest prawidłowy adres mintu tokenu (base58, 32–44 znaki).',
+  INVALID_CREATOR_ADDRESS:
+    'To nie jest prawidłowy adres portfela twórcy (base58, 32 bajty, inny niż mint SOL).',
+  WATCH_ARMED:
+    'Watcher jest uzbrojony. Najpierw go rozbrój przyciskiem ROZBRÓJ, potem zablokuj albo zmień flotę.',
   VAULT_TIMEOUT: 'Sejf z kluczami nie odpowiedział w wyznaczonym czasie. Spróbuj ponownie.',
   INTERNAL_ERROR: 'Wystąpił wewnętrzny błąd aplikacji. Spróbuj ponownie.',
   STORAGE_CANCELLED: 'Anulowano wybór pliku lub folderu. Plik nie został zapisany ani wczytany.',

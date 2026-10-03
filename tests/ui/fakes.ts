@@ -6,7 +6,13 @@ import type { ExecutorEvent } from '../../src/executor/executor.ts';
 import type { VaultInfo, VaultRequest, VaultStatus } from '../../src/worker/protocol.ts';
 import type { VaultClient, VaultRequestOptions } from '../../src/worker/vault-client.ts';
 
-export const LOCKED: VaultStatus = { locked: true, armed: false, info: null, buy: null };
+export const LOCKED: VaultStatus = {
+  locked: true,
+  armed: false,
+  info: null,
+  buy: null,
+  watch: null,
+};
 
 export function fleetInfo(count = 3, fleetName = 'Flota testowa'): VaultInfo {
   return {
@@ -24,7 +30,7 @@ export function fleetInfo(count = 3, fleetName = 'Flota testowa'): VaultInfo {
 }
 
 export function unlocked(armed = false): VaultStatus {
-  return { locked: false, armed, info: fleetInfo(), buy: null };
+  return { locked: false, armed, info: fleetInfo(), buy: null, watch: null };
 }
 
 type CreateHandler = (
@@ -63,6 +69,7 @@ export function mockVault(initial: VaultStatus, onCreate?: CreateHandler) {
                 armed: false,
                 info: (result as { info: VaultInfo }).info,
                 buy: null,
+                watch: null,
               };
               return result;
             });

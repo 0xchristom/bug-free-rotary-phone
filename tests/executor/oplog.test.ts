@@ -14,6 +14,7 @@ import {
   type WalletEvent,
 } from '../../src/executor/index.ts';
 import { parseExecution } from '../../src/jupiter/client.ts';
+import type { WatchEvent } from '../../src/watcher/watch.ts';
 import { T0 } from '../helpers/fake-clock.ts';
 
 const docs = JSON.parse(readFileSync('tests/fixtures/jupiter-execute.docs.json', 'utf8')) as {
@@ -178,5 +179,60 @@ describe('JSON', () => {
 
   it('file name: run and UTC time, no characters file systems refuse', () => {
     expect(logFileName(4, T0, 'csv')).toBe('bunndly-log-4-2026-09-21T14-13-20-000Z.csv');
+  });
+});
+
+describe('mode B entries (BUNNDLY-34)', () => {
+  const MINT = 'HEhuwZjGd8Za7jgjzzpsXJssnP89DQm4oYHghRpnpump';
+  const detection = {
+    mint: MINT,
+    source: 'pump.fun',
+    path: 'log',
+    signature: '5sig',
+    detectedAt: T0,
+    runId: 7,
+    reactionMs: 4,
+    verified: null,
+    problem: null,
+  } as const;
+  const events: WatchEvent[] = [
+    { kind: 'watch', at: T0, type: 'armed', creator: 'Creator1', mode: 'one-shot' },
+    { kind: 'watch', at: T0, type: 'detection', detection },
+    { kind: 'watch', at: T0, type: 'verified', mint: MINT, signature: '5sig', match: false },
+    {
+      kind: 'watch',
+      at: T0,
+      type: 'detection',
+      detection: { ...detection, runId: null, reactionMs: null, problem: 'DISARMED' },
+    },
+    { kind: 'watch', at: T0, type: 'disarmed', reason: 'one-shot' },
+  ];
+
+  it('arm, detection with reactionMs, verification warning, disarm', () => {
+    const entries = events.map((e) => logEntry(e, context));
+    expect(entries.map((e) => [e.event, e.state])).toEqual([
+      ['watch', 'armed'],
+      ['watch', 'detection'],
+      ['watch', 'verified'],
+      ['watch', 'detection'],
+      ['watch', 'disarmed'],
+    ]);
+    expect(entries[0]).toMatchObject({ runId: null, address: 'Creator1', detail: 'one-shot' });
+    expect(entries[1]).toMatchObject({
+      runId: 7,
+      mint: MINT,
+      source: 'pump.fun',
+      path: 'log',
+      signature: '5sig',
+      reactionMs: 4,
+      reason: null,
+    });
+    expect(entries[2]?.detail).toBe('mismatch');
+    expect(entries[2]?.message).toMatch(/nie tworzy mintu/u);
+    expect(entries[3]).toMatchObject({ reason: 'DISARMED', reactionMs: null });
+    expect(entries[3]?.message).toMatch(/Rozbrojono/u);
+    const csv = toCsv(entries).split('\r\n');
+    expect(csv[0]).toBe(LOG_COLUMNS.join(','));
+    expect(csv[2]).toContain(',4'); // reactionMs is the last column
   });
 });

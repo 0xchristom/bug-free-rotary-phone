@@ -1,16 +1,15 @@
 /**
- * Operations log in the UI (BUNNDLY-25, D-031): keeps every executor event of this
+ * Operations log in the UI (BUNNDLY-25, D-031): keeps every executor and watcher event of this
  * session, with the wallet's public address as it was then, outside React state, so the
  * log survives screen changes and the auto-lock after a buy. Memory only: nothing goes to
  * storage (SPEC 6.1); the user downloads it as CSV or JSON.
  */
 import { useSyncExternalStore } from 'react';
-import { logEntry, type LogEntry } from '../executor/oplog.ts';
-import type { ExecutorEvent } from '../executor/executor.ts';
+import { logEntry, type LogEntry, type LoggedEvent } from '../executor/oplog.ts';
 import type { VaultClient } from '../worker/vault-client.ts';
 
 interface Recorded {
-  readonly event: ExecutorEvent;
+  readonly event: LoggedEvent;
   readonly address: string | null;
 }
 
@@ -31,7 +30,10 @@ export function createOperationsLog(client: VaultClient): OperationsLog {
   const listeners = new Set<() => void>();
   let addresses = new Map<number, string>();
   client.onEvent((event) => {
-    const address = event.kind === 'run' ? null : (addresses.get(event.index) ?? null);
+    const address =
+      event.kind === 'wallet' || event.kind === 'verify'
+        ? (addresses.get(event.index) ?? null)
+        : null;
     recorded.push({ event, address });
     for (const l of listeners) l();
   });
@@ -42,7 +44,17 @@ export function createOperationsLog(client: VaultClient): OperationsLog {
     size: () => recorded.length,
     entries: (decimals) =>
       recorded.map((r) => logEntry(r.event, { addressOf: () => r.address, decimals })),
-    lastRunId: () => recorded.at(-1)?.event.runId ?? null,
+    lastRunId: () => {
+      for (let i = recorded.length - 1; i >= 0; i--) {
+        const e = recorded[i]?.event;
+        if (e === undefined) continue;
+        if (e.kind !== 'watch') return e.runId;
+        if ((e.type === 'detection' || e.type === 'queued') && e.detection.runId !== null) {
+          return e.detection.runId;
+        }
+      }
+      return null;
+    },
     subscribe(listener) {
       listeners.add(listener);
       return () => {

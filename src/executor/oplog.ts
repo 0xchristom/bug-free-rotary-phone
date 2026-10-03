@@ -6,16 +6,22 @@
  * Amounts stay exact: bigint, written as whole numbers (lamports, raw token units).
  * CSV cells that a spreadsheet would run as a formula get a leading apostrophe.
  */
+import { ERROR_MESSAGES } from '../core/errors.ts';
+import type { DetectionProblem, WatchEvent } from '../watcher/watch.ts';
 import { FAIL_MESSAGES, SKIP_MESSAGES, UNKNOWN_MESSAGES } from './states.ts';
 import { VERIFY_MESSAGES } from './verify.ts';
 import type { ExecutorEvent } from './executor.ts';
 
+/** What the log records: the executor's events and, in mode B, the watcher's. */
+export type LoggedEvent = ExecutorEvent | WatchEvent;
+
 export interface LogEntry {
   /** ISO 8601, UTC. */
   readonly time: string;
-  readonly runId: number;
-  readonly event: 'run' | 'wallet' | 'verify';
-  /** Run phase, wallet state, or verification status. */
+  /** Null for watcher entries that belong to no buy (arm, disarm, connection). */
+  readonly runId: number | null;
+  readonly event: 'run' | 'wallet' | 'verify' | 'watch';
+  /** Run phase, wallet state, verification status, or the watcher event. */
   readonly state: string;
   readonly wallet: number | null;
   readonly address: string | null;
@@ -40,6 +46,11 @@ export interface LogEntry {
   /** Verification: expected and observed token growth. */
   readonly expected: bigint | null;
   readonly observed: bigint | null;
+  /** Mode B: the detected mint, its detector and path, and log → first `/order`. */
+  readonly mint: string | null;
+  readonly source: string | null;
+  readonly path: string | null;
+  readonly reactionMs: number | null;
 }
 
 export const LOG_COLUMNS = [
@@ -66,6 +77,10 @@ export const LOG_COLUMNS = [
   'executeMs',
   'expected',
   'observed',
+  'mint',
+  'source',
+  'path',
+  'reactionMs',
 ] as const satisfies readonly (keyof LogEntry)[];
 
 const LAMPORTS_DECIMALS = 9n;
@@ -118,11 +133,64 @@ const EMPTY = {
   executeMs: null,
   expected: null,
   observed: null,
+  mint: null,
+  source: null,
+  path: null,
+  reactionMs: null,
 } as const;
 
-export function logEntry(event: ExecutorEvent, context: LogContext): LogEntry {
+const DISARMED_MESSAGE = 'Rozbrojono watcher, zanim ten token doczekał się zakupu.';
+const STALE_MESSAGE = 'Transakcja sprzed uzbrojenia: to nie jest nowy token, więc nie ma zakupu.';
+const MISMATCH_MESSAGE =
+  'Transakcja nie tworzy mintu wykrytego z logu. Zakup już ruszył: sprawdź token.';
+
+function problemMessage(problem: DetectionProblem): string {
+  if (problem === 'DISARMED') return DISARMED_MESSAGE;
+  if (problem === 'STALE') return STALE_MESSAGE;
+  return ERROR_MESSAGES[problem];
+}
+
+function watchEntry(event: WatchEvent, time: string): LogEntry {
+  const base = { ...EMPTY, time, runId: null, event: 'watch' as const, state: event.type };
+  switch (event.type) {
+    case 'armed':
+      return { ...base, address: event.creator, detail: event.mode };
+    case 'disarmed':
+      return { ...base, detail: event.reason };
+    case 'connection':
+      return { ...base, detail: event.status, attempt: event.attempt };
+    case 'queued':
+    case 'stale':
+    case 'detection': {
+      const d = event.detection;
+      return {
+        ...base,
+        runId: d.runId,
+        reason: d.problem,
+        message: d.problem === null ? null : problemMessage(d.problem),
+        signature: d.signature,
+        mint: d.mint,
+        source: d.source,
+        path: d.path,
+        reactionMs: d.reactionMs,
+      };
+    }
+    case 'verified':
+      return {
+        ...base,
+        detail: event.match ? 'match' : 'mismatch',
+        message: event.match ? null : MISMATCH_MESSAGE,
+        signature: event.signature,
+        mint: event.mint,
+      };
+  }
+}
+
+export function logEntry(event: LoggedEvent, context: LogContext): LogEntry {
   const time = new Date(event.at).toISOString();
   switch (event.kind) {
+    case 'watch':
+      return watchEntry(event, time);
     case 'run':
       return { ...EMPTY, time, runId: event.runId, event: 'run', state: event.phase };
     case 'verify':
