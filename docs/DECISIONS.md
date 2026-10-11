@@ -851,3 +851,11 @@ Rejestr decyzji i rozbieżności z dokumentacją zewnętrzną. Nowe wpisy dopisu
     - `page.routeWebSocket` nie przechwytuje gniazda otwartego w Web Workerze, bo Playwright podmienia `WebSocket` tylko w stronie. Sprawdziłem to osobną próbą;
     - zamiast tego test uruchamia lokalny serwer WSS, a Chromium kieruje na niego prawdziwą nazwę `mainnet.helius-rpc.com` (`--host-resolver-rules`, certyfikat testowy). Aplikacja łączy się więc z tym samym URL-em i pod tym samym CSP;
     - zapytania HTTP (RPC, Jupiter) podstawia `context.route`, jak w BUNNDLY-27.
+
+## D-040: Końce linii LF wymuszone przez `.gitattributes`
+
+- Data: 2026-10-11
+- Zadanie: BUNNDLY-39
+- Kontekst: Na Windows z `core.autocrlf=true` (ustawienie systemowe gita) pliki w drzewie roboczym mają końce CRLF. Prettier oczekuje LF, więc `npm run format:check` padał na każdym pliku, także w świeżym klonie i w worktree odbioru. Sprawdzone 2026-10-11: `prettier --check README.md src/main.tsx package.json` daje 3 ostrzeżenia przy `i/lf w/crlf`.
+- Decyzja: `.gitattributes` z `* text=auto eol=lf`. Każdy klon i każdy worktree dostaje LF niezależnie od ustawień maszyny. W indeksie pliki już były w LF, więc treść commitów się nie zmienia.
+- Konsekwencje / alternatywy: Istniejące drzewo robocze trzeba raz odświeżyć (nowy worktree albo ponowny checkout). Odrzucone: `endOfLine: "auto"` w Prettierze (dopuszcza mieszane końce w repo) i lokalne `core.autocrlf=false` (działa tylko na jednej maszynie i tylko dopóki ktoś o nim pamięta).
