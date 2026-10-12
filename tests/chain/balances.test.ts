@@ -214,6 +214,6 @@ describe('createResilientTransport', () => {
       'https://mainnet.helius-rpc.com/?…',
     );
     expect(redactUrl('https://api.mainnet.solana.com')).toBe('https://api.mainnet.solana.com/');
-    expect(redactUrl('nonsense')).toBe('[nieprawidłowy URL]');
+    expect(redactUrl('nonsense')).toBe('[invalid URL]');
   });
 });

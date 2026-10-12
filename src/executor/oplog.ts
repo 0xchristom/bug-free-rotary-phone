@@ -139,10 +139,10 @@ const EMPTY = {
   reactionMs: null,
 } as const;
 
-const DISARMED_MESSAGE = 'Rozbrojono watcher, zanim ten token doczekał się zakupu.';
-const STALE_MESSAGE = 'Transakcja sprzed uzbrojenia: to nie jest nowy token, więc nie ma zakupu.';
+const DISARMED_MESSAGE = 'The watcher was disarmed before this token was bought.';
+const STALE_MESSAGE = 'The transaction is from before arming: this is not a new token, so there is no buy.';
 const MISMATCH_MESSAGE =
-  'Transakcja nie tworzy mintu wykrytego z logu. Zakup już ruszył: sprawdź token.';
+  'The transaction does not create the mint detected from the log. The buy has already started: check the token.';
 
 function problemMessage(problem: DetectionProblem): string {
   if (problem === 'DISARMED') return DISARMED_MESSAGE;

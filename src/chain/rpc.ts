@@ -97,6 +97,6 @@ export function redactUrl(url: string): string {
     const u = new URL(url);
     return `${u.protocol}//${u.host}${u.pathname}${u.search ? '?…' : ''}`;
   } catch {
-    return '[nieprawidłowy URL]';
+    return '[invalid URL]';
   }
 }

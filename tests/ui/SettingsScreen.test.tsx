@@ -91,30 +91,30 @@ describe('form', () => {
   });
 
   it.each<[string | RegExp, string, string]>([
-    [/^Sufit ceny/u, '0', 'Sufit ceny musi być liczbą całkowitą od 1 do 1000%.'],
-    [/^Sufit ceny/u, '1001', 'Sufit ceny musi być liczbą całkowitą od 1 do 1000%.'],
-    ['Maks. liczba prób na portfel', '11', 'Liczba prób musi być liczbą całkowitą od 1 do 10.'],
-    ['Maks. liczba prób na portfel', 'trzy', 'Liczba prób musi być liczbą całkowitą od 1 do 10.'],
+    [/^Sufit ceny/u, '0', 'The price ceiling must be a whole number from 1 to 1000%.'],
+    [/^Sufit ceny/u, '1001', 'The price ceiling must be a whole number from 1 to 1000%.'],
+    ['Maks. liczba prób na portfel', '11', 'Attempts must be a whole number from 1 to 10.'],
+    ['Maks. liczba prób na portfel', 'trzy', 'Attempts must be a whole number from 1 to 10.'],
     [
       'Minimalna rezerwa (MIN_RESERVE_SOL)',
       '0,004',
-      'Minimalna rezerwa musi wynosić od 0,005 do 1 SOL.',
+      'The minimum reserve must be between 0.005 and 1 SOL.',
     ],
     [
       'Minimalna rezerwa (MIN_RESERVE_SOL)',
       'abc',
-      'Minimalna rezerwa musi wynosić od 0,005 do 1 SOL.',
+      'The minimum reserve must be between 0.005 and 1 SOL.',
     ],
-    ['Okno ponawiania „no route”', '500', 'Okno „no route” musi wynosić od 1 do 120 s.'],
+    ['Okno ponawiania „no route”', '500', 'The “no route” window must be between 1 and 120 s.'],
     [
       'Odstęp ponowień: maksymalny',
       '400',
-      'Maksymalny odstęp ponowień nie może być krótszy niż początkowy.',
+      'The longest retry delay cannot be shorter than the first one.',
     ],
     [
       'Automatyczna blokada po bezczynności',
       '0',
-      'Automatyczna blokada musi wynosić od 1 do 120 minut.',
+      'Auto-lock must be between 1 and 120 minutes.',
     ],
   ])('%s = %s → Polish message, save disabled', async (label, value, message) => {
     const { user } = await setup();

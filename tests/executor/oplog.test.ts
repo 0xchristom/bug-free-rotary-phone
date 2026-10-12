@@ -78,7 +78,7 @@ describe('log entries', () => {
     };
     expect(logEntry(skipped, context)).toMatchObject({
       reason: 'PRICE_CEILING',
-      message: 'Cena powyżej sufitu względem pierwszego zakupu floty.',
+      message: 'The price is above the ceiling relative to the fleet's first buy.',
       spent: null,
       price: null,
     });
@@ -117,7 +117,7 @@ describe('log entries', () => {
       state: 'MISMATCH',
       expected: 2_101n,
       observed: 2_000n,
-      message: 'Ostrzeżenie: saldo tokenu wzrosło o inną ilość, niż podał Jupiter.',
+      message: 'Warning: the token balance grew by a different amount than Jupiter reported.',
     });
   });
 });

@@ -248,7 +248,7 @@ describe('mode A', () => {
     );
     const failed = within(row('W02'));
     expect(failed.getByText('Nieudany')).toBeTruthy();
-    expect(failed.getByText('Wyczerpany limit prób.')).toBeTruthy();
+    expect(failed.getByText('All attempts are used up.')).toBeTruthy();
     expect(failed.getByText('3')).toBeTruthy();
     expect(within(row('W03')).getByText('Pominięty')).toBeTruthy();
     expect(within(row('W03')).getByText(/Za mało SOL/u)).toBeTruthy();
