@@ -1,6 +1,6 @@
 import { useEffect, useId, useState, type SyntheticEvent } from 'react';
 import { ERROR_MESSAGES, toUserMessage } from '../../core/errors.ts';
-import { isValidFleetName } from '../../core/keystore/limits.ts';
+import { MIN_PASSWORD_LENGTH, isValidFleetName } from '../../core/keystore/limits.ts';
 import {
   saveKeystoreFile,
   supportsDirectoryPicker,
@@ -15,6 +15,11 @@ import { useVault } from '../vault-state.ts';
 export const DEFAULT_WALLET_COUNT = 30;
 const MAX_WALLETS = 100;
 const MNEMONIC_WORD_COUNTS: ReadonlySet<number> = new Set([12, 15, 18, 21, 24]);
+const MNEMONIC_PATH = "m/44'/501'/{i}'/0'";
+
+/** Form fields in screen order; the first one with a problem gets the focus on submit. */
+const FIELDS = ['count', 'name', 'pw', 'pw2', 'mn'] as const;
+type Field = (typeof FIELDS)[number];
 
 type Phase =
   | { readonly kind: 'form' }
@@ -52,6 +57,10 @@ function confirmOverwrite(fileName: string): boolean {
  * progress); the encrypted file is saved only when the user clicks "Zapisz plik floty",
  * because the folder picker needs a fresh user gesture. The password and mnemonic are
  * cleared from the form as soon as they are sent to the worker.
+ *
+ * Every condition that blocks creation has a message next to its field. A message for an
+ * untouched field appears after the user leaves that field or tries to create the fleet,
+ * so an empty form does not open full of errors.
  */
 export function WizardScreen({ storage, onBack, onDone, onUnsavedChange }: WizardScreenProps) {
   const { client, refresh } = useVault();
@@ -66,6 +75,8 @@ export function WizardScreen({ storage, onBack, onDone, onUnsavedChange }: Wizar
   const [phase, setPhase] = useState<Phase>({ kind: 'form' });
   const [error, setError] = useState<string | null>(null);
   const [exportOpen, setExportOpen] = useState(false);
+  const [touched, setTouched] = useState<ReadonlySet<Field>>(new Set());
+  const [submitted, setSubmitted] = useState(false);
 
   const unsaved = phase.kind === 'created';
   useEffect(() => {
@@ -91,9 +102,60 @@ export function WizardScreen({ storage, onBack, onDone, onUnsavedChange }: Wizar
     password2 !== '' &&
     mnemonicValid;
 
+  /** What blocks creation, per field; null when the field is fine. */
+  const problems: Record<Field, string | null> = {
+    count: countValid ? null : 'Liczba portfeli musi być liczbą całkowitą od 1 do 100.',
+    name: nameValid
+      ? null
+      : fleetName === ''
+        ? 'Podaj nazwę floty.'
+        : ERROR_MESSAGES.INVALID_FLEET_NAME,
+    pw: strength.acceptable
+      ? null
+      : `Hasło musi mieć co najmniej ${String(MIN_PASSWORD_LENGTH)} znaków (teraz: ${String(strength.length)}).`,
+    pw2: password2 === '' ? 'Powtórz hasło.' : passwordsMatch ? null : 'Hasła nie są takie same.',
+    mn: mnemonicValid
+      ? null
+      : words === 0
+        ? 'Wpisz mnemonik albo odznacz import.'
+        : `Mnemonik musi mieć 12, 15, 18, 21 albo 24 słowa (teraz: ${String(words)}).`,
+  };
+  /** A wrong value shows its message at once; an empty field only after blur or submit. */
+  const typed: Record<Field, boolean> = {
+    count: true,
+    name: fleetName !== '',
+    pw: false,
+    pw2: password2 !== '',
+    mn: mnemonic !== '',
+  };
+  const shown = (field: Field): string | null =>
+    submitted || touched.has(field) || typed[field] ? problems[field] : null;
+  const touch = (field: Field): void => {
+    setTouched((prev) => (prev.has(field) ? prev : new Set(prev).add(field)));
+  };
+  const fieldError = (field: Field) => {
+    const message = shown(field);
+    return (
+      message !== null && (
+        <p id={`${ids}-${field}-error`} className="field-error">
+          {message}
+        </p>
+      )
+    );
+  };
+  const describedBy = (field: Field): string | undefined =>
+    shown(field) === null ? undefined : `${ids}-${field}-error`;
+
   const create = async (event: SyntheticEvent): Promise<void> => {
     event.preventDefault();
-    if (!canCreate) return;
+    if (!canCreate) {
+      setSubmitted(true);
+      const first = FIELDS.find((field) => problems[field] !== null);
+      if (first !== undefined) document.getElementById(`${ids}-${first}`)?.focus();
+      return;
+    }
+    setTouched(new Set());
+    setSubmitted(false);
     const secret = { password, mnemonic: importMnemonic ? mnemonic : undefined };
     // Clear the secrets from the form right away; only the worker keeps them.
     setPassword('');
@@ -254,11 +316,10 @@ export function WizardScreen({ storage, onBack, onDone, onUnsavedChange }: Wizar
           onChange={(e) => {
             setWalletCount(e.target.value);
           }}
-          aria-invalid={!countValid}
+          aria-invalid={shown('count') !== null}
+          aria-describedby={describedBy('count')}
         />
-        {!countValid && (
-          <p className="field-error">Liczba portfeli musi być liczbą całkowitą od 1 do 100.</p>
-        )}
+        {fieldError('count')}
 
         <label htmlFor={`${ids}-name`}>Nazwa floty</label>
         <input
@@ -269,11 +330,13 @@ export function WizardScreen({ storage, onBack, onDone, onUnsavedChange }: Wizar
           onChange={(e) => {
             setFleetName(e.target.value);
           }}
-          aria-invalid={fleetName !== '' && !nameValid}
+          onBlur={() => {
+            touch('name');
+          }}
+          aria-invalid={shown('name') !== null}
+          aria-describedby={describedBy('name')}
         />
-        {fleetName !== '' && !nameValid && (
-          <p className="field-error">{ERROR_MESSAGES.INVALID_FLEET_NAME}</p>
-        )}
+        {fieldError('name')}
 
         <label htmlFor={`${ids}-pw`}>Hasło</label>
         <input
@@ -284,6 +347,11 @@ export function WizardScreen({ storage, onBack, onDone, onUnsavedChange }: Wizar
           onChange={(e) => {
             setPassword(e.target.value);
           }}
+          onBlur={() => {
+            touch('pw');
+          }}
+          aria-invalid={shown('pw') !== null}
+          aria-describedby={describedBy('pw')}
         />
         <meter
           min={0}
@@ -297,11 +365,13 @@ export function WizardScreen({ storage, onBack, onDone, onUnsavedChange }: Wizar
         <p className="muted" aria-live="polite">
           Siła hasła: {strength.label}
         </p>
-        {strength.hints.map((hint) => (
-          <p key={hint} className="hint">
-            {hint}
-          </p>
-        ))}
+        {fieldError('pw')}
+        {shown('pw') === null &&
+          strength.hints.map((hint) => (
+            <p key={hint} className="hint">
+              {hint}
+            </p>
+          ))}
 
         <label htmlFor={`${ids}-pw2`}>Powtórz hasło</label>
         <input
@@ -312,10 +382,13 @@ export function WizardScreen({ storage, onBack, onDone, onUnsavedChange }: Wizar
           onChange={(e) => {
             setPassword2(e.target.value);
           }}
+          onBlur={() => {
+            touch('pw2');
+          }}
+          aria-invalid={shown('pw2') !== null}
+          aria-describedby={describedBy('pw2')}
         />
-        {password2 !== '' && !passwordsMatch && (
-          <p className="field-error">Hasła nie są takie same.</p>
-        )}
+        {fieldError('pw2')}
 
         <label className="checkbox">
           <input
@@ -328,6 +401,11 @@ export function WizardScreen({ storage, onBack, onDone, onUnsavedChange }: Wizar
           />
           Mam już mnemonik (import 12–24 słów)
         </label>
+        <p className="hint">
+          Import jest opcjonalny: bez niego aplikacja sama wygeneruje nowy mnemonik (24 słowa), a
+          mnemonik z portfela takiego jak Phantom sprawi, że pierwsze portfele floty będą tymi
+          samymi kontami co w tamtym portfelu (ta sama ścieżka <code>{MNEMONIC_PATH}</code>).
+        </p>
         {importMnemonic && (
           <>
             <label htmlFor={`${ids}-mn`}>Mnemonik</label>
@@ -342,6 +420,11 @@ export function WizardScreen({ storage, onBack, onDone, onUnsavedChange }: Wizar
                 onChange={(e) => {
                   setMnemonic(e.target.value);
                 }}
+                onBlur={() => {
+                  touch('mn');
+                }}
+                aria-invalid={shown('mn') !== null}
+                aria-describedby={describedBy('mn')}
               />
               <button
                 type="button"
@@ -352,16 +435,12 @@ export function WizardScreen({ storage, onBack, onDone, onUnsavedChange }: Wizar
                 {showMnemonic ? 'Ukryj' : 'Pokaż'}
               </button>
             </div>
-            {mnemonic !== '' && !mnemonicValid && (
-              <p className="field-error">
-                Mnemonik musi mieć 12, 15, 18, 21 albo 24 słowa (teraz: {words}).
-              </p>
-            )}
+            {fieldError('mn')}
           </>
         )}
 
         <div className="actions">
-          <button type="submit" className="primary" disabled={!canCreate}>
+          <button type="submit" className="primary">
             Utwórz flotę
           </button>
           <button type="button" onClick={onBack}>
