@@ -1,0 +1,118 @@
+/*
+ * Design tokens: the only file in src/ui that may hold a colour literal (BUNNDLY-54).
+ * One dark look. Colour appears only where it means something:
+ *   ok     green        buy, fill, success
+ *   danger red          sell, error
+ *   warn   amber        hold, retry, stop
+ *   watch  blue-violet  armed, scheduled, focus
+ *   sim    cyan         DRY-RUN
+ * Every tone is a pair: `--<tone>` is the text, `--<tone>-bg` the surface under it.
+ * tests/ui/tokens.test.ts computes the WCAG contrast of every pair and of the text colours
+ * on every surface from the values below.
+ */
+:root {
+  color-scheme: dark;
+
+  /* Surfaces, darkest first. */
+  --surface-page: #050506;
+  --surface-base: #0c0c0e;
+  --surface-row: #101013;
+  --surface-panel: #141417;
+  --surface-raised: #1c1c20;
+  --surface-hover: #26262c;
+
+  /* Hairlines. */
+  --line: #1d1d21;
+  --line-2: #2e2e35;
+
+  /* Text. --fg-3 is for captions on the page, base, row and panel surfaces only. */
+  --fg: #f4f4f5;
+  --fg-2: #a8a8b2;
+  --fg-3: #80808b;
+
+  /* Tones: text + its surface. */
+  --ok: #4bdc8c;
+  --ok-bg: #0f2a1c;
+  --danger: #ff6482;
+  --danger-bg: #2f111a;
+  --warn: #f5a623;
+  --warn-bg: #2b1e08;
+  --watch: #93a5ff;
+  --watch-bg: #171c3d;
+  --sim: #6cc6f5;
+  --sim-bg: #0d2433;
+  --muted: var(--fg-2);
+  --muted-bg: var(--surface-raised);
+  --run: var(--fg);
+  --run-bg: var(--surface-hover);
+  /* The one filled button: light on dark, inverted. */
+  --primary: var(--surface-base);
+  --primary-bg: var(--fg);
+
+  /* Translucent layers and shadows. */
+  --sheen: rgba(255, 255, 255, 0.045);
+  --sheen-2: rgba(255, 255, 255, 0.6);
+  --kbd: rgba(255, 255, 255, 0.1);
+  --overlay: rgba(0, 0, 0, 0.66);
+  --shadow: 0 18px 48px rgba(0, 0, 0, 0.6);
+
+  /* Solana mark gradient. */
+  --sol-a: #9945ff;
+  --sol-b: #14f195;
+
+  --focus: var(--watch);
+
+  /* Type: one sans face for everything; figures use tabular numerals. */
+  --font-ui: 'Geist', 'Segoe UI', system-ui, -apple-system, sans-serif;
+  --fs-kbd: 10.5px;
+  --fs-caption: 11.5px;
+  --fs-small: 12px;
+  --fs-note: 12.5px;
+  --fs-control: 13px;
+  --fs-base: 13.5px;
+  --fs-strong: 14px;
+  --fs-title: 14.5px;
+  --fs-brand: 17px;
+  --fs-heading: 22px;
+  --lh: 1.35;
+
+  /* Spacing: 4 px grid (--s-0 is the hairline gap inside segmented controls). */
+  --s-0: 2px;
+  --s-1: 4px;
+  --s-2: 8px;
+  --s-3: 12px;
+  --s-4: 16px;
+  --s-5: 20px;
+  --s-6: 24px;
+  --s-8: 32px;
+
+  /* Control and row heights. */
+  --h-control: 36px;
+  --h-control-sm: 32px;
+  --h-chip: 26px;
+  --h-chip-sm: 19px;
+  --h-bar: 8px;
+  --h-row: 68px;
+  --h-head: 42px;
+
+  /* Radii. */
+  --r-frame: 14px;
+  --r-pop: 12px;
+  --r-bar: 10px;
+  --r: 8px;
+  --r-control: 6px;
+  --r-chip: 5px;
+
+  /* Motion. */
+  --t-fast: 0.12s;
+  --t-base: 0.15s;
+  --t-slow: 0.3s;
+  --t-pulse: 1.6s;
+  --ease-out: cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+
+/* Wallet avatar colours follow the hue the component derives from the address. */
+.k-ava {
+  --ava-bg: hsl(var(--ava-hue, 0) 42% 20%);
+  --ava-fg: hsl(var(--ava-hue, 0) 88% 74%);
+}
