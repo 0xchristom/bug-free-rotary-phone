@@ -9,8 +9,8 @@ describe('passwordStrength', () => {
       expect(s.length).toBe(passwordLength(pw));
       expect(s.acceptable).toBe(false);
       expect(s.score).toBe(0);
-      expect(s.label).toBe('Za krótkie');
-      expect(s.hints[0]).toContain(`${String(MIN_PASSWORD_LENGTH)} znaków`);
+      expect(s.label).toBe('Too short');
+      expect(s.hints[0]).toContain(`${String(MIN_PASSWORD_LENGTH)} characters`);
     }
     // 12 graphemes: "ą" in NFD is two code points but one character, as in core
     const nfd = 'ą'.normalize('NFD').repeat(6) + 'Kx7#Pm';
@@ -63,7 +63,7 @@ describe('passwordStrength', () => {
     for (const pw of ['Зелёный кот сидит на крыше', 'πράσινη γάτα στη στέγη τώρα']) {
       const r = passwordStrength(pw);
       expect(r.score).toBeGreaterThanOrEqual(3);
-      expect(r.hints.join(' ')).not.toContain('popularne słowo');
+      expect(r.hints.join(' ')).not.toContain('common word');
     }
   });
 
@@ -71,13 +71,13 @@ describe('passwordStrength', () => {
     const r = passwordStrength('739 104 862 !! 5521');
     expect(r.score).toBe(1);
     expect(r.hints).toContain(
-      'Hasło ma same cyfry i symbole. Dodaj litery albo użyj frazy z kilku słów.',
+      'The password has only digits and symbols. Add letters or use a phrase of several words.',
     );
-    expect(r.hints.join(' ')).not.toContain('popularne słowo');
+    expect(r.hints.join(' ')).not.toContain('common word');
   });
 
   it('every common word can match (at least 4 letters, Latin lower case)', () => {
     for (const word of COMMON_WORDS) expect(word).toMatch(/^[a-z]{4,}$/u);
-    expect(passwordStrength('Zielony-Test-Kot-42!').hints.join(' ')).toContain('popularne słowo');
+    expect(passwordStrength('Zielony-Test-Kot-42!').hints.join(' ')).toContain('common word');
   });
 });

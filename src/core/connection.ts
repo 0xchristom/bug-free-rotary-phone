@@ -6,7 +6,7 @@
 
 /** Why a check failed. The worker sends the code; the UI shows the message. */
 export const CONNECTION_PROBLEMS = {
-  KEY_MISSING: 'Brak klucza API Helius. Dodaj go w ustawieniach i zapisz.',
+  KEY_MISSING: 'The Helius API key is missing. Add it in Settings and save.',
   UNAUTHORIZED: 'The service rejected the API key (HTTP 401). Check that the key is correct.',
   FORBIDDEN:
     'Access forbidden (HTTP 403). The key has no access to this service or a firewall rule blocks it.',

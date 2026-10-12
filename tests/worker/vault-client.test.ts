@@ -75,7 +75,7 @@ describe('vault client ↔ handler', () => {
     const err = await rejection(client.request({ type: 'addWallets', count: 1 }));
     expect(err).toBeInstanceOf(AppError);
     expect(isAppError(err) && err.code).toBe('VAULT_LOCKED');
-    expect((err as AppError).message).toContain('zablokowany');
+    expect((err as AppError).message).toContain('is locked');
   });
 
   it('unknown worker errors arrive as INTERNAL_ERROR without their content', async () => {
@@ -199,7 +199,7 @@ describe('timeouts', () => {
     await vi.advanceTimersByTimeAsync(1);
     const err = await pending;
     expect(isAppError(err) && err.code).toBe('VAULT_TIMEOUT');
-    expect((err as AppError).message).toContain('nie odpowiedział');
+    expect((err as AppError).message).toContain('did not answer');
   });
 
   it('create and unlock get the longer timeout (scrypt)', async () => {

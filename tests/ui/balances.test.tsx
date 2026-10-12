@@ -46,8 +46,8 @@ describe('SOL balance refresh on the fleet screen', () => {
     const vault = renderFleet();
     await tick(0);
     expect(vault.calls('refreshBalances')).toBe(1);
-    expect(screen.getByText('1,5')).toBeTruthy();
-    expect(screen.getByText('1,500000002')).toBeTruthy();
+    expect(screen.getByText('1.5')).toBeTruthy();
+    expect(screen.getByText('1.500000002')).toBeTruthy();
     await tick(REFRESH_MS - 1);
     expect(vault.calls('refreshBalances')).toBe(1);
     await tick(1);
@@ -79,16 +79,16 @@ describe('SOL balance refresh on the fleet screen', () => {
     await tick(0);
     vault.setStatus(LOCKED);
     await tick(5_000);
-    expect(screen.getByRole('heading', { name: 'Witaj w Bunndly' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Welcome to Bunndly' })).toBeTruthy();
     const before = vault.calls('refreshBalances');
     await tick(REFRESH_MS * 10);
     expect(vault.calls('refreshBalances')).toBe(before);
   });
 
-  it('"Odśwież salda" reads on demand', async () => {
+  it('"Refresh balances" reads on demand', async () => {
     const vault = renderFleet();
     await tick(0);
-    fireEvent.click(screen.getByRole('button', { name: 'Odśwież salda' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh balances' }));
     await tick(0);
     expect(vault.calls('refreshBalances')).toBe(2);
   });
@@ -106,7 +106,7 @@ describe('SOL balance refresh on the fleet screen', () => {
     );
     renderFleet(vault);
     await tick(0);
-    expect(screen.getByText(/Helius nie odpowiada/u)).toBeTruthy();
+    expect(screen.getByText(/Helius is not answering/u)).toBeTruthy();
 
     vault.request.mockImplementation((req) =>
       req.type === 'refreshBalances'

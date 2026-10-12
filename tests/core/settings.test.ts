@@ -89,7 +89,10 @@ describe('validateGlobalSettings', () => {
       { minReserveLamports: 15_000_000 },
       'minReserveLamports: The minimum reserve must be between 0.005 and 1 SOL.',
     ],
-    [{ noRouteWindowMs: 999 }, 'noRouteWindowMs: The “no route” window must be between 1 and 120 s.'],
+    [
+      { noRouteWindowMs: 999 },
+      'noRouteWindowMs: The “no route” window must be between 1 and 120 s.',
+    ],
     [
       { noRouteBackoffMinMs: 50 },
       'noRouteBackoffMinMs: The first retry delay must be between 100 and 10,000 ms.',
@@ -104,14 +107,8 @@ describe('validateGlobalSettings', () => {
     ],
     [{ mode: 'forever' }, 'mode: Choose the mode: one-shot or continuous.'],
     [{ explorer: 'etherscan' }, 'explorer: Choose an explorer from the list.'],
-    [
-      { autoLockMinutes: 0 },
-      'autoLockMinutes: Auto-lock must be between 1 and 120 minutes.',
-    ],
-    [
-      { autoLockMinutes: 121 },
-      'autoLockMinutes: Auto-lock must be between 1 and 120 minutes.',
-    ],
+    [{ autoLockMinutes: 0 }, 'autoLockMinutes: Auto-lock must be between 1 and 120 minutes.'],
+    [{ autoLockMinutes: 121 }, 'autoLockMinutes: Auto-lock must be between 1 and 120 minutes.'],
     [{ jupiterPlan: 'gold' }, 'jupiterPlan: Choose a Jupiter plan from the list.'],
     [
       { jupiterPlan: 'pro', orderRpm: 60 },
@@ -121,7 +118,7 @@ describe('validateGlobalSettings', () => {
       { jupiterPlan: 'custom', orderRpm: 0 },
       'orderRpm: The /order limit must be a whole number from 1 to 100,000 requests per minute.',
     ],
-  ])('%o → Polish message', (patch, message) => {
+  ])('%o → English message', (patch, message) => {
     expect(problems(patch)).toEqual([message]);
   });
 
@@ -173,15 +170,15 @@ describe('Helius endpoints and API key values', () => {
     [
       'https://rpc.example.com/?api-key=x',
       'https:',
-      'Dozwolone są tylko adresy Helius w domenie helius-rpc.com (np. https://mainnet.helius-rpc.com/?api-key=…).',
+      'Only Helius addresses in the helius-rpc.com domain are allowed (e.g. https://mainnet.helius-rpc.com/?api-key=…).',
     ],
     [
       'wss://helius-rpc.com.evil.example',
       'wss:',
-      'Dozwolone są tylko adresy Helius w domenie helius-rpc.com (np. wss://mainnet.helius-rpc.com/?api-key=…).',
+      'Only Helius addresses in the helius-rpc.com domain are allowed (e.g. wss://mainnet.helius-rpc.com/?api-key=…).',
     ],
-    ['http://mainnet.helius-rpc.com', 'https:', 'Adres musi zaczynać się od https://.'],
-    ['rpc', 'https:', 'To nie jest prawidłowy adres URL. Zacznij od https://.'],
+    ['http://mainnet.helius-rpc.com', 'https:', 'The address must start with https://.'],
+    ['rpc', 'https:', 'This is not a valid URL. Start with https://.'],
     [
       'https://a:b@mainnet.helius-rpc.com',
       'https:',

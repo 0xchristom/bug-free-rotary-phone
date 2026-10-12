@@ -88,7 +88,7 @@ function row(label: string): HTMLElement {
 
 /** Waits until the first balance read is on screen. */
 async function ready(): Promise<void> {
-  await screen.findByText(/^Salda z /u);
+  await screen.findByText(/^Balances as of /u);
 }
 
 function cells(label: string): string[] {
@@ -114,20 +114,20 @@ describe('fleet table', () => {
     });
     await ready();
     expect(within(row('W01')).getByLabelText<HTMLInputElement>('Max spend W01').value).toBe(
-      '0,985',
+      '0.985',
     );
     expect(row('W01').dataset.ready).toBe('true');
-    expect(within(row('W01')).getByText('0,015')).toBeTruthy();
+    expect(within(row('W01')).getByText('0.015')).toBeTruthy();
     expect(row('W02').className).toBe('row-error');
     expect(row('W02').dataset.ready).toBe('false');
-    expect(within(row('W02')).getByText('za mała')).toBeTruthy();
+    expect(within(row('W02')).getByText('too low')).toBeTruthy();
     // no max spend: neither ready nor red
     expect(row('W03').dataset.ready).toBe('false');
     expect(row('W03').className).toBe('');
 
     await user.clear(within(row('W03')).getByLabelText('Max spend W03'));
     await user.type(within(row('W03')).getByLabelText('Max spend W03'), '2');
-    expect(within(row('W03')).getByText('Więcej niż saldo portfela.')).toBeTruthy();
+    expect(within(row('W03')).getByText('More than the wallet balance.')).toBeTruthy();
     expect(row('W03').className).toBe('row-error');
   });
 
@@ -136,15 +136,15 @@ describe('fleet table', () => {
     await ready();
     const input = within(row('W01')).getByLabelText('Max spend W01');
     for (const [text, message] of [
-      ['-1', 'Kwota nie może być ujemna.'],
-      ['0,1234567891', 'Podaj najwyżej 9 miejsc po przecinku (1 lamport).'],
-      ['dużo', 'Podaj kwotę w SOL, np. 0,25.'],
+      ['-1', 'The amount cannot be negative.'],
+      ['0,1234567891', 'Use at most 9 decimal places (1 lamport).'],
+      ['lots', 'Enter an amount in SOL, e.g. 0.25.'],
     ] as const) {
       await user.clear(input);
       await user.type(input, text);
       expect(within(row('W01')).getByText(message)).toBeTruthy();
       expect(
-        screen.getByRole<HTMLButtonElement>('button', { name: 'Zapisz zmiany w tabeli' }).disabled,
+        screen.getByRole<HTMLButtonElement>('button', { name: 'Save table changes' }).disabled,
       ).toBe(true);
     }
   });
@@ -154,16 +154,16 @@ describe('fleet table', () => {
     await ready();
     await user.type(within(row('W01')).getByLabelText('Max spend W01'), '0.5');
     await user.type(within(row('W03')).getByLabelText('Max spend W03'), '0,25');
-    await user.click(within(row('W02')).getByLabelText('Aktywny W02'));
-    expect(screen.getByText('Masz niezapisane zmiany w tabeli.')).toBeTruthy();
+    await user.click(within(row('W02')).getByLabelText('Active W02'));
+    expect(screen.getByText('You have unsaved table changes.')).toBeTruthy();
 
     // unsaved edits are protected like an unsaved file
     const event = new Event('beforeunload', { cancelable: true });
     window.dispatchEvent(event);
     expect(event.defaultPrevented).toBe(true);
 
-    await user.click(screen.getByRole('button', { name: 'Zapisz zmiany w tabeli' }));
-    await screen.findByText(/Zmiany w tabeli .* są zapisane w sejfie/u);
+    await user.click(screen.getByRole('button', { name: 'Save table changes' }));
+    await screen.findByText(/The table changes .* are saved in the vault/u);
     expect(saved).toHaveLength(1);
     expect(saved[0]).toEqual({
       maxSpend: [
@@ -175,29 +175,29 @@ describe('fleet table', () => {
     });
     expect(storage.showDirectoryPicker).not.toHaveBeenCalled();
 
-    await user.click(screen.getByRole('button', { name: 'Zapisz zaktualizowany plik floty' }));
-    expect(await screen.findByText(/z nowymi ustawieniami floty/u)).toBeTruthy();
+    await user.click(screen.getByRole('button', { name: 'Save the updated fleet file' }));
+    expect(await screen.findByText(/with the new fleet settings/u)).toBeTruthy();
     expect(storage.files.get('Flota testowa.keystore.json')).toBe('{"saved":true}');
-    expect(screen.queryByText('Masz niezapisane zmiany w tabeli.')).toBeNull();
+    expect(screen.queryByText('You have unsaved table changes.')).toBeNull();
   });
 
   it('a token mint shows balances with decimals; a wrong mint shows a Polish error', async () => {
     const { user } = setup();
     await ready();
-    await user.type(screen.getByLabelText('Adres tokenu (mint)'), 'SomeMint111');
-    await user.click(screen.getByRole('button', { name: 'Pokaż saldo tokenu' }));
+    await user.type(screen.getByLabelText('Token address (mint)'), 'SomeMint111');
+    await user.click(screen.getByRole('button', { name: 'Show token balance' }));
     expect(await screen.findByRole('columnheader', { name: 'Token (Token-2022)' })).toBeTruthy();
-    expect(cells('W02')[6]).toBe('1,5');
+    expect(cells('W02')[6]).toBe('1.5');
     expect(cells('W03')[6]).toBe('3');
 
-    await user.clear(screen.getByLabelText('Adres tokenu (mint)'));
-    await user.type(screen.getByLabelText('Adres tokenu (mint)'), 'NotAMint');
-    await user.click(screen.getByRole('button', { name: 'Pokaż saldo tokenu' }));
+    await user.clear(screen.getByLabelText('Token address (mint)'));
+    await user.type(screen.getByLabelText('Token address (mint)'), 'NotAMint');
+    await user.click(screen.getByRole('button', { name: 'Show token balance' }));
     // the message sits at the field, the table stays
     const alert = await screen.findByRole('alert');
-    expect(alert.textContent).toContain('nie jest mintem tokenu');
+    expect(alert.textContent).toContain('is not a token mint');
     expect(alert.id).toBe(
-      screen.getByLabelText('Adres tokenu (mint)').getAttribute('aria-describedby'),
+      screen.getByLabelText('Token address (mint)').getAttribute('aria-describedby'),
     );
     expect(screen.getByRole('columnheader', { name: 'Token' })).toBeTruthy();
     expect(screen.getByRole('table')).toBeTruthy();
@@ -206,8 +206,8 @@ describe('fleet table', () => {
   it('after a wrong mint the SOL balances keep refreshing (without the mint)', async () => {
     const { user, vault, setBalances } = setup();
     await ready();
-    await user.type(screen.getByLabelText('Adres tokenu (mint)'), 'NotAMint');
-    await user.click(screen.getByRole('button', { name: 'Pokaż saldo tokenu' }));
+    await user.type(screen.getByLabelText('Token address (mint)'), 'NotAMint');
+    await user.click(screen.getByRole('button', { name: 'Show token balance' }));
     await screen.findByRole('alert');
     const refreshes = (): { mint?: string }[] =>
       vault.request.mock.calls.map(([r]) => r).filter((r) => r.type === 'refreshBalances');
@@ -216,17 +216,17 @@ describe('fleet table', () => {
       expect(refreshes().at(-1)?.mint).toBeUndefined();
     });
     setBalances(() => 3n * SOL);
-    await user.click(screen.getByRole('button', { name: 'Odśwież salda' }));
+    await user.click(screen.getByRole('button', { name: 'Refresh balances' }));
     await waitFor(() => {
       expect(cells('W01')[3]).toBe('3');
     });
     expect(refreshes().at(-1)?.mint).toBeUndefined();
-    expect(screen.getByRole('alert').textContent).toContain('nie jest mintem tokenu');
+    expect(screen.getByRole('alert').textContent).toContain('is not a token mint');
 
     // a corrected mint clears the message and reads the token again
-    await user.clear(screen.getByLabelText('Adres tokenu (mint)'));
-    await user.type(screen.getByLabelText('Adres tokenu (mint)'), 'GoodMint1');
-    await user.click(screen.getByRole('button', { name: 'Pokaż saldo tokenu' }));
+    await user.clear(screen.getByLabelText('Token address (mint)'));
+    await user.type(screen.getByLabelText('Token address (mint)'), 'GoodMint1');
+    await user.click(screen.getByRole('button', { name: 'Show token balance' }));
     expect(await screen.findByRole('columnheader', { name: 'Token (Token-2022)' })).toBeTruthy();
     expect(screen.queryByRole('alert')).toBeNull();
   });
@@ -234,9 +234,7 @@ describe('fleet table', () => {
   it('settings reset while reading the file are announced', async () => {
     setup({ settings: { resetFields: ['minReserveLamports', 'maxAttempts'] } });
     await ready();
-    expect(
-      screen.getByText(/przyjęły wartości domyślne: minimalna rezerwa, liczba prób/u),
-    ).toBeTruthy();
+    expect(screen.getByText(/default\s+values: minimum reserve, attempts/u)).toBeTruthy();
   });
 });
 
@@ -255,13 +253,13 @@ describe('100 wallets', () => {
     const before = new Map(renders);
 
     // same balances: no row renders again
-    await user.click(screen.getByRole('button', { name: 'Odśwież salda' }));
+    await user.click(screen.getByRole('button', { name: 'Refresh balances' }));
     await act(() => Promise.resolve());
     expect(renders).toEqual(before);
 
     // one wallet changed: only that row renders
     setBalances((i) => (i === 42 ? 2n * SOL : SOL));
-    await user.click(screen.getByRole('button', { name: 'Odśwież salda' }));
+    await user.click(screen.getByRole('button', { name: 'Refresh balances' }));
     await waitFor(() => {
       expect(cells('W43')[3]).toBe('2');
     });
@@ -272,7 +270,7 @@ describe('100 wallets', () => {
 
 describe('bulk actions and summary', () => {
   function summaryValue(term: string): string {
-    const dl = screen.getByLabelText('Podsumowanie floty');
+    const dl = screen.getByLabelText('Fleet summary');
     const dt = within(dl).getByText(term);
     return dt.nextElementSibling?.textContent ?? '';
   }
@@ -280,65 +278,65 @@ describe('bulk actions and summary', () => {
   it('sets the same max spend on all wallets (drafts only, saved on click)', async () => {
     const { user, saved } = setup();
     await ready();
-    await user.type(screen.getByLabelText('Max spend dla wszystkich (SOL)'), '0,5');
-    await user.click(screen.getByRole('button', { name: 'Ustaw kwotę' }));
+    await user.type(screen.getByLabelText('Max spend for all (SOL)'), '0,5');
+    await user.click(screen.getByRole('button', { name: 'Set amount' }));
     for (const label of ['W01', 'W02', 'W03']) {
       expect(within(row(label)).getByLabelText<HTMLInputElement>(`Max spend ${label}`).value).toBe(
-        '0,5',
+        '0.5',
       );
     }
     expect(saved).toHaveLength(0);
-    expect(summaryValue('Gotowe portfele')).toBe('3 / 3');
-    expect(summaryValue('Łącznie do wydania')).toBe('1,5 SOL');
-    expect(summaryValue('Łącznie SOL')).toBe('3 SOL');
+    expect(summaryValue('Ready wallets')).toBe('3 / 3');
+    expect(summaryValue('Total to spend')).toBe('1.5 SOL');
+    expect(summaryValue('Total SOL')).toBe('3 SOL');
   });
 
   it('a wrong amount or percent gives a Polish message and changes nothing', async () => {
     const { user } = setup();
     await ready();
-    await user.type(screen.getByLabelText('Max spend dla wszystkich (SOL)'), '-1');
-    await user.click(screen.getByRole('button', { name: 'Ustaw kwotę' }));
-    expect(screen.getByText('Kwota nie może być ujemna.')).toBeTruthy();
-    await user.type(screen.getByLabelText('Max spend jako % salda'), '150');
-    await user.click(screen.getByRole('button', { name: 'Ustaw procent' }));
-    expect(screen.getByText(/Podaj procent salda od 0,01 do 100/u)).toBeTruthy();
+    await user.type(screen.getByLabelText('Max spend for all (SOL)'), '-1');
+    await user.click(screen.getByRole('button', { name: 'Set amount' }));
+    expect(screen.getByText('The amount cannot be negative.')).toBeTruthy();
+    await user.type(screen.getByLabelText('Max spend as % of balance'), '150');
+    await user.click(screen.getByRole('button', { name: 'Set percent' }));
+    expect(screen.getByText(/Enter a percent of the balance from 0\.01 to 100/u)).toBeTruthy();
     expect(within(row('W01')).getByLabelText<HTMLInputElement>('Max spend W01').value).toBe('');
   });
 
   it('sets max spend as a % of each balance (rounded down)', async () => {
     const { user } = setup({ lamports: (i) => SOL + BigInt(i) * 333n });
     await ready();
-    await user.type(screen.getByLabelText('Max spend jako % salda'), '90');
-    await user.click(screen.getByRole('button', { name: 'Ustaw procent' }));
-    expect(within(row('W01')).getByLabelText<HTMLInputElement>('Max spend W01').value).toBe('0,9');
+    await user.type(screen.getByLabelText('Max spend as % of balance'), '90');
+    await user.click(screen.getByRole('button', { name: 'Set percent' }));
+    expect(within(row('W01')).getByLabelText<HTMLInputElement>('Max spend W01').value).toBe('0.9');
     // (1 000 000 333 × 9000) / 10 000 = 900 000 299.7 → 900 000 299 lamports
     expect(within(row('W02')).getByLabelText<HTMLInputElement>('Max spend W02').value).toBe(
-      '0,900000299',
+      '0.900000299',
     );
     // reserve = balance − 90 % ≥ 0.015 SOL, so every wallet is ready
-    expect(summaryValue('Gotowe portfele')).toBe('3 / 3');
+    expect(summaryValue('Ready wallets')).toBe('3 / 3');
   });
 
   it('select and deselect all', async () => {
     const { user } = setup();
     await ready();
-    await user.click(screen.getByRole('button', { name: 'Odznacz wszystkie' }));
+    await user.click(screen.getByRole('button', { name: 'Deselect all' }));
     for (const label of ['W01', 'W02', 'W03']) {
-      expect(within(row(label)).getByLabelText<HTMLInputElement>(`Aktywny ${label}`).checked).toBe(
+      expect(within(row(label)).getByLabelText<HTMLInputElement>(`Active ${label}`).checked).toBe(
         false,
       );
     }
-    await user.click(screen.getByRole('button', { name: 'Zaznacz wszystkie' }));
-    expect(within(row('W02')).getByLabelText<HTMLInputElement>('Aktywny W02').checked).toBe(true);
+    await user.click(screen.getByRole('button', { name: 'Select all' }));
+    expect(within(row('W02')).getByLabelText<HTMLInputElement>('Active W02').checked).toBe(true);
   });
 
   it('the summary sums token balances with decimals', async () => {
     const { user } = setup();
     await ready();
-    expect(summaryValue('Łącznie tokenów')).toBe('–');
-    await user.type(screen.getByLabelText('Adres tokenu (mint)'), 'SomeMint111');
-    await user.click(screen.getByRole('button', { name: 'Pokaż saldo tokenu' }));
+    expect(summaryValue('Total tokens')).toBe('–');
+    await user.type(screen.getByLabelText('Token address (mint)'), 'SomeMint111');
+    await user.click(screen.getByRole('button', { name: 'Show token balance' }));
     await screen.findByRole('columnheader', { name: 'Token (Token-2022)' });
-    expect(summaryValue('Łącznie tokenów')).toBe('4,5'); // 0 + 1.5 + 3
+    expect(summaryValue('Total tokens')).toBe('4.5'); // 0 + 1.5 + 3
   });
 });

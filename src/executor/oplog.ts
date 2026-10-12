@@ -103,7 +103,7 @@ export function formatPrice(
   const scaled = (lamports * 10n ** BigInt(decimals) * scale) / (units * 10n ** LAMPORTS_DECIMALS);
   const whole = scaled / scale;
   const fraction = (scaled % scale).toString().padStart(digits, '0').replace(/0+$/u, '');
-  return fraction === '' ? whole.toString() : `${whole.toString()},${fraction}`;
+  return fraction === '' ? whole.toString() : `${whole.toString()}.${fraction}`;
 }
 
 export interface LogContext {
@@ -140,7 +140,8 @@ const EMPTY = {
 } as const;
 
 const DISARMED_MESSAGE = 'The watcher was disarmed before this token was bought.';
-const STALE_MESSAGE = 'The transaction is from before arming: this is not a new token, so there is no buy.';
+const STALE_MESSAGE =
+  'The transaction is from before arming: this is not a new token, so there is no buy.';
 const MISMATCH_MESSAGE =
   'The transaction does not create the mint detected from the log. The buy has already started: check the token.';
 

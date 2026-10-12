@@ -37,8 +37,8 @@ async function setup() {
   render(<App vault={client} storage={storage.env} statusPollMs={60_000} />);
   const user = userEvent.setup();
   const nav = await screen.findByRole('navigation', {}, { timeout: 10_000 });
-  await user.click(within(nav).getByRole('button', { name: 'Ustawienia' }));
-  await screen.findByRole('heading', { name: 'Ustawienia' });
+  await user.click(within(nav).getByRole('button', { name: 'Settings' }));
+  await screen.findByRole('heading', { name: 'Settings' });
   return { handler, storage, user, requests };
 }
 
@@ -52,12 +52,12 @@ async function retype(user: UserEvent, label: string | RegExp, text: string): Pr
 }
 
 function saveButton(): HTMLButtonElement {
-  return screen.getByRole('button', { name: 'Zapisz ustawienia' });
+  return screen.getByRole('button', { name: 'Save settings' });
 }
 
 async function saveSettings(user: UserEvent): Promise<void> {
   await user.click(saveButton());
-  await screen.findByRole('button', { name: 'Zapisz zaktualizowany plik floty' });
+  await screen.findByRole('button', { name: 'Save the updated fleet file' });
 }
 
 function keysIn(handler: VaultHandler): unknown {
@@ -72,97 +72,91 @@ afterEach(() => {
 describe('form', () => {
   it('shows the defaults and that no key is set', async () => {
     await setup();
-    expect(field('Minimalna rezerwa (MIN_RESERVE_SOL)').value).toBe('0,015');
-    expect(field('Maks. liczba prób na portfel').value).toBe('3');
-    expect(field(/^Sufit ceny/u).value).toBe('50');
-    expect(field('Okno ponawiania „no route”').value).toBe('20');
-    expect(field('Odstęp ponowień: początkowy').value).toBe('500');
-    expect(field('Odstęp ponowień: maksymalny').value).toBe('2000');
-    expect(field('Automatyczna blokada po bezczynności').value).toBe('15');
-    expect(screen.getByRole<HTMLInputElement>('radio', { name: /^Jednorazowy/u }).checked).toBe(
-      true,
-    );
+    expect(field('Minimum reserve (MIN_RESERVE_SOL)').value).toBe('0.015');
+    expect(field('Max attempts per wallet').value).toBe('3');
+    expect(field(/^Price ceiling/u).value).toBe('50');
+    expect(field('“No route” retry window').value).toBe('20');
+    expect(field('Retry delay: first').value).toBe('500');
+    expect(field('Retry delay: longest').value).toBe('2000');
+    expect(field('Auto-lock after inactivity').value).toBe('15');
+    expect(screen.getByRole<HTMLInputElement>('radio', { name: /^One-shot/u }).checked).toBe(true);
     expect(
-      screen.getByRole<HTMLSelectElement>('combobox', { name: 'Explorer transakcji' }).value,
+      screen.getByRole<HTMLSelectElement>('combobox', { name: 'Transaction explorer' }).value,
     ).toBe('solscan');
-    expect(screen.getByText(/Limit \/order: 60\/min \(1 zapytania/u)).toBeTruthy();
-    expect(screen.getAllByText('Nie ustawiono.')).toHaveLength(4);
-    expect(screen.queryByRole('button', { name: /^Usuń/u })).toBeNull();
+    expect(screen.getByText(/\/order limit: 60\/min \(\s*1 per second/u)).toBeTruthy();
+    expect(screen.getAllByText('Not set.')).toHaveLength(4);
+    expect(screen.queryByRole('button', { name: /^Remove/u })).toBeNull();
   });
 
   it.each<[string | RegExp, string, string]>([
-    [/^Sufit ceny/u, '0', 'The price ceiling must be a whole number from 1 to 1000%.'],
-    [/^Sufit ceny/u, '1001', 'The price ceiling must be a whole number from 1 to 1000%.'],
-    ['Maks. liczba prób na portfel', '11', 'Attempts must be a whole number from 1 to 10.'],
-    ['Maks. liczba prób na portfel', 'trzy', 'Attempts must be a whole number from 1 to 10.'],
+    [/^Price ceiling/u, '0', 'The price ceiling must be a whole number from 1 to 1000%.'],
+    [/^Price ceiling/u, '1001', 'The price ceiling must be a whole number from 1 to 1000%.'],
+    ['Max attempts per wallet', '11', 'Attempts must be a whole number from 1 to 10.'],
+    ['Max attempts per wallet', 'three', 'Attempts must be a whole number from 1 to 10.'],
     [
-      'Minimalna rezerwa (MIN_RESERVE_SOL)',
+      'Minimum reserve (MIN_RESERVE_SOL)',
       '0,004',
       'The minimum reserve must be between 0.005 and 1 SOL.',
     ],
     [
-      'Minimalna rezerwa (MIN_RESERVE_SOL)',
+      'Minimum reserve (MIN_RESERVE_SOL)',
       'abc',
       'The minimum reserve must be between 0.005 and 1 SOL.',
     ],
-    ['Okno ponawiania „no route”', '500', 'The “no route” window must be between 1 and 120 s.'],
+    ['“No route” retry window', '500', 'The “no route” window must be between 1 and 120 s.'],
     [
-      'Odstęp ponowień: maksymalny',
+      'Retry delay: longest',
       '400',
       'The longest retry delay cannot be shorter than the first one.',
     ],
-    [
-      'Automatyczna blokada po bezczynności',
-      '0',
-      'Auto-lock must be between 1 and 120 minutes.',
-    ],
-  ])('%s = %s → Polish message, save disabled', async (label, value, message) => {
+    ['Auto-lock after inactivity', '0', 'Auto-lock must be between 1 and 120 minutes.'],
+  ])('%s = %s → English message, save disabled', async (label, value, message) => {
     const { user } = await setup();
     await retype(user, label, value);
     expect(screen.getByText(message)).toBeTruthy();
     expect(saveButton().disabled).toBe(true);
   });
 
-  it('Jupiter plan sets the limit; "Własny" lets the user type it', async () => {
+  it('Jupiter plan sets the limit; "Custom" lets the user type it', async () => {
     const { user } = await setup();
-    const plan = screen.getByRole('combobox', { name: 'Plan Jupitera' });
+    const plan = screen.getByRole('combobox', { name: 'Jupiter plan' });
     await user.selectOptions(plan, 'developer');
-    expect(screen.getByText(/Limit \/order: 600\/min \(10 zapytania/u)).toBeTruthy();
+    expect(screen.getByText(/\/order limit: 600\/min \(\s*10 per second/u)).toBeTruthy();
     await user.selectOptions(plan, 'keyless');
-    expect(screen.getByText(/Limit \/order: 30\/min \(0,5 zapytania/u)).toBeTruthy();
+    expect(screen.getByText(/\/order limit: 30\/min \(\s*0\.5 per second/u)).toBeTruthy();
     await user.selectOptions(plan, 'custom');
-    await retype(user, 'Limit /order (zapytań na minutę)', '0');
-    expect(screen.getByText(/od 1 do 100 000 zapytań na minutę/u)).toBeTruthy();
-    await retype(user, 'Limit /order (zapytań na minutę)', '1200');
+    await retype(user, '/order limit (requests per minute)', '0');
+    expect(screen.getByText(/from 1 to 100,000 requests per minute/u)).toBeTruthy();
+    await retype(user, '/order limit (requests per minute)', '1200');
     expect(saveButton().disabled).toBe(false);
   });
 
   it('continuous mode needs confirming the warning', async () => {
     const { user } = await setup();
     const confirm = vi.spyOn(window, 'confirm').mockReturnValueOnce(false);
-    const continuous = screen.getByRole<HTMLInputElement>('radio', { name: /^Ciągły/u });
+    const continuous = screen.getByRole<HTMLInputElement>('radio', { name: /^Continuous/u });
     await user.click(continuous);
     expect(confirm).toHaveBeenCalledTimes(1);
     expect(continuous.checked).toBe(false);
     confirm.mockReturnValueOnce(true);
     await user.click(continuous);
     expect(continuous.checked).toBe(true);
-    expect(screen.getByText(/Tryb ciągły jest włączony/u)).toBeTruthy();
+    expect(screen.getByText(/Continuous mode is on/u)).toBeTruthy();
   });
 });
 
 describe('saving', () => {
   it('saves settings in the vault and the file; they come back after reopening', async () => {
     const { handler, storage, user } = await setup();
-    await retype(user, 'Minimalna rezerwa (MIN_RESERVE_SOL)', '0,02');
-    await retype(user, 'Maks. liczba prób na portfel', '5');
-    await retype(user, /^Sufit ceny/u, '120');
-    await retype(user, 'Okno ponawiania „no route”', '30');
-    await retype(user, 'Odstęp ponowień: początkowy', '250');
-    await retype(user, 'Odstęp ponowień: maksymalny', '4000');
-    await retype(user, 'Automatyczna blokada po bezczynności', '30');
-    await user.selectOptions(screen.getByRole('combobox', { name: 'Explorer transakcji' }), 'orb');
-    await user.selectOptions(screen.getByRole('combobox', { name: 'Plan Jupitera' }), 'launch');
+    await retype(user, 'Minimum reserve (MIN_RESERVE_SOL)', '0,02');
+    await retype(user, 'Max attempts per wallet', '5');
+    await retype(user, /^Price ceiling/u, '120');
+    await retype(user, '“No route” retry window', '30');
+    await retype(user, 'Retry delay: first', '250');
+    await retype(user, 'Retry delay: longest', '4000');
+    await retype(user, 'Auto-lock after inactivity', '30');
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Transaction explorer' }), 'orb');
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Jupiter plan' }), 'launch');
     await saveSettings(user);
 
     const expected = {
@@ -180,27 +174,25 @@ describe('saving', () => {
     };
     expect(handler.inspect().unlocked?.settings.global).toEqual(expected);
     // the header follows the new auto-lock time
-    expect(screen.getByText('Automatyczna blokada po 30 min bezczynności')).toBeTruthy();
-    expect(screen.getByText(/plik floty nie jest jeszcze zaktualizowany/u)).toBeTruthy();
+    expect(screen.getByText('Auto-lock after 30 min of inactivity')).toBeTruthy();
+    expect(screen.getByText(/the fleet file is not updated yet/u)).toBeTruthy();
 
-    await user.click(screen.getByRole('button', { name: 'Zapisz zaktualizowany plik floty' }));
-    await screen.findByText(`Zapisano plik ${FILE_NAME} z nowymi ustawieniami.`);
+    await user.click(screen.getByRole('button', { name: 'Save the updated fleet file' }));
+    await screen.findByText(`Saved ${FILE_NAME} with the new settings.`);
     const saved = storage.files.get(FILE_NAME);
     if (saved === undefined) throw new Error('not saved');
     const reopened = await openKeystore(parseKeystoreFile(saved), PASSWORD);
     expect(reopened.secrets.settings.global).toEqual(expected);
   });
 
-  it('typed keys go to the worker only; the form is cleared and shows "Ustawiony."', async () => {
+  it('typed keys go to the worker only; the form is cleared and shows "Set."', async () => {
     const { handler, user, requests } = await setup();
-    await user.type(field('Klucz API Helius'), HELIUS_KEY);
-    await user.type(field('Klucz API Jupiter'), JUPITER_KEY);
-    // "Pokaż" shows only the text typed now
-    expect(field('Klucz API Helius').type).toBe('password');
-    await user.click(
-      screen.getByRole('button', { name: 'Pokaż wpisywany tekst: Klucz API Helius' }),
-    );
-    expect(field('Klucz API Helius').type).toBe('text');
+    await user.type(field('Helius API key'), HELIUS_KEY);
+    await user.type(field('Jupiter API key'), JUPITER_KEY);
+    // "Show" shows only the text typed now
+    expect(field('Helius API key').type).toBe('password');
+    await user.click(screen.getByRole('button', { name: 'Show the typed text: Helius API key' }));
+    expect(field('Helius API key').type).toBe('text');
     await saveSettings(user);
 
     expect(keysIn(handler)).toEqual({ helius: HELIUS_KEY, jupiter: JUPITER_KEY });
@@ -208,45 +200,45 @@ describe('saving', () => {
       type: 'saveSettings',
       apiKeys: { helius: HELIUS_KEY, jupiter: JUPITER_KEY },
     });
-    expect(field('Klucz API Helius').value).toBe('');
-    expect(field('Klucz API Helius').type).toBe('password');
-    expect(field('Klucz API Jupiter').value).toBe('');
-    expect(screen.getAllByText('Ustawiony.')).toHaveLength(2);
+    expect(field('Helius API key').value).toBe('');
+    expect(field('Helius API key').type).toBe('password');
+    expect(field('Jupiter API key').value).toBe('');
+    expect(screen.getAllByText('Set.')).toHaveLength(2);
     expect(document.body.innerHTML).not.toContain(HELIUS_KEY);
     expect(document.body.innerHTML).not.toContain(JUPITER_KEY);
   });
 
-  it('an empty field keeps the key; "Usuń" removes it', async () => {
+  it('an empty field keeps the key; "Remove" removes it', async () => {
     const { handler, storage, user } = await setup();
     // later saves overwrite the same file
     const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
-    await user.type(field('Klucz API Helius'), HELIUS_KEY);
-    await user.type(field('Klucz API Jupiter'), JUPITER_KEY);
+    await user.type(field('Helius API key'), HELIUS_KEY);
+    await user.type(field('Jupiter API key'), JUPITER_KEY);
     await saveSettings(user);
-    await user.click(screen.getByRole('button', { name: 'Zapisz zaktualizowany plik floty' }));
-    await screen.findByText(/z nowymi ustawieniami/u);
+    await user.click(screen.getByRole('button', { name: 'Save the updated fleet file' }));
+    await screen.findByText(/with the new settings/u);
 
     // nothing typed: keys stay
-    await retype(user, 'Maks. liczba prób na portfel', '4');
+    await retype(user, 'Max attempts per wallet', '4');
     await saveSettings(user);
     expect(keysIn(handler)).toEqual({ helius: HELIUS_KEY, jupiter: JUPITER_KEY });
-    await user.click(screen.getByRole('button', { name: 'Zapisz zaktualizowany plik floty' }));
-    await screen.findByText(/z nowymi ustawieniami/u);
+    await user.click(screen.getByRole('button', { name: 'Save the updated fleet file' }));
+    await screen.findByText(/with the new settings/u);
 
-    expect(confirm).toHaveBeenCalledWith(expect.stringContaining('już istnieje'));
+    expect(confirm).toHaveBeenCalledWith(expect.stringContaining('already exists'));
     expect(storage.files.size).toBe(1);
 
-    await user.click(screen.getByRole('button', { name: 'Usuń: Klucz API Jupiter' }));
-    expect(screen.getByText('Zostanie usunięty po zapisaniu ustawień.')).toBeTruthy();
-    expect(field('Klucz API Jupiter').disabled).toBe(true);
+    await user.click(screen.getByRole('button', { name: 'Remove: Jupiter API key' }));
+    expect(screen.getByText('Will be removed when the settings are saved.')).toBeTruthy();
+    expect(field('Jupiter API key').disabled).toBe(true);
     await saveSettings(user);
     expect(keysIn(handler)).toEqual({ helius: HELIUS_KEY });
-    expect(screen.getAllByText('Ustawiony.')).toHaveLength(1);
+    expect(screen.getAllByText('Set.')).toHaveLength(1);
   });
 
   it('a custom RPC URL must be a Helius address (CSP); a good one is write-only too', async () => {
     const { handler, user } = await setup();
-    const rpc = 'Własny URL RPC (HTTPS, opcjonalnie)';
+    const rpc = 'Custom RPC URL (HTTPS, optional)';
     for (const bad of [
       'https://rpc.example.com/?api-key=k1',
       'https://helius-rpc.com.evil.example/?api-key=k1',
@@ -255,13 +247,13 @@ describe('saving', () => {
       await retype(user, rpc, bad);
       expect(
         screen.getByText(
-          'Dozwolone są tylko adresy Helius w domenie helius-rpc.com (np. https://mainnet.helius-rpc.com/?api-key=…).',
+          'Only Helius addresses in the helius-rpc.com domain are allowed (e.g. https://mainnet.helius-rpc.com/?api-key=…).',
         ),
       ).toBeTruthy();
       expect(saveButton().disabled).toBe(true);
     }
     await retype(user, rpc, 'http://mainnet.helius-rpc.com');
-    expect(screen.getByText('Adres musi zaczynać się od https://.')).toBeTruthy();
+    expect(screen.getByText('The address must start with https://.')).toBeTruthy();
     expect(keysIn(handler)).toEqual({});
 
     await retype(user, rpc, 'https://staked.helius-rpc.com/?api-key=k1');
@@ -294,7 +286,7 @@ describe('saving', () => {
     );
     const href = window.location.href;
     const { user } = await setup();
-    await user.type(field('Klucz API Helius'), HELIUS_KEY);
+    await user.type(field('Helius API key'), HELIUS_KEY);
     await saveSettings(user);
     expect(setItem).not.toHaveBeenCalled();
     expect(localStorage.length + sessionStorage.length).toBe(0);
@@ -304,19 +296,19 @@ describe('saving', () => {
 
   it('locking with settings not written to the file asks first', async () => {
     const { user } = await setup();
-    await retype(user, 'Maks. liczba prób na portfel', '4');
+    await retype(user, 'Max attempts per wallet', '4');
     await saveSettings(user);
     const confirm = vi.spyOn(window, 'confirm').mockReturnValueOnce(false);
-    await user.click(screen.getByRole('button', { name: 'Zablokuj' }));
+    await user.click(screen.getByRole('button', { name: 'Lock' }));
     expect(confirm).toHaveBeenCalledTimes(1);
-    expect(screen.getByRole('heading', { name: 'Ustawienia' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Settings' })).toBeTruthy();
   });
 });
 
 describe('VaultInfo in the UI', () => {
   it('has only flags for the keys', async () => {
     const { handler, user } = await setup();
-    await user.type(field('Klucz API Helius'), HELIUS_KEY);
+    await user.type(field('Helius API key'), HELIUS_KEY);
     await saveSettings(user);
     const status = (await handler.handle({ type: 'status' })) as { info: VaultFileResult['info'] };
     expect(status.info.apiKeys).toEqual({

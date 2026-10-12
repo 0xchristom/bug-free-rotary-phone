@@ -25,8 +25,7 @@ export interface OpenScreenProps {
   readonly onUnlocked: () => void;
 }
 
-const UNVERIFIED_HINT =
-  'Adres niezweryfikowany. Kopiowanie i kod QR będą dostępne po odblokowaniu.';
+const UNVERIFIED_HINT = 'Unverified address. Copy and the QR code are available after unlocking.';
 
 /**
  * Opening a keystore file (SPEC 3.1): pick the file, preview its public part without the
@@ -94,11 +93,12 @@ export function OpenScreen({ storage, onBack, onUnlocked }: OpenScreenProps) {
     (problem.kind === 'tampered' ? (
       <div className="notice error" role="alert">
         <p>
-          <strong>Uwaga: plik floty mógł zostać podmieniony.</strong>
+          <strong>Warning: the fleet file may have been replaced.</strong>
         </p>
         <p>{problem.message}</p>
         <p>
-          Nie wysyłaj środków na adresy z tego pliku. Otwórz własną kopię pliku z zaufanego miejsca.
+          Do not send funds to the addresses from this file. Open your own copy of the file from a
+          trusted place.
         </p>
       </div>
     ) : (
@@ -110,8 +110,11 @@ export function OpenScreen({ storage, onBack, onUnlocked }: OpenScreenProps) {
   if (phase.kind === 'pick') {
     return (
       <section className="screen" aria-labelledby={`${ids}-title`}>
-        <h2 id={`${ids}-title`}>Otwórz plik floty</h2>
-        <p>Wybierz plik „…keystore.json”. Najpierw zobaczysz jego podgląd, hasło podasz potem.</p>
+        <h2 id={`${ids}-title`}>Open a fleet file</h2>
+        <p>
+          Choose a “…keystore.json” file. You will see its preview first and enter the password
+          after that.
+        </p>
         {problemBox}
         <div className="actions">
           <button
@@ -120,10 +123,10 @@ export function OpenScreen({ storage, onBack, onUnlocked }: OpenScreenProps) {
             disabled={phase.picking}
             onClick={() => void pick()}
           >
-            {phase.picking ? 'Wczytywanie…' : 'Wybierz plik floty'}
+            {phase.picking ? 'Loading…' : 'Choose a fleet file'}
           </button>
           <button type="button" onClick={onBack}>
-            Wróć
+            Back
           </button>
         </div>
       </section>
@@ -134,26 +137,26 @@ export function OpenScreen({ storage, onBack, onUnlocked }: OpenScreenProps) {
   const percent = unlocking === null ? null : Math.round(unlocking * 100);
   return (
     <section className="screen" aria-labelledby={`${ids}-title`}>
-      <h2 id={`${ids}-title`}>Podgląd floty</h2>
+      <h2 id={`${ids}-title`}>Fleet preview</h2>
       <ul>
         <li>
-          Nazwa floty: <strong>{preview.fleetName}</strong>
+          Fleet name: <strong>{preview.fleetName}</strong>
         </li>
         <li>
-          Portfele: <strong>{preview.wallets.length}</strong>
+          Wallets: <strong>{preview.wallets.length}</strong>
         </li>
         <li>
-          Plik: <strong>{phase.fileName}</strong>
+          File: <strong>{phase.fileName}</strong>
         </li>
       </ul>
       <p className="notice warning" role="status">
-        Adresy poniżej pochodzą z jawnej części pliku i nie są jeszcze zweryfikowane. Odblokuj flotę
-        hasłem, żeby je sprawdzić, skopiować albo pokazać kod QR.
+        The addresses below come from the open part of the file and are not verified yet. Unlock the
+        fleet with the password to check them, copy them or show a QR code.
       </p>
 
       {problemBox}
       <form className="form" onSubmit={(e) => void unlock(e)} noValidate>
-        <label htmlFor={`${ids}-pw`}>Hasło</label>
+        <label htmlFor={`${ids}-pw`}>Password</label>
         <input
           id={`${ids}-pw`}
           type="password"
@@ -166,13 +169,13 @@ export function OpenScreen({ storage, onBack, onUnlocked }: OpenScreenProps) {
         />
         {percent !== null && (
           <>
-            <progress max={100} value={percent} aria-label="Postęp odszyfrowania" />
-            <p className="muted">Odszyfrowuję plik… {percent}%</p>
+            <progress max={100} value={percent} aria-label="Decryption progress" />
+            <p className="muted">Decrypting the file… {percent}%</p>
           </>
         )}
         <div className="actions">
           <button type="submit" className="primary" disabled={password === '' || percent !== null}>
-            Odblokuj
+            Unlock
           </button>
           <button
             type="button"
@@ -183,23 +186,23 @@ export function OpenScreen({ storage, onBack, onUnlocked }: OpenScreenProps) {
               setPhase({ kind: 'pick', picking: false });
             }}
           >
-            Wybierz inny plik
+            Choose another file
           </button>
           <button type="button" disabled={percent !== null} onClick={onBack}>
-            Wróć
+            Back
           </button>
         </div>
       </form>
 
       <div className="table-wrap">
         <table className="wallets">
-          <caption>Adresy z pliku (niezweryfikowane)</caption>
+          <caption>Addresses from the file (unverified)</caption>
           <thead>
             <tr>
               <th scope="col">#</th>
-              <th scope="col">Etykieta</th>
-              <th scope="col">Adres depozytu</th>
-              <th scope="col">Akcje</th>
+              <th scope="col">Label</th>
+              <th scope="col">Deposit address</th>
+              <th scope="col">Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -210,12 +213,12 @@ export function OpenScreen({ storage, onBack, onUnlocked }: OpenScreenProps) {
                 <td>
                   <code className="address">{w.address}</code>{' '}
                   <span className="badge unverified" title={UNVERIFIED_HINT}>
-                    niezweryfikowany
+                    unverified
                   </span>
                 </td>
                 <td>
                   <button type="button" disabled title={UNVERIFIED_HINT}>
-                    Kopiuj
+                    Copy
                   </button>{' '}
                   <button type="button" disabled title={UNVERIFIED_HINT}>
                     QR

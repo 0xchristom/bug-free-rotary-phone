@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-/** „Test połączeń” on the settings screen (BUNNDLY-16), real vault handler, mocked net. */
+/** "Test connections" on the settings screen (BUNNDLY-16), real vault handler, mocked net. */
 import { cleanup, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -68,9 +68,9 @@ async function setup(helius: (body: { id: number; method: string }) => FetchRepl
   render(<App vault={client} storage={mockStorage().env} statusPollMs={60_000} />);
   const user = userEvent.setup();
   const nav = await screen.findByRole('navigation', {}, { timeout: 10_000 });
-  await user.click(within(nav).getByRole('button', { name: 'Ustawienia' }));
-  await user.click(await screen.findByRole('button', { name: 'Test połączeń' }));
-  const table = await screen.findByRole('table', { name: 'Wyniki testu połączeń' });
+  await user.click(within(nav).getByRole('button', { name: 'Settings' }));
+  await user.click(await screen.findByRole('button', { name: 'Test connections' }));
+  const table = await screen.findByRole('table', { name: 'Connection test results' });
   const row = (name: RegExp) =>
     within(table).getByRole('rowheader', { name }).closest('tr')?.textContent ?? '';
   return { row };
@@ -85,10 +85,10 @@ describe('connection test in the settings', () => {
       json: { jsonrpc: '2.0', id: b.id, result: b.method === 'getHealth' ? 'ok' : 452_673_384 },
     }));
     expect(row(/Helius HTTP/u)).toMatch(/OK, \d+ msslot 452673384/u);
-    expect(row(/Helius WebSocket/u)).toContain('pierwsze zdarzenie po');
+    expect(row(/Helius WebSocket/u)).toContain('first event after');
     expect(row(/Helius WebSocket/u)).toContain('slot 452700000');
     const jupiter = row(/Jupiter/u);
-    expect(jupiter).toContain('0,01 SOL → 1,174568 USDC (metis)');
+    expect(jupiter).toContain('0.01 SOL → 1.174568 USDC (metis)');
     expect(jupiter).toContain(
       'x-ratelimit-remaining 58, x-ratelimit-current 2, x-ratelimit-reset 1790966971 (',
     );
@@ -98,8 +98,8 @@ describe('connection test in the settings', () => {
 
   it('a rejected Helius key: Polish message in that row, the others still run', async () => {
     const { row } = await setup(() => ({ status: 401, json: { error: `bad key ${HELIUS}` } }));
-    expect(row(/Helius HTTP/u)).toContain('Błąd');
-    expect(row(/Helius HTTP/u)).toContain('Usługa odrzuciła klucz API (HTTP 401)');
+    expect(row(/Helius HTTP/u)).toContain('Error');
+    expect(row(/Helius HTTP/u)).toContain('The service rejected the API key (HTTP 401)');
     expect(row(/Jupiter/u)).toMatch(/^Jupiter.*OK/u);
     expect(document.body.innerHTML).not.toContain(HELIUS);
   });

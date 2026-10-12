@@ -31,9 +31,9 @@ export interface WatchPanelProps {
 }
 
 const MODE_HELP: Readonly<Record<BuyMode, string>> = {
-  'one-shot': 'Jednorazowy: pierwszy wykryty token rozbraja watcher, a zakup trwa dalej.',
+  'one-shot': 'One-shot: the first detected token disarms the watcher, and the buy goes on.',
   continuous:
-    'Ciągły: watcher zostaje uzbrojony i kupuje każdy kolejny token twórcy, jeden po drugim.',
+    'Continuous: the watcher stays armed and buys every next token of the creator, one after another.',
 };
 
 function shortAddress(address: string): string {
@@ -41,14 +41,14 @@ function shortAddress(address: string): string {
 }
 
 function verifiedLabel(d: WatchDetection): string {
-  if (d.verified === true) return 'zweryfikowane';
-  if (d.verified === false) return 'niezgodne z transakcją';
+  if (d.verified === true) return 'verified';
+  if (d.verified === false) return 'does not match the transaction';
   return '–';
 }
 
 /**
  * Mode B controls (SPEC 3.4, BUNNDLY-35, D-039): the creator address, one-shot or
- * continuous, the big UZBRÓJ / ROZBRÓJ button (live mode only after a confirmation),
+ * continuous, the big ARM / DISARM button (live mode only after a confirmation),
  * the connection state and the detections.
  */
 export function WatchPanel({
@@ -94,13 +94,13 @@ export function WatchPanel({
   const missing =
     blocked ??
     (!hasHelius
-      ? 'Obserwacja wymaga klucza Helius (Ustawienia).'
+      ? 'The watcher needs a Helius key (Settings).'
       : readyCount === 0
-        ? 'Brak gotowych portfeli: zaznacz aktywne i ustaw im max spend.'
+        ? 'No ready wallets: mark wallets as active and set their max spend.'
         : !creatorValid
-          ? 'Podaj poprawny adres twórcy.'
+          ? 'Enter a valid creator address.'
           : buyRunning
-            ? 'Trwa zakup: uzbroisz watcher po jego końcu.'
+            ? 'A buy is running: you can arm the watcher when it ends.'
             : null);
 
   const act = async (task: () => Promise<unknown>): Promise<void> => {
@@ -143,7 +143,7 @@ export function WatchPanel({
       setCopied(mint);
     } catch {
       setCopied(null);
-      setError('Nie udało się skopiować adresu. Zaznacz go i skopiuj ręcznie.');
+      setError('The address could not be copied. Select it and copy it by hand.');
     }
   };
 
@@ -158,11 +158,11 @@ export function WatchPanel({
     <div className="watch-panel">
       {armed && watch ? (
         <p>
-          Obserwowany twórca: <code className="address">{watch.creator}</code>
+          Watched creator: <code className="address">{watch.creator}</code>
         </p>
       ) : (
         <div className="field">
-          <label htmlFor={`${ids}-creator`}>Adres twórcy</label>
+          <label htmlFor={`${ids}-creator`}>Creator address</label>
           <input
             id={`${ids}-creator`}
             type="text"
@@ -177,23 +177,24 @@ export function WatchPanel({
           />
           {creator !== '' && !creatorValid ? (
             <p className="field-error" id={`${ids}-creator-help`} role="alert">
-              To nie jest prawidłowy adres portfela (base58, 32 bajty, inny niż mint SOL).
+              This is not a valid wallet address (base58, 32 bytes, not the SOL mint).
             </p>
           ) : (
             <p className="hint" id={`${ids}-creator-help`}>
-              Portfel, który utworzy token. Watcher kupi każdy nowy token, który ten adres podpisze.
+              The wallet that will create the token. The watcher buys every new token this address
+              signs.
             </p>
           )}
           {inFleet && (
             <p className="notice warning" role="status">
-              To adres portfela z tej floty. Upewnij się, że chcesz obserwować własny portfel.
+              This is a wallet from this fleet. Make sure you want to watch your own wallet.
             </p>
           )}
         </div>
       )}
 
       <fieldset className="watch-mode" disabled={armed || busy}>
-        <legend>Po wykryciu</legend>
+        <legend>After a detection</legend>
         {(['one-shot', 'continuous'] as const).map((m) => (
           <label key={m} className="inline">
             <input
@@ -205,7 +206,7 @@ export function WatchPanel({
                 else chooseMode(m);
               }}
             />
-            {m === 'one-shot' ? 'jednorazowy' : 'ciągły'}
+            {m === 'one-shot' ? 'one-shot' : 'continuous'}
           </label>
         ))}
         <p className="hint">{MODE_HELP[mode]}</p>
@@ -218,11 +219,11 @@ export function WatchPanel({
           aria-describedby={`${ids}-cont-text`}
         >
           <p id={`${ids}-cont-title`}>
-            <strong>Włączyć tryb ciągły?</strong>
+            <strong>Turn on continuous mode?</strong>
           </p>
           <p id={`${ids}-cont-text`}>
-            Watcher nie rozbroi się po pierwszym tokenie: każdy kolejny token twórcy uruchomi
-            następny zakup całej floty.
+            The watcher will not disarm after the first token: every next token of the creator
+            starts another buy by the whole fleet.
           </p>
           <div className="actions">
             <button
@@ -232,7 +233,7 @@ export function WatchPanel({
                 chooseMode('continuous');
               }}
             >
-              Tak, tryb ciągły
+              Yes, continuous mode
             </button>
             <button
               type="button"
@@ -240,7 +241,7 @@ export function WatchPanel({
                 setConfirmContinuous(false);
               }}
             >
-              Anuluj
+              Cancel
             </button>
           </div>
         </div>
@@ -248,9 +249,9 @@ export function WatchPanel({
 
       {watch && (
         <p className={`connection ${connectionTone(watch.connection)}`} role="status">
-          Połączenie: <strong>{connectionLabel(watch.connection, watch.attempt)}</strong>
-          {secondsAgo !== null && ` · ostatnia wiadomość ${String(secondsAgo)} s temu`}
-          {!armed && ' · watcher rozbrojony'}
+          Connection: <strong>{connectionLabel(watch.connection, watch.attempt)}</strong>
+          {secondsAgo !== null && ` · last message ${String(secondsAgo)} s ago`}
+          {!armed && ' · watcher disarmed'}
         </p>
       )}
 
@@ -262,17 +263,17 @@ export function WatchPanel({
           aria-describedby={`${ids}-arm-text`}
         >
           <p id={`${ids}-arm-title`}>
-            <strong>Uzbroić watcher w trybie na żywo?</strong>
+            <strong>Arm the watcher in live mode?</strong>
           </p>
           <p id={`${ids}-arm-text`}>
-            Po wykryciu tokenu flota kupi automatycznie: do {formatSol(toSpend)} SOL z {readyCount}{' '}
-            {readyCount === 1 ? 'portfela' : 'portfeli'}
-            {mode === 'continuous' ? ' przy każdym tokenie' : ''}. Transakcji na łańcuchu nie da się
-            cofnąć.
+            After a token is detected the fleet buys automatically: up to {formatSol(toSpend)} SOL
+            from {readyCount} {readyCount === 1 ? 'wallet' : 'wallets'}
+            {mode === 'continuous' ? ' for every token' : ''}. On-chain transactions cannot be
+            undone.
           </p>
           <div className="actions">
             <button type="button" className="danger" onClick={arm}>
-              Tak, uzbrój
+              Yes, arm
             </button>
             <button
               type="button"
@@ -280,7 +281,7 @@ export function WatchPanel({
                 setConfirmArm(false);
               }}
             >
-              Anuluj
+              Cancel
             </button>
           </div>
         </div>
@@ -289,7 +290,7 @@ export function WatchPanel({
       <div className="actions">
         {armed ? (
           <button type="button" className="arm armed" disabled={busy} onClick={disarm}>
-            ROZBRÓJ
+            DISARM
           </button>
         ) : (
           <button
@@ -298,7 +299,7 @@ export function WatchPanel({
             disabled={busy || confirmArm || missing !== null}
             onClick={onArmClick}
           >
-            {busy ? 'Uzbrajanie…' : 'UZBRÓJ'}
+            {busy ? 'Arming…' : 'ARM'}
           </button>
         )}
         {!armed && missing && <span className="muted">{missing}</span>}
@@ -306,10 +307,10 @@ export function WatchPanel({
 
       {armed && (
         <p className="notice warning" role="status">
-          Watcher jest uzbrojony. Nie zamykaj ani nie przeładowuj tej karty: obserwacja i zakup
-          działają tylko w niej.
+          The watcher is armed. Do not close or reload this tab: the watcher and the buy live only
+          in it.
           {wake === 'unavailable' &&
-            ' Ekran może zgasnąć: przeglądarka nie utrzyma go włączonego, a uśpiony komputer nie wykryje tokenu.'}
+            ' The screen may turn off: the browser cannot keep it on, and a sleeping computer will not detect the token.'}
         </p>
       )}
       {error && (
@@ -321,30 +322,30 @@ export function WatchPanel({
       {detections.length > 0 && (
         <div className="table-wrap">
           <table className="detections">
-            <caption>Wykrycia</caption>
+            <caption>Detections</caption>
             <thead>
               <tr>
-                <th scope="col">Czas</th>
+                <th scope="col">Time</th>
                 <th scope="col">Mint</th>
-                <th scope="col">Źródło</th>
-                <th scope="col">Ścieżka</th>
-                <th scope="col">Reakcja</th>
-                <th scope="col">Weryfikacja</th>
-                <th scope="col">Wynik</th>
+                <th scope="col">Source</th>
+                <th scope="col">Path</th>
+                <th scope="col">Reaction</th>
+                <th scope="col">Verification</th>
+                <th scope="col">Result</th>
               </tr>
             </thead>
             <tbody>
               {detections.map((d) => (
                 <tr key={`${d.mint}-${d.signature}`}>
-                  <td>{new Date(d.detectedAt).toLocaleTimeString('pl-PL')}</td>
+                  <td>{new Date(d.detectedAt).toLocaleTimeString('en-GB')}</td>
                   <td>
                     <code title={d.mint}>{shortAddress(d.mint)}</code>{' '}
                     <button
                       type="button"
-                      aria-label={`Kopiuj mint ${d.mint}`}
+                      aria-label={`Copy mint ${d.mint}`}
                       onClick={() => void copy(d.mint)}
                     >
-                      {copied === d.mint ? 'Skopiowano' : 'Kopiuj'}
+                      {copied === d.mint ? 'Copied' : 'Copy'}
                     </button>
                   </td>
                   <td>{SOURCE_LABELS[d.source]}</td>
@@ -357,10 +358,10 @@ export function WatchPanel({
                     {d.problem !== null
                       ? problemLabel(d.problem)
                       : queued.has(d.mint)
-                        ? 'w kolejce'
+                        ? 'queued'
                         : d.runId !== null
-                          ? `zakup #${String(d.runId)}`
-                          : 'start zakupu…'}
+                          ? `buy #${String(d.runId)}`
+                          : 'buy starting…'}
                   </td>
                 </tr>
               ))}

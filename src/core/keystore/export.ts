@@ -46,7 +46,7 @@ export function buildPlainExport(
   exportedAt: Date,
 ): PlainExport {
   const wallets = walletsOf(file, secrets);
-  const base = `${file.fleetName}.EKSPORT-JAWNY`;
+  const base = `${file.fleetName}.PLAIN-EXPORT`;
   if (format === 'json') {
     const json = {
       warning: PLAIN_EXPORT_WARNING,
@@ -64,18 +64,18 @@ export function buildPlainExport(
   const lines = [
     PLAIN_EXPORT_WARNING,
     '',
-    `Flota: ${file.fleetName}`,
-    `Data eksportu: ${exportedAt.toISOString()}`,
+    `Fleet: ${file.fleetName}`,
+    `Exported at: ${exportedAt.toISOString()}`,
     '',
     `Recovery phrase (BIP39, ${String(secrets.mnemonic.split(' ').length)} words):`,
     secrets.mnemonic,
     '',
-    'Portfele (klucz prywatny: base58, 64 bajty, import w Phantom / Solflare):',
+    'Wallets (private key: base58, 64 bytes, import in Phantom / Solflare):',
     ...wallets.flatMap((w) => [
       '',
       `${w.label} (index ${String(w.index)}, path ${w.derivationPath})`,
-      `  Adres: ${w.address}`,
-      `  Klucz prywatny: ${w.secretKey}`,
+      `  Address: ${w.address}`,
+      `  Private key: ${w.secretKey}`,
     ]),
     '',
   ];

@@ -64,7 +64,7 @@ describe('log entries', () => {
       signature:
         'k3sza8ZDSPaKeAfH7HTMJv7rMzL2dgDy5D8bWRxo5t7T27eoUqwSVjLdZvBshTFrbdo7tERD99hY7cnW1WzXf8aX',
       // 0.01 SOL for 0.002101 tokens
-      price: '4,759638267491',
+      price: '4.759638267491',
       orderMs: 180,
     });
   });
@@ -78,7 +78,7 @@ describe('log entries', () => {
     };
     expect(logEntry(skipped, context)).toMatchObject({
       reason: 'PRICE_CEILING',
-      message: 'The price is above the ceiling relative to the fleet's first buy.',
+      message: "The price is above the ceiling relative to the fleet's first buy.",
       spent: null,
       price: null,
     });
@@ -123,10 +123,10 @@ describe('log entries', () => {
 });
 
 describe('effective price', () => {
-  it('SOL per whole token, rounded down, decimal comma, no trailing zeros', () => {
+  it('SOL per whole token, rounded down, decimal point, no trailing zeros', () => {
     expect(formatPrice(1_000_000_000n, 1_000_000n, 6)).toBe('1');
-    expect(formatPrice(10_000_000n, 1_180_000n, 6)).toBe('0,008474576271');
-    expect(formatPrice(5n, 3n, 0)).toBe('0,000000001666');
+    expect(formatPrice(10_000_000n, 1_180_000n, 6)).toBe('0.008474576271');
+    expect(formatPrice(5n, 3n, 0)).toBe('0.000000001666');
     expect(formatPrice(1n, 0n, 6)).toBeNull();
     // u64 amounts do not overflow
     expect(formatPrice(2n ** 64n - 1n, 2n ** 64n - 1n, 9)).toBe('1');
@@ -161,7 +161,7 @@ describe('CSV', () => {
     expect(end).toBe('');
     expect(row).toContain(",'=1+1,");
     expect(row).toContain(',18446744073709551615,');
-    expect(row?.split(',')).toHaveLength(LOG_COLUMNS.length + 1); // the price has a comma
+    expect(row?.split(',')).toHaveLength(LOG_COLUMNS.length);
   });
 });
 
@@ -228,9 +228,9 @@ describe('mode B entries (BUNNDLY-34)', () => {
       reason: null,
     });
     expect(entries[2]?.detail).toBe('mismatch');
-    expect(entries[2]?.message).toMatch(/nie tworzy mintu/u);
+    expect(entries[2]?.message).toMatch(/does not create the mint/u);
     expect(entries[3]).toMatchObject({ reason: 'DISARMED', reactionMs: null });
-    expect(entries[3]?.message).toMatch(/Rozbrojono/u);
+    expect(entries[3]?.message).toMatch(/was disarmed/u);
     const csv = toCsv(entries).split('\r\n');
     expect(csv[0]).toBe(LOG_COLUMNS.join(','));
     expect(csv[2]).toContain(',4'); // reactionMs is the last column

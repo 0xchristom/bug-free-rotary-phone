@@ -17,8 +17,7 @@ export const ERROR_MESSAGES = {
   KEYSTORE_WRONG_PASSWORD_OR_CORRUPTED:
     'The file could not be decrypted. The password is wrong or the file is damaged.',
   KEYSTORE_INVALID_FORMAT: 'This is not a valid Bunndly fleet file.',
-  KEYSTORE_UNSUPPORTED_VERSION:
-    'This fleet file version is not supported. Update the app.',
+  KEYSTORE_UNSUPPORTED_VERSION: 'This fleet file version is not supported. Update the app.',
   KEYSTORE_UNSUPPORTED_KDF: 'The fleet file uses an unsupported password protection method.',
   KEYSTORE_TAMPERED:
     'The open part of the fleet file does not match the encrypted part. The file may have been modified.',
@@ -31,10 +30,8 @@ export const ERROR_MESSAGES = {
   HELIUS_KEY_MISSING:
     'The Helius API key is missing. Add it in Settings: balances, live buys and the watcher need it.',
   VAULT_LOCKED: 'The fleet is locked. Unlock it with the password to continue.',
-  BUY_RUNNING:
-    'A buy is running. Stop it with STOP and wait until the sent transactions finish.',
-  NO_WALLETS_TO_BUY:
-    'No wallet can buy: mark wallets as active and set their max spend.',
+  BUY_RUNNING: 'A buy is running. Stop it with STOP and wait until the sent transactions finish.',
+  NO_WALLETS_TO_BUY: 'No wallet can buy: mark wallets as active and set their max spend.',
   INVALID_MINT_ADDRESS: 'This is not a valid token mint address (base58, 32–44 characters).',
   INVALID_CREATOR_ADDRESS:
     'This is not a valid creator wallet address (base58, 32 bytes, not the SOL mint).',
@@ -45,8 +42,7 @@ export const ERROR_MESSAGES = {
   STORAGE_CANCELLED: 'The file or folder choice was cancelled. No file was saved or loaded.',
   STORAGE_PERMISSION_DENIED:
     'The browser did not give access to the chosen folder or file. Allow access and try again.',
-  STORAGE_WRITE_FAILED:
-    'The fleet file could not be saved. Try again or choose another folder.',
+  STORAGE_WRITE_FAILED: 'The fleet file could not be saved. Try again or choose another folder.',
   STORAGE_READ_FAILED: 'The file could not be read. Try again.',
   STORAGE_FILE_TOO_LARGE: 'The file is too large (over 1 MB). This is not a Bunndly fleet file.',
 } as const satisfies Record<string, string>;

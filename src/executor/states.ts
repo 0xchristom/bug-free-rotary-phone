@@ -108,7 +108,7 @@ export const SKIP_MESSAGES: Record<SkipReason, string> = {
   INSUFFICIENT_SOL_FOR_GAS: 'Jupiter: not enough SOL for the transaction fee.',
   DRY_RUN: 'DRY-RUN: the transaction was signed and discarded, nothing was sent.',
   STOPPED: 'Stopped with STOP before sending.',
-  PRICE_CEILING: 'The price is above the ceiling relative to the fleet's first buy.',
+  PRICE_CEILING: "The price is above the ceiling relative to the fleet's first buy.",
 };
 
 export const FAIL_MESSAGES: Record<FailReason, string> = {

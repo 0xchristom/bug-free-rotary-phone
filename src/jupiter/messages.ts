@@ -43,7 +43,7 @@ const EXECUTE_OUTCOMES: Record<ExecuteOutcome, string> = {
   RFQ_FAILED_TO_LAND: 'The RFQ transaction did not land in a block.',
   RFQ_UNKNOWN: 'Unknown RFQ transaction execution error.',
   RFQ_INVALID_PAYLOAD: 'Jupiter rejected the RFQ transaction payload.',
-  RFQ_QUOTE_EXPIRED: 'The market maker's quote expired.',
+  RFQ_QUOTE_EXPIRED: "The market maker's quote expired.",
   RFQ_SWAP_REJECTED: 'The market maker rejected the transaction.',
   UNDOCUMENTED: 'Jupiter returned a result code that is not in its documentation.',
 };

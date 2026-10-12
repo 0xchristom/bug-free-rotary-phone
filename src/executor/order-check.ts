@@ -51,15 +51,15 @@ export const ORDER_CHECK_MESSAGES: Record<OrderCheckProblem, string> = {
   INPUT_MINT_MISMATCH: 'The transaction does not pay in SOL. It was not signed.',
   OUTPUT_MINT_MISMATCH: 'The transaction buys a different token than ordered. It was not signed.',
   AMOUNT_MISMATCH: 'The amount in the transaction differs from the ordered one. It was not signed.',
-  OVER_MAX_SPEND: 'The amount in the transaction is above the wallet's max spend. It was not signed.',
+  OVER_MAX_SPEND:
+    "The amount in the transaction is above the wallet's max spend. It was not signed.",
   UNDECODABLE: 'The transaction cannot be decoded. It was not signed.',
   NOT_V0: 'Unsupported transaction version (v0 expected). It was not signed.',
   TOO_MANY_SIGNERS: 'The transaction needs more than 2 signatures. It was not signed.',
   TAKER_NOT_SIGNER: 'The wallet is not a signer of the transaction. It was not signed.',
-  TAKER_ALREADY_SIGNED:
-    'The wallet's signature slot is not empty. The transaction was not signed.',
+  TAKER_ALREADY_SIGNED: "The wallet's signature slot is not empty. The transaction was not signed.",
   FEE_PAYER_MISMATCH:
-    'The fee payer in the transaction does not match Jupiter's answer. It was not signed.',
+    "The fee payer in the transaction does not match Jupiter's answer. It was not signed.",
 };
 
 export const MAX_ORDER_SIGNERS = 2;

@@ -182,7 +182,10 @@ export function validateGlobalSettings(g: GlobalSettingsV1): SettingsProblem[] {
     add('jupiterPlan', 'Choose a Jupiter plan from the list.');
   } else if (g.jupiterPlan === 'custom') {
     if (!isIntIn(g.orderRpm, L.orderRpm)) {
-      add('orderRpm', 'The /order limit must be a whole number from 1 to 100,000 requests per minute.');
+      add(
+        'orderRpm',
+        'The /order limit must be a whole number from 1 to 100,000 requests per minute.',
+      );
     }
   } else if (g.orderRpm !== JUPITER_PLAN_RPM[g.jupiterPlan]) {
     add('orderRpm', 'The /order limit does not match the chosen plan. Choose the “Custom” plan.');
