@@ -59,7 +59,7 @@ interface Setup {
 }
 
 function setup(o: Setup = {}) {
-  const clock = new FakeClock();
+  const clock = new FakeClock(true);
   const chain = new FakeChain(clock);
   const jupiter = new FakeJupiter(clock, { chain, ...o.script });
   const events: ExecutorEvent[] = [];
