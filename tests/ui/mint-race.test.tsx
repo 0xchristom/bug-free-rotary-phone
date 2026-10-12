@@ -30,6 +30,7 @@ function balancesFor(mint: string | undefined, decimals: number, perWallet: bigi
           },
         }
       : {}),
+    network: 'mainnet' as const,
     source: 'helius' as const,
     fetchedAt: '2026-10-02T12:00:00.000Z',
   };
@@ -37,7 +38,14 @@ function balancesFor(mint: string | undefined, decimals: number, perWallet: bigi
 
 function setup() {
   const info = fleetInfo(2);
-  const status = (): VaultStatus => ({ locked: false, armed: false, info, buy: null, watch: null });
+  const status = (): VaultStatus => ({
+    locked: false,
+    network: 'mainnet',
+    armed: false,
+    info,
+    buy: null,
+    watch: null,
+  });
   const vault = mockVault(status());
   const pending = new Map<string, Deferred>();
   vault.request.mockImplementation((req: VaultRequest) => {

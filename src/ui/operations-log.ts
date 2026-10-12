@@ -5,12 +5,14 @@
  * storage (SPEC 6.1); the user downloads it as CSV or JSON.
  */
 import { useSyncExternalStore } from 'react';
+import { DEFAULT_NETWORK, type Network } from '../core/network.ts';
 import { logEntry, type LogEntry, type LoggedEvent } from '../executor/oplog.ts';
 import type { VaultClient } from '../worker/vault-client.ts';
 
 interface Recorded {
   readonly event: LoggedEvent;
   readonly address: string | null;
+  readonly network: Network;
 }
 
 export interface OperationsLog {
@@ -23,27 +25,35 @@ export interface OperationsLog {
   readonly subscribe: (listener: () => void) => () => void;
   /** Addresses of the open fleet; events are recorded with the address of their time. */
   readonly setWallets: (wallets: readonly { index: number; address: string }[]) => void;
+  /** The open fleet's network; events are recorded with the network of their time. */
+  readonly setNetwork: (network: Network) => void;
 }
 
 export function createOperationsLog(client: VaultClient): OperationsLog {
   const recorded: Recorded[] = [];
   const listeners = new Set<() => void>();
   let addresses = new Map<number, string>();
+  let network: Network = DEFAULT_NETWORK;
   client.onEvent((event) => {
     const address =
       event.kind === 'wallet' || event.kind === 'verify'
         ? (addresses.get(event.index) ?? null)
         : null;
-    recorded.push({ event, address });
+    recorded.push({ event, address, network });
     for (const l of listeners) l();
   });
   return {
     setWallets(wallets) {
       addresses = new Map(wallets.map((w) => [w.index, w.address]));
     },
+    setNetwork(next) {
+      network = next;
+    },
     size: () => recorded.length,
     entries: (decimals) =>
-      recorded.map((r) => logEntry(r.event, { addressOf: () => r.address, decimals })),
+      recorded.map((r) =>
+        logEntry(r.event, { addressOf: () => r.address, decimals, network: r.network }),
+      ),
     lastRunId: () => {
       for (let i = recorded.length - 1; i >= 0; i--) {
         const e = recorded[i]?.event;

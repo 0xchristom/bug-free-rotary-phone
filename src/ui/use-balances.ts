@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { isAppError, toUserMessage } from '../core/errors.ts';
+import { DEFAULT_NETWORK, type Network } from '../core/network.ts';
 import type { VaultBalances } from '../worker/protocol.ts';
 import type { VaultClient } from '../worker/vault-client.ts';
 
@@ -49,8 +50,18 @@ export function useBalances(
    * mint, so SOL balances keep refreshing until the address is fixed.
    */
   onBadMint?: (message: string) => void,
+  /**
+   * The open fleet's network. When it changes, the balances on screen are dropped at once
+   * and read again; an answer read on another network is never shown (BUNNDLY-44).
+   */
+  network: Network = DEFAULT_NETWORK,
 ): BalancesState & { readonly refresh: () => void } {
   const [state, setState] = useState<BalancesState>(EMPTY);
+  const [shownNetwork, setShownNetwork] = useState(network);
+  if (shownNetwork !== network) {
+    setShownNetwork(network);
+    setState(EMPTY);
+  }
   const inflight = useRef(false);
   const mounted = useRef(true);
   /** A refresh asked for while one was running (e.g. a new mint): run it afterwards. */
@@ -58,6 +69,7 @@ export function useBalances(
   const latest = useRef<() => void>(() => undefined);
   /** The mint shown now; answers for any other mint are stale and dropped. */
   const currentMint = useRef(mint);
+  const currentNetwork = useRef(network);
 
   const refresh = useCallback(() => {
     if (!visible()) return;
@@ -74,13 +86,16 @@ export function useBalances(
       }
     };
     const asked = mint;
+    const askedNetwork = network;
     // The user may change or clear the mint while this request runs. Its answer, success
     // or error, then belongs to a mint no longer on screen and must be ignored; the
     // refresh for the new mint follows right after (`again`).
-    const stale = (): boolean => !mounted.current || currentMint.current !== asked;
+    const stale = (): boolean =>
+      !mounted.current || currentMint.current !== asked || currentNetwork.current !== askedNetwork;
     client.request({ type: 'refreshBalances', ...(asked === null ? {} : { mint: asked }) }).then(
       (res) => {
-        if (!stale()) {
+        // The worker says where it read: the switch may have landed between ask and read.
+        if (!stale() && res.network === askedNetwork) {
           setState({
             lamports: new Map(res.balances.map((b) => [b.index, b.lamports])),
             token: res.token
@@ -111,14 +126,15 @@ export function useBalances(
         done();
       },
     );
-  }, [client, mint, onBadMint]);
+  }, [client, mint, onBadMint, network]);
 
   // A layout effect runs at commit, before any passive effect: no answer arriving between
   // the commit and the effects can be checked against the old mint, and the new mint is
   // current before the polling effect refreshes.
   useLayoutEffect(() => {
     currentMint.current = mint;
-  }, [mint]);
+    currentNetwork.current = network;
+  }, [mint, network]);
 
   useEffect(() => {
     latest.current = refresh;

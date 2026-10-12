@@ -1,5 +1,6 @@
 import { useEffect, useId, useState } from 'react';
 import { toUserMessage } from '../core/errors.ts';
+import { DEFAULT_NETWORK, NETWORK_LABELS } from '../core/network.ts';
 import type { BuyMode } from '../core/settings.ts';
 import type { ApiKeyFlags } from '../worker/protocol.ts';
 import type { WatchDetection } from '../watcher/watch.ts';
@@ -265,7 +266,8 @@ export function WatchPanel({
             <strong>Uzbroić watcher w trybie na żywo?</strong>
           </p>
           <p id={`${ids}-arm-text`}>
-            Po wykryciu tokenu flota kupi automatycznie: do {formatSol(toSpend)} SOL z {readyCount}{' '}
+            Network: {NETWORK_LABELS[status?.network ?? DEFAULT_NETWORK]}. Po wykryciu tokenu flota
+            kupi automatycznie: do {formatSol(toSpend)} SOL z {readyCount}{' '}
             {readyCount === 1 ? 'portfela' : 'portfeli'}
             {mode === 'continuous' ? ' przy każdym tokenie' : ''}. Transakcji na łańcuchu nie da się
             cofnąć.

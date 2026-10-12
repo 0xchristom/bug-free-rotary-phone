@@ -12,6 +12,7 @@ import type { VaultClient, VaultRequestOptions } from '../../src/worker/vault-cl
 
 export const LOCKED: VaultStatus = {
   locked: true,
+  network: 'mainnet',
   armed: false,
   info: null,
   buy: null,
@@ -34,7 +35,7 @@ export function fleetInfo(count = 3, fleetName = 'Flota testowa'): VaultInfo {
 }
 
 export function unlocked(armed = false): VaultStatus {
-  return { locked: false, armed, info: fleetInfo(), buy: null, watch: null };
+  return { locked: false, network: 'mainnet', armed, info: fleetInfo(), buy: null, watch: null };
 }
 
 type CreateHandler = (
@@ -54,9 +55,22 @@ export function mockVault(initial: VaultStatus, onCreate?: CreateHandler) {
         case 'lock':
           status = LOCKED;
           return Promise.resolve(status);
+        case 'setNetwork': {
+          if (!status.info) return Promise.reject(new AppError('VAULT_LOCKED'));
+          if (status.buy !== null) return Promise.reject(new AppError('BUY_RUNNING'));
+          if (status.watch?.armed) return Promise.reject(new AppError('WATCH_ARMED'));
+          const { settings } = status.info;
+          const info: VaultInfo = {
+            ...status.info,
+            settings: { ...settings, global: { ...settings.global, network: req.network } },
+          };
+          status = { ...status, network: req.network, info };
+          return Promise.resolve({ fileText: `{"network":"${req.network}"}`, info });
+        }
         case 'refreshBalances':
           return status.info
             ? Promise.resolve({
+                network: status.network,
                 balances: status.info.wallets.map((w) => ({
                   index: w.index,
                   lamports: 1_500_000_000n + BigInt(w.index),
@@ -70,6 +84,7 @@ export function mockVault(initial: VaultStatus, onCreate?: CreateHandler) {
             return onCreate(req, options).then((result) => {
               status = {
                 locked: false,
+                network: 'mainnet',
                 armed: false,
                 info: (result as { info: VaultInfo }).info,
                 buy: null,
