@@ -1,12 +1,13 @@
 // @vitest-environment jsdom
 import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
-import userEvent, { type UserEvent } from '@testing-library/user-event';
+import type { UserEvent } from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AppError } from '../../src/core/errors.ts';
 import { App } from '../../src/ui/App.tsx';
 import type { VaultRequest } from '../../src/worker/protocol.ts';
 import type { VaultRequestOptions } from '../../src/worker/vault-client.ts';
 import { LOCKED, fleetInfo, mockStorage, mockVault } from './fakes.ts';
+import { setupUser } from './user.ts';
 
 const PASSWORD = 'zielony Kot, 7 krzeseł; drabina';
 const MNEMONIC_12 = `${'abandon '.repeat(11)}about`;
@@ -94,7 +95,7 @@ afterEach(() => {
 
 describe('form validation', () => {
   it('wallet count must be an integer 1–100 (default 30)', async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     const vault = mockVault(LOCKED);
     renderWizard(vault);
     await openWizard(user);
@@ -118,7 +119,7 @@ describe('form validation', () => {
   });
 
   it.each(['a/b', '../x', 'CON', '.ukryta'])('fleet name %j is rejected', async (name) => {
-    const user = userEvent.setup();
+    const user = setupUser();
     const vault = mockVault(LOCKED);
     renderWizard(vault);
     await openWizard(user);
@@ -130,7 +131,7 @@ describe('form validation', () => {
   });
 
   it('password needs 12 characters counted like core (graphemes after NFKC)', async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     const vault = mockVault(LOCKED);
     renderWizard(vault);
     await openWizard(user);
@@ -156,7 +157,7 @@ describe('form validation', () => {
   });
 
   it('mismatched repeat blocks the button', async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     const vault = mockVault(LOCKED);
     renderWizard(vault);
     await openWizard(user);
@@ -171,7 +172,7 @@ describe('what blocks the fleet is always said next to the field (BUNNDLY-42)', 
   const SHORT = 'Ab1!Ab1!Ab1'; // 11 characters
 
   it('an untouched form shows no messages; a click on the button shows all of them', async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     const vault = mockVault(LOCKED);
     renderWizard(vault);
     await openWizard(user);
@@ -193,7 +194,7 @@ describe('what blocks the fleet is always said next to the field (BUNNDLY-42)', 
   });
 
   it('leaving an empty field shows its message without touching the others', async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     renderWizard(mockVault(LOCKED));
     await openWizard(user);
     await user.click(field('Nazwa floty'));
@@ -278,7 +279,7 @@ describe('what blocks the fleet is always said next to the field (BUNNDLY-42)', 
   it.each(conditions)(
     'only $title is wrong: its message, no fleet',
     async ({ breakIt, message, focused }) => {
-      const user = userEvent.setup();
+      const user = setupUser();
       const vault = mockVault(LOCKED);
       renderWizard(vault);
       await openWizard(user);
@@ -291,7 +292,7 @@ describe('what blocks the fleet is always said next to the field (BUNNDLY-42)', 
   );
 
   it('everything right: exactly one create request with the typed values', async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     const { vault, gate, seen } = vaultWithPendingCreate();
     renderWizard(vault);
     await openWizard(user);
@@ -311,7 +312,7 @@ describe('what blocks the fleet is always said next to the field (BUNNDLY-42)', 
 
   it('12 words, a name and a 12-character password create the fleet; without the name they do not', async () => {
     const twelve = 'Ab1!Ab1!Ab1!';
-    const user = userEvent.setup();
+    const user = setupUser();
     const { vault, gate, seen } = vaultWithPendingCreate();
     renderWizard(vault);
     await openWizard(user);
@@ -341,7 +342,7 @@ describe('what blocks the fleet is always said next to the field (BUNNDLY-42)', 
   });
 
   it('says that the import is optional and what it does', async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     renderWizard(mockVault(LOCKED));
     await openWizard(user);
     const hint = screen.getByText(/Import jest opcjonalny/u).textContent;
@@ -353,7 +354,7 @@ describe('what blocks the fleet is always said next to the field (BUNNDLY-42)', 
 
 describe('mnemonic import', () => {
   it('needs 12–24 words, can be shown, and is sent to the worker', async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     const { vault, gate, seen } = vaultWithPendingCreate();
     renderWizard(vault);
     await openWizard(user);
@@ -385,7 +386,7 @@ describe('mnemonic import', () => {
   ])(
     'a mnemonic with %s rejected by the worker shows a Polish message and empties the secrets',
     async (_title, phrase) => {
-      const user = userEvent.setup();
+      const user = setupUser();
       const vault = mockVault(LOCKED, () => Promise.reject(new AppError('INVALID_MNEMONIC')));
       renderWizard(vault);
       await openWizard(user);
@@ -416,7 +417,7 @@ describe('secrets handling', () => {
       vi.spyOn(console, m).mockImplementation(() => undefined),
     );
     const href = window.location.href;
-    const user = userEvent.setup();
+    const user = setupUser();
     const vault = mockVault(LOCKED, () => Promise.reject(new AppError('INVALID_MNEMONIC')));
     renderWizard(vault);
     await openWizard(user);
@@ -448,7 +449,7 @@ describe('secrets handling', () => {
 
 describe('creating and saving', () => {
   it('shows scrypt progress while the worker runs, the UI stays responsive', async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     const { vault, gate } = vaultWithPendingCreate();
     renderWizard(vault);
     await openWizard(user);
@@ -466,7 +467,7 @@ describe('creating and saving', () => {
   });
 
   it('saves only when the user clicks “Zapisz plik floty”', async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     const { vault, gate } = vaultWithPendingCreate();
     const storage = renderWizard(vault);
     await openWizard(user);
@@ -494,7 +495,7 @@ describe('creating and saving', () => {
   });
 
   it('download mode asks to check the Downloads folder', async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     const { vault, gate } = vaultWithPendingCreate();
     const storage = renderWizard(vault, mockStorage('download'));
     await openWizard(user);
@@ -508,7 +509,7 @@ describe('creating and saving', () => {
   });
 
   it('a save error is shown in Polish and the file can be saved again', async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     const { vault, gate } = vaultWithPendingCreate();
     const storage = mockStorage();
     storage.showDirectoryPicker.mockImplementationOnce(() =>
@@ -541,7 +542,7 @@ describe('unsaved file protection', () => {
   }
 
   it('leaving the wizard with an unsaved file asks first', async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     const { vault, gate } = vaultWithPendingCreate();
     await createdButNotSaved(user, vault, gate);
     // the vault is unlocked now, but the app does not jump to the fleet screen
@@ -561,7 +562,7 @@ describe('unsaved file protection', () => {
   });
 
   it('closing the tab with an unsaved file triggers the browser warning', async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     const { vault, gate } = vaultWithPendingCreate();
     await createdButNotSaved(user, vault, gate);
     await waitFor(() => {
@@ -572,7 +573,7 @@ describe('unsaved file protection', () => {
   });
 
   it('auto-lock does not discard the unsaved encrypted file', async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     const { vault, gate } = vaultWithPendingCreate();
     render(<App vault={vault.client} storage={mockStorage().env} statusPollMs={20} />);
     await openWizard(user);
