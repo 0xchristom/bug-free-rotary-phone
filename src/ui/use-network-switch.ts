@@ -59,6 +59,9 @@ export function useNetworkSwitch(
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
+  // The file is written (or the screen left): the request to save it first is obsolete.
+  if (message === FILE_UNSAVED && !screenUnsaved) setMessage(null);
+
   const choose = (network: Network): void => {
     if (status === null || status.info === null || busy || network === status.network) return;
     if (status.buy !== null) {
