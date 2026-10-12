@@ -2,7 +2,7 @@
 
 > Wspólna specyfikacja produktu dla obu agentów: **Andy** (architekt, review, Plane) i **Mark** (implementacja). Właściciel projektu: **Krystian**.
 > Ten plik leży w repozytorium jako `docs/SPEC.md` i jest źródłem prawdy o produkcie. Zmienia go tylko Andy, po uzgodnieniu z Krystianem.
-> Role, workflow na Plane i zasady współpracy opisują osobne prompty: `ANDY.md` i `MARK.md`.
+> Zasady współpracy i workflow na Plane opisuje `CLAUDE.md` w katalogu głównym repo. Role nadaje sesjom Krystian.
 
 ## 0. Zasady obowiązujące przez cały projekt
 
@@ -10,7 +10,7 @@
    - Jupiter: `https://developers.jup.ag/docs/llms.txt` (indeks), potem konkretne strony `.md`. Wymagane: Swap API V2 (`/swap/v2/order`, `/swap/v2/execute`), Rate Limits, API Keys.
    - Helius: dokumentacja RPC i WebSocket (`logsSubscribe`, `accountSubscribe`), limity planu Free.
    - Programy launchpadów (pump.fun, Raydium LaunchLab, Meteora DBC). Program ID i dyskryminatory instrukcji bierz wyłącznie z oficjalnych źródeł (IDL, repozytoria, dokumentacja). Nigdy z pamięci.
-   - Jeśli dokumentacja przeczy temu briefowi, wygrywa dokumentacja. Zapisz rozbieżność w `DECISIONS.md`.
+   - Jeśli dokumentacja przeczy temu briefowi, wygrywa dokumentacja. Zapisz rozbieżność w `docs/DECISIONS.md`.
 2. **Bezpieczeństwo kluczy jest wymaganiem nadrzędnym** (sekcja 6). Żadna funkcja nie może go osłabiać.
 3. Praca etapami (sekcja 10). Każdy etap to jeden sprint (cycle) na Plane. Po każdym zadaniu: działające testy, wpis w `PROGRESS.md`, commit.
 4. Gdy decyzja jest nieodwracalna albo wymaga wydania prawdziwych środków, zatrzymaj się i zapytaj Krystiana.
@@ -170,7 +170,8 @@ Kluczowe wymagania: **każdy aktywny portfel ma kupić, portfele nie blokują si
 /public/_headers   # nagłówki bezpieczeństwa (Cloudflare)
 vercel.json        # nagłówki bezpieczeństwa (Vercel)
 wrangler.jsonc     # jeśli Workers Static Assets
-README.md, DECISIONS.md, PROGRESS.md, SECURITY.md
+/docs              # SPEC.md, DECISIONS.md
+README.md, PROGRESS.md, SECURITY.md, CLAUDE.md
 ```
 
 Moduły `core`, `executor` i `jupiter` piszemy tak, by dało się je testować w Node bez przeglądarki.
