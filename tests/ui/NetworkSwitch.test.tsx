@@ -116,7 +116,11 @@ describe('switching', () => {
     expect(requests('setNetwork')).toEqual([{ type: 'setNetwork', network: 'devnet' }]);
     expect((await group()).className).toContain('devnet');
 
-    expect(screen.getByText(/Devnet is saved in the vault/u)).toBeTruthy();
+    expect(
+      screen.getByText(
+        /Devnet is set for this session only\. Save the updated fleet file: without it the choice is lost when you close the tab/u,
+      ),
+    ).toBeTruthy();
     await user.click(
       screen.getByRole('button', { name: 'Save the fleet file with the new network' }),
     );

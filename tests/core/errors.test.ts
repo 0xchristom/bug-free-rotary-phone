@@ -48,12 +48,28 @@ describe('ERROR_MESSAGES', () => {
     );
   });
 
-  it.each(codes)('%s has a non-empty Polish message', (code) => {
+  // New interface copy is English (BUNNDLY-44 onwards); the older messages stay Polish
+  // until BUNNDLY-50 translates them.
+  const english: readonly ErrorCode[] = ['NO_BUY_ROUTE_ON_NETWORK'];
+  const POLISH = /[ąćęłńóśźżĄĆĘŁŃÓŚŹŻ]|\b(jest|nie|plik|hasło)\b/i;
+
+  it.each(codes.filter((c) => !english.includes(c)))(
+    '%s has a non-empty Polish message',
+    (code) => {
+      const message = ERROR_MESSAGES[code];
+      expect(message.trim().length).toBeGreaterThan(0);
+      // Polish UI copy, not a bare code or English placeholder.
+      expect(message).not.toBe(code);
+      expect(message).toMatch(POLISH);
+    },
+  );
+
+  it.each(english)('%s has a non-empty English message', (code) => {
     const message = ERROR_MESSAGES[code];
     expect(message.trim().length).toBeGreaterThan(0);
-    // Polish UI copy, not a bare code or English placeholder.
     expect(message).not.toBe(code);
-    expect(message).toMatch(/[ąćęłńóśźżĄĆĘŁŃÓŚŹŻ]|\b(jest|nie|plik|hasło)\b/i);
+    expect(message).not.toMatch(POLISH);
+    expect(message).toMatch(/^[A-Z].*\.$/u);
   });
 
   it('has a distinct message per code', () => {

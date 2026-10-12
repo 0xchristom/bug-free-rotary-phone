@@ -56,8 +56,9 @@ export function NetworkNotice({
       {file?.kind === 'unsaved' && (
         <div className="notice warning" role="status">
           <p>
-            {NETWORK_LABELS[file.network]} is saved in the vault. The updated fleet file is not
-            saved yet: the old file opens the fleet on the previous network.
+            {NETWORK_LABELS[file.network]} is set for this session only. Save the updated fleet
+            file: without it the choice is lost when you close the tab, and the old file opens the
+            fleet on the previous network.
           </p>
           {!supportsDirectoryPicker(storage) && (
             <p className="muted">Your browser will download the file. Check “Downloads” then.</p>
