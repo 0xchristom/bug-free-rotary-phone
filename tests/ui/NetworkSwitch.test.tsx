@@ -345,12 +345,13 @@ describe('an unsaved fleet file on the screen', () => {
       }),
     );
     const storage = mockStorage();
-    const user = userEvent.setup();
+    // No pause between keystrokes: on Windows each one costs a 16 ms timer.
+    const user = userEvent.setup({ delay: null });
     render(<App vault={vault.client} storage={storage.env} statusPollMs={20} />);
     await user.click(await screen.findByRole('button', { name: 'Utwórz nową flotę' }));
     await user.type(screen.getByLabelText('Nazwa floty'), 'Nowa');
-    await user.type(screen.getByLabelText('Hasło'), 'zielony Kot, 7 krzeseł; drabina');
-    await user.type(screen.getByLabelText('Powtórz hasło'), 'zielony Kot, 7 krzeseł; drabina');
+    await user.type(screen.getByLabelText('Hasło'), 'Tk9#mQ2!vR8&');
+    await user.type(screen.getByLabelText('Powtórz hasło'), 'Tk9#mQ2!vR8&');
     await user.click(screen.getByRole('button', { name: 'Utwórz flotę' }));
     await screen.findByRole('heading', { name: 'Flota utworzona' });
 
@@ -366,7 +367,10 @@ describe('an unsaved fleet file on the screen', () => {
 
     await user.click(screen.getByRole('button', { name: 'Zapisz plik floty' }));
     await screen.findByRole('heading', { name: 'Plik floty zapisany' });
-    expect(screen.queryByRole('alert')).toBeNull();
+    // The screen reports the saved file in an effect, one render after the heading.
+    await waitFor(() => {
+      expect(screen.queryByRole('alert')).toBeNull();
+    });
     await user.click(screen.getByRole('button', { name: 'Przejdź do floty' }));
     await screen.findByRole('heading', { name: 'Flota' });
     expect(screen.queryByText(/then change the network/u)).toBeNull();
