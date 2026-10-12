@@ -334,7 +334,7 @@ describe('openKeystoreFile / readKeystoreFile', () => {
     );
   });
 
-  it('permission and read errors map to Polish codes', async () => {
+  it('permission and read errors map to typed codes', async () => {
     await expectCode(
       openKeystoreFile(
         env({ showOpenFilePicker: () => Promise.reject(domError('NotAllowedError')) }),

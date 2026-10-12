@@ -96,7 +96,7 @@ describe('connection test in the settings', () => {
     expect(document.body.innerHTML).not.toContain(JUPITER);
   });
 
-  it('a rejected Helius key: Polish message in that row, the others still run', async () => {
+  it('a rejected Helius key: English message in that row, the others still run', async () => {
     const { row } = await setup(() => ({ status: 401, json: { error: `bad key ${HELIUS}` } }));
     expect(row(/Helius HTTP/u)).toContain('Error');
     expect(row(/Helius HTTP/u)).toContain('The service rejected the API key (HTTP 401)');

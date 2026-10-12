@@ -108,68 +108,68 @@ Otwórz `https://<project>.pages.dev` w oknie prywatnym. Powinna się pokazać s
 
 ## Pierwsze kroki w aplikacji
 
-1. **Utwórz flotę:** na ekranie startowym **Utwórz nową flotę**. Podaj liczbę portfeli (domyślnie 30), nazwę floty i hasło (min. 12 znaków; wskaźnik siły podpowiada). Kliknij **Utwórz flotę** i poczekaj na szyfrowanie.
-2. **Zapisz plik floty:** **Zapisz plik floty** i wskaż folder (w Chrome i Edge; w innych przeglądarkach plik się pobierze). Plik `<nazwa>.keystore.json` jest zaszyfrowany.
-3. **Kopia zapasowa mnemonika:** **Zrób kopię zapasową mnemonika**, wpisz hasło, potwierdź ostrzeżenie i zapisz plik offline. To jedyny sposób na odzyskanie floty bez pliku lub bez hasła.
-4. **Klucze API:** **Ustawienia** > wpisz klucz Helius (i ewentualnie Jupiter; bez niego aplikacja używa planu Keyless) > **Zapisz ustawienia** > **Zapisz zaktualizowany plik floty**.
-5. **Test połączeń:** w **Ustawieniach** kliknij **Test połączeń**. Zobaczysz wynik i czas dla Helius HTTP, Helius WebSocket i Jupitera oraz nagłówki limitów Jupitera.
-6. **Zasil portfele:** na ekranie **Flota** każdy portfel ma adres depozytu z przyciskami **Kopiuj** i **QR**. Wyślij SOL z własnego portfela na wybrane adresy. Salda odświeżają się co ok. 12 s.
-7. **Tabela floty:** ustaw max spend dla portfeli (ręcznie albo akcjami zbiorczymi: kwota dla wszystkich lub % salda), zaznacz aktywne portfele. Rezerwa (saldo − max spend) musi wynosić co najmniej `MIN_RESERVE_SOL` (domyślnie 0,015 SOL); za mała rezerwa podświetla wiersz na czerwono. Zapisz: **Zapisz zmiany w tabeli**, potem **Zapisz zaktualizowany plik floty**.
-8. **Saldo tokenu:** wpisz adres mintu w polu **Adres tokenu (mint)** i kliknij **Pokaż saldo tokenu**.
-9. **Później:** **Otwórz plik floty** > wybierz plik > sprawdź podgląd adresów > wpisz hasło. Po 15 minutach bezczynności flota blokuje się sama.
+1. **Utwórz flotę:** na ekranie startowym **Create a new fleet**. Podaj liczbę portfeli (domyślnie 30), nazwę floty i hasło (min. 12 znaków; wskaźnik siły podpowiada). Kliknij **Create the fleet** i poczekaj na szyfrowanie.
+2. **Zapisz plik floty:** **Save the fleet file** i wskaż folder (w Chrome i Edge; w innych przeglądarkach plik się pobierze). Plik `<nazwa>.keystore.json` jest zaszyfrowany.
+3. **Kopia zapasowa mnemonika** (w aplikacji „recovery phrase”)**:** **Back up the recovery phrase**, wpisz hasło, potwierdź ostrzeżenie i zapisz plik offline. To jedyny sposób na odzyskanie floty bez pliku lub bez hasła.
+4. **Klucze API:** **Settings** > wpisz klucz Helius (i ewentualnie Jupiter; bez niego aplikacja używa planu Keyless) > **Save settings** > **Save the updated fleet file**.
+5. **Test połączeń:** w **Settings** kliknij **Test connections**. Zobaczysz wynik i czas dla Helius HTTP, Helius WebSocket i Jupitera oraz nagłówki limitów Jupitera.
+6. **Zasil portfele:** na ekranie **Fleet** każdy portfel ma adres depozytu z przyciskami **Copy** i **QR**. Wyślij SOL z własnego portfela na wybrane adresy. Salda odświeżają się co ok. 12 s.
+7. **Tabela floty:** ustaw max spend dla portfeli (ręcznie albo akcjami zbiorczymi: kwota dla wszystkich lub % salda), zaznacz aktywne portfele. Rezerwa (saldo − max spend) musi wynosić co najmniej `MIN_RESERVE_SOL` (domyślnie 0,015 SOL); za mała rezerwa podświetla wiersz na czerwono. Zapisz: **Save table changes**, potem **Save the updated fleet file**.
+8. **Saldo tokenu:** wpisz adres mintu w polu **Token address (mint)** i kliknij **Show token balance**.
+9. **Później:** **Open a fleet file** > wybierz plik > sprawdź podgląd adresów > wpisz hasło. Po 15 minutach bezczynności flota blokuje się sama.
 
 ## Zakup: tryb A
 
 Tryb A kupuje token od razu wszystkimi gotowymi portfelami (aktywny, max spend > 0, rezerwa co najmniej `MIN_RESERVE_SOL`). Każdy portfel kupuje za swój max spend, najwyżej raz.
 
-1. **Mint:** na ekranie **Flota** wpisz adres tokenu w polu **Adres tokenu (mint)** i kliknij **Pokaż saldo tokenu**. Aplikacja sprawdza, że to mint SPL albo Token-2022. Dopiero wtedy **Kupuj teraz** staje się aktywny.
-2. **Podsumowanie:** panel **Zakup**, zakładka **Tryb A: mint**, pokazuje mint, liczbę gotowych portfeli, łączną kwotę do wydania i tryb. Zakup używa ustawień zapisanych w sejfie, więc najpierw zapisz zmiany w tabeli.
+1. **Mint:** na ekranie **Fleet** wpisz adres tokenu w polu **Token address (mint)** i kliknij **Show token balance**. Aplikacja sprawdza, że to mint SPL albo Token-2022. Dopiero wtedy **Buy now** staje się aktywny.
+2. **Podsumowanie:** panel **Buy**, zakładka **Mode A: mint**, pokazuje mint, liczbę gotowych portfeli, łączną kwotę do wydania i tryb. Zakup używa ustawień zapisanych w sejfie, więc najpierw zapisz zmiany w tabeli.
 3. **DRY-RUN (domyślnie):** etykieta **DRY-RUN** przy panelu. Aplikacja pyta Jupitera o cenę (`/order`), sprawdza i podpisuje transakcje, ale **niczego nie wysyła**. Każdy portfel kończy jako „DRY-RUN” z wyceną i czasami. Tak sprawdzisz klucze, limity i salda bez wydawania środków.
 4. **Tryb na żywo:**
-   - przełączasz przyciskiem **Przełącz na tryb na żywo…**;
-   - dialog podaje kwotę i liczbę portfeli i wymaga potwierdzenia **Tak, przełącz na tryb na żywo**;
-   - etykieta zmienia się na czerwone **NA ŻYWO**;
+   - przełączasz przyciskiem **Switch to live mode…**;
+   - dialog podaje kwotę i liczbę portfeli i wymaga potwierdzenia **Yes, switch to live mode**;
+   - etykieta zmienia się na czerwone **LIVE**;
    - tryb na żywo wymaga klucza Helius, bo przed każdym ponowieniem aplikacja sprawdza w łańcuchu, czy poprzednia transakcja nie wylądowała;
-   - powrót: **Wróć do DRY-RUN**, bez potwierdzenia;
-   - tryb zapisuje się w pliku floty, więc potem kliknij **Zapisz zaktualizowany plik floty**.
-5. **Kupuj teraz:** start. **Nie zamykaj ani nie przeładowuj karty** do końca zakupu: klucze i zakup działają tylko w niej, a przeglądarka zapyta przed zamknięciem.
+   - powrót: **Back to DRY-RUN**, bez potwierdzenia;
+   - tryb zapisuje się w pliku floty, więc potem kliknij **Save the updated fleet file**.
+5. **Buy now:** start. **Nie zamykaj ani nie przeładowuj karty** do końca zakupu: klucze i zakup działają tylko w niej, a przeglądarka zapyta przed zamknięciem.
 6. **Postęp:**
    - pasek pokazuje potwierdzone, w trakcie oraz nieudane albo pominięte, a także czas od startu do pierwszego i do ostatniego potwierdzenia;
-   - w tabeli floty dochodzą kolumny zakupu: status (kolor i tekst z powodem), czas, próby, kupione tokeny, wydany SOL, cena (SOL za token), wynik sprawdzenia saldem tokenu („potwierdzone” albo ostrzeżenie) i link **Transakcja** do eksploratora z **Ustawień**;
-   - „Sprawdzam łańcuch” znaczy, że wynik wysłanej transakcji nie jest jeszcze znany. Portfel nie spróbuje ponownie, dopóki łańcuch nie pokaże, że transakcja nie wylądowała.
-7. **STOP:** duży czerwony przycisk widoczny przez cały zakup. Zatrzymuje nowe zapytania; transakcje już wysłane są śledzone do końca, a reszta portfeli kończy jako „Pominięty”.
-8. **Dziennik operacji:** panel **Dziennik operacji**, przyciski **Pobierz CSV** i **Pobierz JSON**:
+   - w tabeli floty dochodzą kolumny zakupu: status (kolor i tekst z powodem), czas, próby, kupione tokeny, wydany SOL, cena (SOL za token), wynik sprawdzenia saldem tokenu („confirmed” albo ostrzeżenie) i link **Transaction** do eksploratora z **Settings**;
+   - „Checking the chain” znaczy, że wynik wysłanej transakcji nie jest jeszcze znany. Portfel nie spróbuje ponownie, dopóki łańcuch nie pokaże, że transakcja nie wylądowała.
+7. **STOP:** duży czerwony przycisk widoczny przez cały zakup. Zatrzymuje nowe zapytania; transakcje już wysłane są śledzone do końca, a reszta portfeli kończy jako „Skipped”.
+8. **Dziennik operacji:** panel **Operations log**, przyciski **Download CSV** i **Download JSON**:
    - każda zmiana stanu każdego portfela z czasem, kwotami (lamporty i jednostki tokena, bez zaokrągleń), routerem, sygnaturą i powodem;
    - bez kluczy i podpisanych transakcji;
    - dziennik żyje do zamknięcia karty.
 
 ## Zakup: tryb B
 
-Tryb B obserwuje portfel twórcy i kupuje sam, gdy ten portfel utworzy token. Etykieta DRY-RUN/NA ŻYWO, STOP, postęp i dziennik są te same co w trybie A.
+Tryb B obserwuje portfel twórcy i kupuje sam, gdy ten portfel utworzy token. Etykieta DRY-RUN/LIVE, STOP, postęp i dziennik są te same co w trybie A.
 
-1. **Adres twórcy:** w panelu **Zakup** wybierz **Tryb B: obserwacja twórcy** i wpisz adres portfela twórcy (base58, 32 bajty). Gdy to adres z Twojej floty, panel to pokaże.
-2. **Po wykryciu:**
-   - **jednorazowy** (domyślny): pierwszy wykryty token rozbraja watcher, a zakup trwa dalej;
-   - **ciągły**: watcher zostaje uzbrojony i kupuje każdy kolejny token twórcy, jeden zakup po drugim. Włączenie wymaga potwierdzenia, a zmiana zapisuje się w pliku floty.
-3. **UZBRÓJ:**
+1. **Adres twórcy:** w panelu **Buy** wybierz **Mode B: watch a creator** i wpisz adres portfela twórcy (base58, 32 bajty). Gdy to adres z Twojej floty, panel to pokaże.
+2. **Po wykryciu** (**After a detection**)**:**
+   - **one-shot** (domyślny): pierwszy wykryty token rozbraja watcher, a zakup trwa dalej;
+   - **continuous**: watcher zostaje uzbrojony i kupuje każdy kolejny token twórcy, jeden zakup po drugim. Włączenie wymaga potwierdzenia, a zmiana zapisuje się w pliku floty.
+3. **ARM:**
    - wymaga zapisanej tabeli, klucza Helius i co najmniej jednego gotowego portfela; przycisk mówi, czego brakuje;
-   - w trybie na żywo dialog podaje kwotę i liczbę portfeli („flota kupi automatycznie: do X SOL z N portfeli”) i wymaga potwierdzenia **Tak, uzbrój**; w DRY-RUN nic nie jest wysyłane, więc potwierdzenia nie ma;
+   - w trybie na żywo dialog podaje kwotę i liczbę portfeli („the fleet buys automatically: up to X SOL from N wallets”) i wymaga potwierdzenia **Yes, arm**; w DRY-RUN nic nie jest wysyłane, więc potwierdzenia nie ma;
    - przed uzbrojeniem aplikacja czyta salda portfeli, a potem odświeża je co 30 s, żeby zakup po wykryciu nie czekał na sieć.
-4. **Stan połączenia:** „Łączenie…”, „Połączono”, „Ponowne łączenie (próba n)” albo „Rozłączono”, z czasem od ostatniej wiadomości z Helius.
-5. **Alarm:** utrata połączenia przy uzbrojonym watcherze pokazuje czerwony baner i co 3 s gra krótki dźwięk, dopóki połączenie nie wróci albo nie klikniesz **Wycisz**. Po powrocie połączenia aplikacja nadrabia przerwę: sprawdza transakcje twórcy z czasu rozłączenia.
+4. **Stan połączenia:** „Connecting…”, „Connected”, „Reconnecting (attempt n)” albo „Disconnected”, z czasem od ostatniej wiadomości z Helius.
+5. **Alarm:** utrata połączenia przy uzbrojonym watcherze pokazuje czerwony baner i co 3 s gra krótki dźwięk, dopóki połączenie nie wróci albo nie klikniesz **Mute**. Po powrocie połączenia aplikacja nadrabia przerwę: sprawdza transakcje twórcy z czasu rozłączenia.
 6. **Ekran i karta:**
-   - uzbrojony watcher prosi przeglądarkę, żeby ekran nie gasł (Wake Lock), i ponawia prośbę po powrocie do karty. Gdy przeglądarka odmówi, panel pokaże „Ekran może zgasnąć”: wyłącz wtedy usypianie komputera;
+   - uzbrojony watcher prosi przeglądarkę, żeby ekran nie gasł (Wake Lock), i ponawia prośbę po powrocie do karty. Gdy przeglądarka odmówi, panel pokaże „The screen may turn off”: wyłącz wtedy usypianie komputera;
    - **nie zamykaj ani nie przeładowuj karty**, dopóki watcher jest uzbrojony: obserwacja i zakup działają tylko w niej, a przeglądarka zapyta przed zamknięciem;
-   - uzbrojony watcher wstrzymuje automatyczną blokadę; ręczna blokada wymaga wcześniejszego **ROZBRÓJ**;
-   - uzbrojony watcher zamraża ustawienia: tryb DRY-RUN/na żywo, tabelę, portfele i **Ustawienia** zmienisz dopiero po **ROZBRÓJ**, bo zakup po wykryciu idzie z tym, co potwierdziłeś przy uzbrojeniu.
-7. **Wykrycia:** tabela pokazuje czas, mint (skrócony, z przyciskiem **Kopiuj**), źródło (pump.fun, LaunchLab, DBC, InitializeMint), ścieżkę, czas reakcji i weryfikację:
+   - uzbrojony watcher wstrzymuje automatyczną blokadę; ręczna blokada wymaga wcześniejszego **DISARM**;
+   - uzbrojony watcher zamraża ustawienia: tryb DRY-RUN/na żywo, tabelę, portfele i **Settings** zmienisz dopiero po **DISARM**, bo zakup po wykryciu idzie z tym, co potwierdziłeś przy uzbrojeniu.
+7. **Wykrycia:** tabela **Detections** pokazuje czas, mint (skrócony, z przyciskiem **Copy**), źródło (pump.fun, LaunchLab, DBC, InitializeMint), ścieżkę, czas reakcji i weryfikację:
    - ścieżka **log**: mint odczytany od razu z logu transakcji (pump.fun), zakup rusza w kilka milisekund;
-   - ścieżka **transakcja**: mint odczytany z pełnej transakcji, gdy sieć ją potwierdzi (zwykle po kilkuset ms; LaunchLab, DBC, inne tokeny);
-   - **nadrabianie**: transakcja z przerwy w połączeniu;
-   - **zweryfikowane**: pełna transakcja potwierdziła mint z logu;
-   - „transakcja sprzed uzbrojenia”: stary token twórcy, bez zakupu.
+   - ścieżka **transaction**: mint odczytany z pełnej transakcji, gdy sieć ją potwierdzi (zwykle po kilkuset ms; LaunchLab, DBC, inne tokeny);
+   - **catch-up**: transakcja z przerwy w połączeniu;
+   - **verified**: pełna transakcja potwierdziła mint z logu;
+   - „transaction from before arming”: stary token twórcy, bez zakupu.
 8. **Czas reakcji** to czas od odebrania logu do wysłania pierwszego zapytania do Jupitera; trafia też do dziennika. Postęp zakupu z wykrycia liczy czasy od wykrycia.
-9. **ROZBRÓJ:** zamyka połączenie z Helius i usuwa wykrycia czekające w kolejce. Trwający zakup zatrzymuje tylko **STOP**.
+9. **DISARM:** zamyka połączenie z Helius i usuwa wykrycia czekające w kolejce. Trwający zakup zatrzymuje tylko **STOP**.
 10. **Limity Jupitera przy wielu portfelach:** każdy portfel to jedno zapytanie `/order`. Bez klucza (Keyless) aplikacja wysyła najwyżej 27 zapytań na minutę, na planie Free 54. Przy 30 portfelach Keyless kupi więc pierwszymi 27 portfelami od razu, a pozostałymi po upływie minuty. Do szybkiego zakupu całą flotą potrzebny jest wyższy plan i jego klucz.
 
 ## Dla programistów

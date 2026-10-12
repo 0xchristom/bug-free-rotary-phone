@@ -389,7 +389,7 @@ describe('mnemonic import', () => {
     ['a bad checksum', `${'abandon '.repeat(11)}abandon`],
     ['a word outside the list', `${'abandon '.repeat(11)}bunndly`],
   ])(
-    'a mnemonic with %s rejected by the worker shows a Polish message and empties the secrets',
+    'a mnemonic with %s rejected by the worker shows an English message and empties the secrets',
     async (_title, phrase) => {
       const user = userEvent.setup();
       const vault = mockVault(LOCKED, () => Promise.reject(new AppError('INVALID_MNEMONIC')));
@@ -515,7 +515,7 @@ describe('creating and saving', () => {
     expect(storage.clickDownload).toHaveBeenCalledWith('blob:fake', 'Flota testowa.keystore.json');
   });
 
-  it('a save error is shown in Polish and the file can be saved again', async () => {
+  it('a save error is shown in English and the file can be saved again', async () => {
     const user = userEvent.setup();
     const { vault, gate } = vaultWithPendingCreate();
     const storage = mockStorage();

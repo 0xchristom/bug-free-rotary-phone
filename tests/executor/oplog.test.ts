@@ -69,7 +69,7 @@ describe('log entries', () => {
     });
   });
 
-  it('reasons carry their code, detail and Polish message', () => {
+  it('reasons carry their code, detail and English message', () => {
     const skipped: WalletEvent = {
       ...confirmed(),
       state: 'SKIPPED',

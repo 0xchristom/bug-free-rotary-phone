@@ -131,7 +131,7 @@ describe('fleet table', () => {
     expect(row('W03').className).toBe('row-error');
   });
 
-  it('invalid amounts show Polish messages and block saving', async () => {
+  it('invalid amounts show English messages and block saving', async () => {
     const { user } = setup();
     await ready();
     const input = within(row('W01')).getByLabelText('Max spend W01');
@@ -181,7 +181,7 @@ describe('fleet table', () => {
     expect(screen.queryByText('You have unsaved table changes.')).toBeNull();
   });
 
-  it('a token mint shows balances with decimals; a wrong mint shows a Polish error', async () => {
+  it('a token mint shows balances with decimals; a wrong mint shows an English error', async () => {
     const { user } = setup();
     await ready();
     await user.type(screen.getByLabelText('Token address (mint)'), 'SomeMint111');
@@ -291,7 +291,7 @@ describe('bulk actions and summary', () => {
     expect(summaryValue('Total SOL')).toBe('3 SOL');
   });
 
-  it('a wrong amount or percent gives a Polish message and changes nothing', async () => {
+  it('a wrong amount or percent gives an English message and changes nothing', async () => {
     const { user } = setup();
     await ready();
     await user.type(screen.getByLabelText('Max spend for all (SOL)'), '-1');

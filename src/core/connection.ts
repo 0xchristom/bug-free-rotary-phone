@@ -1,6 +1,6 @@
 /**
  * Connection test (SPEC 3.3, BUNNDLY-16): result types shared by the vault worker and the
- * UI, Polish messages and small pure helpers. Results carry only statuses, times and
+ * UI, English messages and small pure helpers. Results carry only statuses, times and
  * public data from the answers, never a key or a URL with a key (D-016, D-024).
  */
 

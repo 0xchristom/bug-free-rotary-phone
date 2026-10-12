@@ -1,4 +1,4 @@
-/** Polish labels for mode B (BUNNDLY-35): connection states, detector sources and paths. */
+/** Labels for mode B (BUNNDLY-35): connection states, detector sources and paths. */
 import type { DetectionPath } from '../watcher/detectors/detector.ts';
 import type { DetectionSource } from '../watcher/detectors/programs.ts';
 import type { StreamStatus } from '../watcher/stream.ts';

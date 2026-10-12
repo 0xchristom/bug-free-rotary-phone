@@ -184,7 +184,7 @@ describe('Helius endpoints and API key values', () => {
       'https:',
       'The address cannot contain a user name or a password.',
     ],
-  ] as const)('endpointUrlProblem(%s, %s) explains in Polish', (url, protocol, message) => {
+  ] as const)('endpointUrlProblem(%s, %s) explains in English', (url, protocol, message) => {
     expect(endpointUrlProblem(url, protocol)).toBe(message);
   });
 

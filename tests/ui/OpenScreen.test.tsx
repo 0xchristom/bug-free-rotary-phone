@@ -142,7 +142,7 @@ describe('preview without the password', () => {
     expect(screen.queryByRole('button', { name: 'Lock' })).toBeNull();
   });
 
-  it('a cancelled pick shows a Polish message and stays on the pick step', async () => {
+  it('a cancelled pick shows an English message and stays on the pick step', async () => {
     const { storage, user } = setup();
     storage.offerFile(null);
     await user.click(await screen.findByRole('button', { name: 'Open a fleet file' }));
@@ -152,7 +152,7 @@ describe('preview without the password', () => {
 });
 
 describe('error messages (files built by core)', () => {
-  it('wrong password: Polish message, password cleared, still locked', async () => {
+  it('wrong password: English message, password cleared, still locked', async () => {
     const { handler, user } = setup();
     await openPreview(user);
     await unlockWith(user, `${PASSWORD}x`);

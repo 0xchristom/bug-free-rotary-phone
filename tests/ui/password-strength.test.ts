@@ -48,7 +48,7 @@ describe('passwordStrength', () => {
     );
   });
 
-  it('labels are Polish and score stays within 0..4', () => {
+  it('labels are English and score stays within 0..4', () => {
     const labels = new Set<string>();
     for (const pw of ['x', 'password1234', 'Tk9#mQ2!vR8&', 'zielony Kot, 7 krzeseł; drabina']) {
       const s = passwordStrength(pw);

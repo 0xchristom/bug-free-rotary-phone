@@ -1,6 +1,6 @@
 /**
  * Fleet settings (SPEC 3.3): types, defaults, the Jupiter plan → rate limit table and
- * range validation with Polish messages. Dependency-free, so the UI can validate the
+ * range validation with English messages. Dependency-free, so the UI can validate the
  * form with exactly the rules the vault worker applies before saving (DECISIONS D-019).
  */
 
@@ -99,7 +99,7 @@ export type SettingsField = keyof GlobalSettingsV1;
 
 export interface SettingsProblem {
   readonly field: SettingsField;
-  /** Polish message for the form. Never contains the entered value. */
+  /** English message for the form. Never contains the entered value. */
   readonly message: string;
 }
 
@@ -221,7 +221,7 @@ export function isHeliusHost(hostname: string): boolean {
 }
 
 /**
- * Why a custom endpoint is not accepted, as a Polish message, or null if it is fine:
+ * Why a custom endpoint is not accepted, as an English message, or null if it is fine:
  * `https:` for RPC or `wss:` for WebSocket, a Helius host, no user/password in the URL.
  */
 export function endpointUrlProblem(value: string, protocol: 'https:' | 'wss:'): string | null {

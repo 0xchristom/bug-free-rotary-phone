@@ -87,7 +87,7 @@ describe('plain export dialog', () => {
     expect(exportButton(dialog).disabled).toBe(true); // confirmation alone is not enough
   });
 
-  it('a wrong password: Polish message, field cleared, nothing downloaded', async () => {
+  it('a wrong password: English message, field cleared, nothing downloaded', async () => {
     const { user, dialog, storage } = await fleetScreen();
     await user.click(
       within(dialog).getByLabelText('I understand that this file gives full access to the funds'),

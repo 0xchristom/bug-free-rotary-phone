@@ -4,7 +4,7 @@ Wspólne zasady dla agentów pracujących nad **Bunndly** (Solana Multi-Wallet B
 
 **Zespół:** właściciel **Krystian**; architekt i tech lead **Andy** (planowanie, odbiór, merge); programista **Mark** (implementacja). Rolę nadaje sesji Krystian, wskazując jej prompt (`ANDY` albo `MARK`); sesja bez nadanej roli pyta go, zanim cokolwiek zmieni. Gdy prompt i ten plik mówią co innego, rozstrzyga ten plik, a rozbieżność zgłaszasz w komentarzu zadania.
 
-**Język:** z Krystianem, w Plane, w `docs/`, `PROGRESS.md` i w interfejsie aplikacji po polsku. Kod, nazwy plików, gałęzie, treść commitów, tytuły PR-ów i squash po angielsku.
+**Język:** z Krystianem, w Plane, w `docs/` i w `PROGRESS.md` po polsku. Interfejs aplikacji, kod, nazwy plików, gałęzie, treść commitów, tytuły PR-ów i squash po angielsku.
 
 ## Źródła prawdy
 

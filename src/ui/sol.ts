@@ -11,7 +11,7 @@ export function parseSol(text: string): bigint | null {
   return whole * LAMPORTS_PER_SOL + fraction;
 }
 
-/** Lamports → "0,015" (Polish decimal comma, no trailing zeros). */
+/** Lamports → "0.015" (decimal point, no trailing zeros). */
 export function formatSol(lamports: bigint): string {
   const whole = lamports / LAMPORTS_PER_SOL;
   const fraction = (lamports % LAMPORTS_PER_SOL)
@@ -25,7 +25,7 @@ export type SolInput =
   | { readonly ok: true; readonly lamports: bigint }
   | { readonly ok: false; readonly message: string };
 
-/** Max spend field: Polish message for each kind of mistake (the value is never echoed). */
+/** Max spend field: English message for each kind of mistake (the value is never echoed). */
 export function parseSolAmount(text: string): SolInput {
   const t = text.trim();
   if (/^-/u.test(t)) return { ok: false, message: 'The amount cannot be negative.' };

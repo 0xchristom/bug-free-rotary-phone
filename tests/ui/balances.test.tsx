@@ -93,7 +93,7 @@ describe('SOL balance refresh on the fleet screen', () => {
     expect(vault.calls('refreshBalances')).toBe(2);
   });
 
-  it('shows the fallback and errors in Polish', async () => {
+  it('shows the fallback and errors in English', async () => {
     const vault = mockVault(unlocked());
     vault.request.mockImplementation((req) =>
       req.type === 'refreshBalances'

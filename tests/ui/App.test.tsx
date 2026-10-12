@@ -98,7 +98,7 @@ describe('vault status changes', () => {
     expect(screen.queryByText('Flota testowa')).toBeNull();
   });
 
-  it('a worker failure rejects pending requests at once and shows a Polish message', async () => {
+  it('a worker failure rejects pending requests at once and shows an English message', async () => {
     let fail: (() => void) | undefined;
     const port: VaultPort = {
       postMessage: vi.fn(), // the "worker" never answers
@@ -128,7 +128,7 @@ describe('vault status changes', () => {
     expect(screen.getByRole('alert').textContent).toBe('The fleet was locked.');
   });
 
-  it('a vault error is shown as a Polish message', async () => {
+  it('a vault error is shown as an English message', async () => {
     const vault = mockVault(LOCKED);
     vault.request.mockImplementation(() => Promise.reject(new AppError('VAULT_TIMEOUT')));
     renderApp(vault, 60_000);
