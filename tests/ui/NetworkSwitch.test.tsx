@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /** Mainnet / Devnet in the header (BUNNDLY-44): the whole app with a fake vault. */
-import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { App } from '../../src/ui/App.tsx';
@@ -284,6 +284,99 @@ describe('balances follow the network', () => {
     (lateMainnet as ((value: VaultBalances) => void) | null)?.(balances('devnet'));
     expect(await screen.findAllByText('7')).toHaveLength(3);
     expect(screen.queryAllByText('1,5')).toEqual([]);
+  });
+});
+
+describe('balances follow the network', () => {
+  it('balances the vault read on another network than the one asked for are not shown', async () => {
+    const vault = mockVault(unlocked());
+    const original = vault.request.getMockImplementation();
+    const read = (network: 'mainnet' | 'devnet', lamports: bigint): VaultBalances => ({
+      network,
+      balances: [0, 1, 2].map((index) => ({ index, lamports })),
+      source: 'helius',
+      fetchedAt: '2026-10-12T12:00:00.000Z',
+    });
+    // The screen asks on mainnet. The first answer says it was read on devnet (the switch
+    // landed in the vault between the question and the read), the second is mainnet's.
+    const answers = [read('devnet', 7_000_000_000n), read('mainnet', 1_500_000_000n)];
+    let answered = 0;
+    vault.request.mockImplementation((req, options) => {
+      if (req.type === 'refreshBalances') {
+        const answer = answers[answered] ?? read('mainnet', 1_500_000_000n);
+        answered += 1;
+        return Promise.resolve(answer);
+      }
+      return original ? original(req, options) : Promise.reject(new Error('no vault'));
+    });
+    const user = userEvent.setup();
+    render(
+      <App
+        vault={vault.client}
+        storage={mockStorage().env}
+        statusPollMs={20}
+        balanceRefreshMs={3_600_000}
+      />,
+    );
+    await waitFor(() => {
+      expect(answered).toBe(1);
+    });
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+    expect(await pressed()).toEqual(['Mainnet']);
+    // 7 SOL is devnet's: not in the table, where “max spend as % of the balance” reads it.
+    expect(screen.queryAllByText('7')).toEqual([]);
+    expect(screen.getByText('Salda: wczytywanie…')).toBeTruthy();
+
+    await user.click(screen.getByRole('button', { name: 'Odśwież salda' }));
+    expect(await screen.findAllByText('1,5')).toHaveLength(3);
+    expect(screen.queryAllByText('7')).toEqual([]);
+    expect(answered).toBe(2);
+  });
+});
+
+describe('an unsaved fleet file on the screen', () => {
+  it('the network stays and a message says why; the message goes once the file is saved', async () => {
+    const vault = mockVault(LOCKED, (req) =>
+      Promise.resolve({
+        fileText: '{"version":1,"encrypted":true}',
+        info: fleetInfo(req.walletCount, req.fleetName),
+      }),
+    );
+    const storage = mockStorage();
+    const user = userEvent.setup();
+    render(<App vault={vault.client} storage={storage.env} statusPollMs={20} />);
+    await user.click(await screen.findByRole('button', { name: 'Utwórz nową flotę' }));
+    await user.type(screen.getByLabelText('Nazwa floty'), 'Nowa');
+    await user.type(screen.getByLabelText('Hasło'), 'zielony Kot, 7 krzeseł; drabina');
+    await user.type(screen.getByLabelText('Powtórz hasło'), 'zielony Kot, 7 krzeseł; drabina');
+    await user.click(screen.getByRole('button', { name: 'Utwórz flotę' }));
+    await screen.findByRole('heading', { name: 'Flota utworzona' });
+
+    await waitFor(async () => {
+      expect((await button('Devnet')).disabled).toBe(false);
+    });
+    await user.click(await button('Devnet'));
+    expect((await screen.findByRole('alert')).textContent).toBe(
+      'Save the table changes and the updated fleet file first, then change the network.',
+    );
+    expect(await pressed()).toEqual(['Mainnet']);
+    expect(vault.calls('setNetwork')).toBe(0);
+
+    await user.click(screen.getByRole('button', { name: 'Zapisz plik floty' }));
+    await screen.findByRole('heading', { name: 'Plik floty zapisany' });
+    expect(screen.queryByRole('alert')).toBeNull();
+    await user.click(screen.getByRole('button', { name: 'Przejdź do floty' }));
+    await screen.findByRole('heading', { name: 'Flota' });
+    expect(screen.queryByText(/then change the network/u)).toBeNull();
+
+    // Nothing unsaved is left: the switch works now.
+    await user.click(await button('Devnet'));
+    await waitFor(async () => {
+      expect(await pressed()).toEqual(['Devnet']);
+    });
+    expect(vault.calls('setNetwork')).toBe(1);
   });
 });
 

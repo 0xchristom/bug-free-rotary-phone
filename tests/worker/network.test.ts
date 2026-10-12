@@ -11,7 +11,13 @@ import {
   type ConnectionReport,
   type FleetSettingsV1,
 } from '../../src/core/index.ts';
-import type { VaultBalances, VaultFileResult, VaultStatus } from '../../src/worker/protocol.ts';
+import type { ExecutorEvent } from '../../src/executor/executor.ts';
+import type {
+  BuyStatus,
+  VaultBalances,
+  VaultFileResult,
+  VaultStatus,
+} from '../../src/worker/protocol.ts';
 import { createVaultHandler, type VaultHandler } from '../../src/worker/vault.ts';
 import {
   FakeSocket,
@@ -37,9 +43,19 @@ interface Payload {
   readonly params: [string[], unknown];
 }
 
-/** Mock RPC: records the URL of every request; `down` hosts fail like a network error. */
-function world(down: readonly string[] = []) {
+/** Lamports of each wallet, in fleet order, on each network. */
+interface PerNetwork {
+  readonly mainnet: readonly bigint[];
+  readonly devnet: readonly bigint[];
+}
+
+/**
+ * Mock RPC: records the URL of every request; `down` hosts fail like a network error.
+ * Every account holds 2 SOL unless `perNetwork` gives each network its own balances.
+ */
+function world(down: readonly string[] = [], perNetwork?: PerNetwork) {
   const rpcUrls: string[] = [];
+  const events: ExecutorEvent[] = [];
   let hold: Promise<void> | null = null;
   const sockets: FakeSocket[] = [];
   const { fetch, calls } = fakeFetch((call) => {
@@ -63,8 +79,11 @@ function world(down: readonly string[] = []) {
             id: payload.id,
             result: {
               context: { slot: 1n },
-              value: payload.params[0].map(() => ({
-                lamports: 2_000_000_000n,
+              value: payload.params[0].map((_address, i) => ({
+                lamports:
+                  perNetwork === undefined
+                    ? 2_000_000_000n
+                    : (perNetwork[url.includes('devnet') ? 'devnet' : 'mainnet'][i] ?? 0n),
                 owner: '11111111111111111111111111111111',
                 data: ['', 'base64'],
                 executable: false,
@@ -90,10 +109,14 @@ function world(down: readonly string[] = []) {
       clock: stepClock(),
     },
   });
+  h.onEvent((e) => {
+    if (e.kind !== 'watch') events.push(e);
+  });
   return {
     h,
     rpcUrls,
     sockets,
+    events,
     /** Every HTTP request of the connection test and of the real Jupiter client. */
     fetchCalls: calls,
     jupiterCalls: () => calls.filter((c) => c.url.includes('jup.ag')),
@@ -264,6 +287,124 @@ describe('reads after the switch', () => {
     await toDevnet(dev.h);
     await refresh(dev.h);
     expect(dev.rpcUrls).toEqual([MAINNET_HELIUS, customDevnet]);
+  });
+});
+
+/**
+ * Money path: the pre-check before `/order` compares the wallet's balance with max spend
+ * plus the reserve. The balances are written by hand and differ on each network, so every
+ * wallet's outcome says which network's balance was used. Each wallet needs
+ * 0.01 SOL (max spend) + 0.015 SOL (default reserve) = 25_000_000 lamports:
+ *
+ *   wallet 0: devnet 2 SOL (enough),  mainnet 0.02 SOL (5_000_000 short)
+ *   wallet 1: devnet 0 (nothing),     mainnet 0.03 SOL (enough)
+ */
+const BALANCES: PerNetwork = {
+  devnet: [2_000_000_000n, 0n],
+  mainnet: [20_000_000n, 30_000_000n],
+};
+const MAX_SPEND = 10_000_000n;
+
+function spendBoth(network: 'mainnet' | 'devnet'): FleetSettingsV1 {
+  return {
+    ...settingsWith({ network }),
+    maxSpend: [
+      { index: 0, lamports: MAX_SPEND },
+      { index: 1, lamports: MAX_SPEND },
+    ],
+  };
+}
+
+/** The two ways the vault changes the network: the header switch and saved settings. */
+const SWITCH = {
+  setNetwork: (h: VaultHandler, network: 'mainnet' | 'devnet') =>
+    h.handle({ type: 'setNetwork', network }),
+  saveSettings: (h: VaultHandler, network: 'mainnet' | 'devnet') =>
+    h.handle({ type: 'saveSettings', settings: spendBoth(network) }),
+};
+
+type World = ReturnType<typeof world>;
+
+async function moneyFleet(w: World): Promise<string[]> {
+  await fleet(w.h);
+  await w.h.handle({ type: 'saveSettings', settings: spendBoth('mainnet') });
+  expect((await status(w.h)).info?.settings.global.minReserveLamports).toBe(15_000_000n);
+  return ((await status(w.h)).info?.wallets ?? []).map((wallet) => wallet.address);
+}
+
+/**
+ * Starts a buy and returns what the pre-check decided for each wallet, by wallet index:
+ * `QUEUED` (on to `/order`) or the reason it was skipped. Then stops the run.
+ */
+async function preCheck(w: World): Promise<string[]> {
+  const { runId } = (await w.h.handle({ type: 'startBuy', mint: MINT })) as BuyStatus;
+  const decided = (): string[] => {
+    const first = new Map<number, string>();
+    for (const e of w.events) {
+      if (e.kind !== 'wallet' || e.runId !== runId || first.has(e.index)) continue;
+      if (e.state === 'QUEUED') first.set(e.index, 'QUEUED');
+      else if (e.state === 'SKIPPED') first.set(e.index, e.reason?.code ?? 'no reason');
+    }
+    return [0, 1].map((index) => first.get(index) ?? 'undecided');
+  };
+  await vi.waitFor(() => {
+    expect(decided()).not.toContain('undecided');
+  });
+  const result = decided();
+  if ((await status(w.h)).buy !== null) await w.h.handle({ type: 'stop' });
+  await vi.waitFor(async () => {
+    expect((await status(w.h)).buy).toBeNull();
+  });
+  return result;
+}
+
+const lamportsOf = (res: VaultBalances): bigint[] => res.balances.map((b) => b.lamports);
+const orderTakers = (w: World): (string | null)[] =>
+  w
+    .jupiterCalls()
+    .filter((c) => c.url.includes('/order'))
+    .map((c) => new URL(c.url).searchParams.get('taker'));
+
+describe('balances of one network never pay for a buy on the other', () => {
+  it.each(['setNetwork', 'saveSettings'] as const)(
+    'after %s back to mainnet the devnet balances are gone: no wallet is pre-checked with them',
+    async (route) => {
+      const w = world([], BALANCES);
+      const [, second] = await moneyFleet(w);
+      await SWITCH[route](w.h, 'devnet');
+      expect(lamportsOf(await refresh(w.h))).toEqual([2_000_000_000n, 0n]);
+      await SWITCH[route](w.h, 'mainnet');
+      expect((await status(w.h)).network).toBe('mainnet');
+
+      // Nothing read on mainnet yet. With the devnet balances wallet 0 would be queued.
+      expect(await preCheck(w)).toEqual(['BALANCE_UNKNOWN', 'BALANCE_UNKNOWN']);
+      expect(w.jupiterCalls()).toEqual([]);
+
+      // A fresh read on mainnet: 0.02 SOL is 5_000_000 short of 0.025, 0.03 SOL is enough.
+      expect(lamportsOf(await refresh(w.h))).toEqual([20_000_000n, 30_000_000n]);
+      expect(await preCheck(w)).toEqual(['INSUFFICIENT_SOL', 'QUEUED']);
+      const takers = orderTakers(w);
+      expect(takers.length).toBeGreaterThan(0);
+      expect(new Set(takers)).toEqual(new Set([second]));
+    },
+  );
+
+  it('a devnet read that lands after the switch back is not the mainnet pre-check balance', async () => {
+    const w = world([], BALANCES);
+    await moneyFleet(w);
+    await toDevnet(w.h);
+    const release = w.holdRpc();
+    const inFlight = refresh(w.h);
+    await w.h.handle({ type: 'setNetwork', network: 'mainnet' });
+    release();
+    const late = await inFlight;
+    // The answer is honest about where it was read and what it found there.
+    expect(late.network).toBe('devnet');
+    expect(lamportsOf(late)).toEqual([2_000_000_000n, 0n]);
+
+    // With that answer kept, wallet 0 (2 SOL on devnet) would be queued for `/order`.
+    expect(await preCheck(w)).toEqual(['BALANCE_UNKNOWN', 'BALANCE_UNKNOWN']);
+    expect(w.jupiterCalls()).toEqual([]);
   });
 });
 
