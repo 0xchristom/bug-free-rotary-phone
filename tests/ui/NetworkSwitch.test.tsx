@@ -132,6 +132,23 @@ describe('switching', () => {
     expect(requests('setNetwork')).toHaveLength(1);
   });
 
+  it('there and back without saving: the file on disk is right again, nothing is asked', async () => {
+    const { user, requests } = setup(unlocked());
+    await user.click(await button('Devnet'));
+    expect(await screen.findByText(/Devnet is set for this session only/u)).toBeTruthy();
+    await user.click(await button('Mainnet'));
+    await waitFor(async () => {
+      expect(await pressed()).toEqual(['Mainnet']);
+    });
+    expect(requests('setNetwork')).toHaveLength(2);
+    await waitFor(() => {
+      expect(screen.queryByText(/is set for this session only/u)).toBeNull();
+    });
+    expect(
+      screen.queryByRole('button', { name: 'Save the fleet file with the new network' }),
+    ).toBeNull();
+  });
+
   it('a running buy: the network stays, a message says why, nothing is sent', async () => {
     const { user, requests } = setup(withBuy());
     await user.click(await button('Devnet'));

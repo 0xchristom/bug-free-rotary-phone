@@ -24,6 +24,8 @@ export type NetworkFile =
       readonly fileText: string;
       readonly fleetName: string;
       readonly network: Network;
+      /** The network in the file on disk: going back to it leaves nothing to save. */
+      readonly onDisk: Network;
       readonly saving: boolean;
     }
   | { readonly kind: 'saved'; readonly fileName: string };
@@ -81,18 +83,24 @@ export function useNetworkSwitch(
     ) {
       return;
     }
+    const onDisk = file?.kind === 'unsaved' ? file.onDisk : status.network;
     setMessage(null);
     setBusy(true);
     client
       .request({ type: 'setNetwork', network })
       .then(async (result) => {
-        setFile({
-          kind: 'unsaved',
-          fileText: result.fileText,
-          fleetName: result.info.fleetName,
-          network,
-          saving: false,
-        });
+        setFile(
+          network === onDisk
+            ? null
+            : {
+                kind: 'unsaved',
+                fileText: result.fileText,
+                fleetName: result.info.fleetName,
+                network,
+                onDisk,
+                saving: false,
+              },
+        );
         await refresh();
       })
       .catch((e: unknown) => {
