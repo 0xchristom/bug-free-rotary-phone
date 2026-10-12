@@ -66,6 +66,27 @@ function createButton(): HTMLButtonElement {
   return screen.getByRole('button', { name: 'Utwórz flotę' });
 }
 
+function createRequests(vault: ReturnType<typeof mockVault>): CreateRequest[] {
+  return vault.request.mock.calls
+    .map(([request]) => request)
+    .filter((request): request is CreateRequest => request.type === 'create');
+}
+
+/** Texts of the messages shown next to the fields, in screen order. */
+function fieldErrors(): string[] {
+  return Array.from(document.querySelectorAll('.field-error'), (el) => el.textContent);
+}
+
+/** Clicks "Utwórz flotę" and checks that nothing was sent and the form is still there. */
+async function clickAndExpectNoFleet(
+  user: UserEvent,
+  vault: ReturnType<typeof mockVault>,
+): Promise<void> {
+  await user.click(createButton());
+  expect(createRequests(vault)).toHaveLength(0);
+  expect(screen.getByRole('heading', { name: 'Kreator nowej floty' })).toBeTruthy();
+}
+
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
@@ -74,43 +95,48 @@ afterEach(() => {
 describe('form validation', () => {
   it('wallet count must be an integer 1–100 (default 30)', async () => {
     const user = userEvent.setup();
-    renderWizard(mockVault(LOCKED));
+    const vault = mockVault(LOCKED);
+    renderWizard(vault);
     await openWizard(user);
     expect(field('Liczba portfeli').value).toBe('30');
     await fillValidForm(user);
-    expect(createButton().disabled).toBe(false);
+    expect(fieldErrors()).toEqual([]);
 
     for (const bad of ['0', '101', '1.5', '']) {
       await user.clear(field('Liczba portfeli'));
       if (bad !== '') await user.type(field('Liczba portfeli'), bad);
-      expect(createButton().disabled).toBe(true);
-      expect(screen.getByText(/od 1 do 100/u)).toBeTruthy();
+      expect(fieldErrors()).toEqual(['Liczba portfeli musi być liczbą całkowitą od 1 do 100.']);
+      await clickAndExpectNoFleet(user, vault);
     }
     for (const good of ['1', '100']) {
       await user.clear(field('Liczba portfeli'));
       await user.type(field('Liczba portfeli'), good);
-      expect(createButton().disabled).toBe(false);
+      expect(fieldErrors()).toEqual([]);
     }
+    await user.click(createButton());
+    expect(createRequests(vault).map((r) => r.walletCount)).toEqual([100]);
   });
 
   it.each(['a/b', '../x', 'CON', '.ukryta'])('fleet name %j is rejected', async (name) => {
     const user = userEvent.setup();
-    renderWizard(mockVault(LOCKED));
+    const vault = mockVault(LOCKED);
+    renderWizard(vault);
     await openWizard(user);
     await fillValidForm(user);
     await user.clear(field('Nazwa floty'));
     await user.type(field('Nazwa floty'), name);
-    expect(createButton().disabled).toBe(true);
     expect(screen.getByText(/Nieprawidłowa nazwa floty/u)).toBeTruthy();
+    await clickAndExpectNoFleet(user, vault);
   });
 
   it('password needs 12 characters counted like core (graphemes after NFKC)', async () => {
     const user = userEvent.setup();
-    renderWizard(mockVault(LOCKED));
+    const vault = mockVault(LOCKED);
+    renderWizard(vault);
     await openWizard(user);
     await fillValidForm(user, 'Ab1!Ab1!Ab1'); // 11 characters
-    expect(createButton().disabled).toBe(true);
-    expect(screen.getByText(/co najmniej 12 znaków \(teraz: 11\)/u)).toBeTruthy();
+    expect(fieldErrors()).toEqual(['Hasło musi mieć co najmniej 12 znaków (teraz: 11).']);
+    await clickAndExpectNoFleet(user, vault);
 
     // 11 × "ą" in NFD is 22 code points but 11 characters
     const nfd = 'ą'.normalize('NFD').repeat(11);
@@ -118,22 +144,210 @@ describe('form validation', () => {
     await user.clear(field('Powtórz hasło'));
     await user.type(field('Hasło'), nfd);
     await user.type(field('Powtórz hasło'), nfd);
-    expect(createButton().disabled).toBe(true);
+    expect(fieldErrors()).toEqual(['Hasło musi mieć co najmniej 12 znaków (teraz: 11).']);
+    await clickAndExpectNoFleet(user, vault);
 
     await user.type(field('Hasło'), 'X');
     await user.type(field('Powtórz hasło'), 'X');
-    expect(createButton().disabled).toBe(false);
+    expect(fieldErrors()).toEqual([]);
     expect(screen.getByText(/Siła hasła:/u)).toBeTruthy();
+    await user.click(createButton());
+    expect(createRequests(vault).map((r) => r.password)).toEqual([`${nfd}X`]);
   });
 
   it('mismatched repeat blocks the button', async () => {
     const user = userEvent.setup();
-    renderWizard(mockVault(LOCKED));
+    const vault = mockVault(LOCKED);
+    renderWizard(vault);
     await openWizard(user);
     await fillValidForm(user);
     await user.type(field('Powtórz hasło'), 'x');
-    expect(screen.getByText('Hasła nie są takie same.')).toBeTruthy();
-    expect(createButton().disabled).toBe(true);
+    expect(fieldErrors()).toEqual(['Hasła nie są takie same.']);
+    await clickAndExpectNoFleet(user, vault);
+  });
+});
+
+describe('what blocks the fleet is always said next to the field (BUNNDLY-42)', () => {
+  const SHORT = 'Ab1!Ab1!Ab1'; // 11 characters
+
+  it('an untouched form shows no messages; a click on the button shows all of them', async () => {
+    const user = userEvent.setup();
+    const vault = mockVault(LOCKED);
+    renderWizard(vault);
+    await openWizard(user);
+    expect(fieldErrors()).toEqual([]);
+    expect(createButton().disabled).toBe(false);
+
+    await clickAndExpectNoFleet(user, vault);
+    expect(fieldErrors()).toEqual([
+      'Podaj nazwę floty.',
+      'Hasło musi mieć co najmniej 12 znaków (teraz: 0).',
+      'Powtórz hasło.',
+    ]);
+    // the first field to fix has the focus and points at its message
+    const name = field('Nazwa floty');
+    expect(document.activeElement).toBe(name);
+    expect(name.getAttribute('aria-invalid')).toBe('true');
+    const describedBy = name.getAttribute('aria-describedby') ?? '';
+    expect(document.getElementById(describedBy)?.textContent).toBe('Podaj nazwę floty.');
+  });
+
+  it('leaving an empty field shows its message without touching the others', async () => {
+    const user = userEvent.setup();
+    renderWizard(mockVault(LOCKED));
+    await openWizard(user);
+    await user.click(field('Nazwa floty'));
+    await user.tab();
+    expect(fieldErrors()).toEqual(['Podaj nazwę floty.']);
+    await user.tab(); // leaves "Hasło"
+    expect(fieldErrors()).toEqual([
+      'Podaj nazwę floty.',
+      'Hasło musi mieć co najmniej 12 znaków (teraz: 0).',
+    ]);
+  });
+
+  interface OneCondition {
+    readonly title: string;
+    readonly breakIt: (user: UserEvent) => Promise<void>;
+    readonly message: string;
+    readonly focused: string;
+  }
+  const conditions: OneCondition[] = [
+    {
+      title: 'wallet count',
+      breakIt: async (user) => {
+        await user.clear(field('Liczba portfeli'));
+      },
+      message: 'Liczba portfeli musi być liczbą całkowitą od 1 do 100.',
+      focused: 'Liczba portfeli',
+    },
+    {
+      title: 'empty fleet name',
+      breakIt: async (user) => {
+        await user.clear(field('Nazwa floty'));
+      },
+      message: 'Podaj nazwę floty.',
+      focused: 'Nazwa floty',
+    },
+    {
+      title: 'password under 12 characters',
+      breakIt: async (user) => {
+        await user.clear(field('Hasło'));
+        await user.clear(field('Powtórz hasło'));
+        await user.type(field('Hasło'), SHORT);
+        await user.type(field('Powtórz hasło'), SHORT);
+      },
+      message: 'Hasło musi mieć co najmniej 12 znaków (teraz: 11).',
+      focused: 'Hasło',
+    },
+    {
+      title: 'empty password repeat',
+      breakIt: async (user) => {
+        await user.clear(field('Powtórz hasło'));
+      },
+      message: 'Powtórz hasło.',
+      focused: 'Powtórz hasło',
+    },
+    {
+      title: 'different password repeat',
+      breakIt: async (user) => {
+        await user.type(field('Powtórz hasło'), 'x');
+      },
+      message: 'Hasła nie są takie same.',
+      focused: 'Powtórz hasło',
+    },
+    {
+      title: 'import chosen but no mnemonic',
+      breakIt: async (user) => {
+        await user.click(screen.getByRole('checkbox', { name: /Mam już mnemonik/u }));
+      },
+      message: 'Wpisz mnemonik albo odznacz import.',
+      focused: 'Mnemonik',
+    },
+    {
+      title: 'mnemonic with a wrong number of words',
+      breakIt: async (user) => {
+        await user.click(screen.getByRole('checkbox', { name: /Mam już mnemonik/u }));
+        await user.type(field('Mnemonik'), 'abandon abandon abandon');
+      },
+      message: 'Mnemonik musi mieć 12, 15, 18, 21 albo 24 słowa (teraz: 3).',
+      focused: 'Mnemonik',
+    },
+  ];
+
+  it.each(conditions)(
+    'only $title is wrong: its message, no fleet',
+    async ({ breakIt, message, focused }) => {
+      const user = userEvent.setup();
+      const vault = mockVault(LOCKED);
+      renderWizard(vault);
+      await openWizard(user);
+      await fillValidForm(user);
+      await breakIt(user);
+      await clickAndExpectNoFleet(user, vault);
+      expect(fieldErrors()).toEqual([message]);
+      expect(document.activeElement).toBe(field(focused));
+    },
+  );
+
+  it('everything right: exactly one create request with the typed values', async () => {
+    const user = userEvent.setup();
+    const { vault, gate, seen } = vaultWithPendingCreate();
+    renderWizard(vault);
+    await openWizard(user);
+    await user.clear(field('Liczba portfeli'));
+    await user.type(field('Liczba portfeli'), '7');
+    await user.type(field('Nazwa floty'), 'Moja flota');
+    await user.type(field('Hasło'), PASSWORD);
+    await user.type(field('Powtórz hasło'), PASSWORD);
+    expect(fieldErrors()).toEqual([]);
+    await user.click(createButton());
+    gate.resolve();
+    await screen.findByRole('heading', { name: 'Flota utworzona' });
+    expect(seen).toEqual([
+      { type: 'create', fleetName: 'Moja flota', walletCount: 7, password: PASSWORD },
+    ]);
+  });
+
+  it('12 words, a name and a 12-character password create the fleet; without the name they do not', async () => {
+    const twelve = 'Ab1!Ab1!Ab1!';
+    const user = userEvent.setup();
+    const { vault, gate, seen } = vaultWithPendingCreate();
+    renderWizard(vault);
+    await openWizard(user);
+    await user.type(field('Hasło'), twelve);
+    await user.type(field('Powtórz hasło'), twelve);
+    await user.click(screen.getByRole('checkbox', { name: /Mam już mnemonik/u }));
+    await user.type(field('Mnemonik'), MNEMONIC_12);
+
+    await clickAndExpectNoFleet(user, vault);
+    expect(fieldErrors()).toEqual(['Podaj nazwę floty.']);
+    expect(document.activeElement).toBe(field('Nazwa floty'));
+
+    await user.type(field('Nazwa floty'), 'Flota testowa');
+    expect(fieldErrors()).toEqual([]);
+    await user.click(createButton());
+    gate.resolve();
+    await screen.findByRole('heading', { name: 'Flota utworzona' });
+    expect(seen).toEqual([
+      {
+        type: 'create',
+        fleetName: 'Flota testowa',
+        walletCount: 30,
+        password: twelve,
+        mnemonic: MNEMONIC_12,
+      },
+    ]);
+  });
+
+  it('says that the import is optional and what it does', async () => {
+    const user = userEvent.setup();
+    renderWizard(mockVault(LOCKED));
+    await openWizard(user);
+    const hint = screen.getByText(/Import jest opcjonalny/u).textContent;
+    expect(hint).toContain('aplikacja sama wygeneruje nowy mnemonik (24 słowa)');
+    expect(hint).toContain('Phantom');
+    expect(hint).toContain("m/44'/501'/{i}'/0'");
   });
 });
 
@@ -154,31 +368,43 @@ describe('mnemonic import', () => {
 
     await user.type(input, 'abandon abandon abandon');
     expect(screen.getByText(/12, 15, 18, 21 albo 24 słowa \(teraz: 3\)/u)).toBeTruthy();
-    expect(createButton().disabled).toBe(true);
+    await clickAndExpectNoFleet(user, vault);
 
     await user.clear(input);
     await user.type(input, MNEMONIC_12);
-    expect(createButton().disabled).toBe(false);
+    expect(fieldErrors()).toEqual([]);
     await user.click(createButton());
     expect(seen[0]?.mnemonic).toBe(MNEMONIC_12);
     gate.resolve();
     expect(await screen.findByRole('heading', { name: 'Flota utworzona' })).toBeTruthy();
   });
 
-  it('an invalid mnemonic rejected by the worker shows a Polish message', async () => {
-    const user = userEvent.setup();
-    const vault = mockVault(LOCKED, () => Promise.reject(new AppError('INVALID_MNEMONIC')));
-    renderWizard(vault);
-    await openWizard(user);
-    await fillValidForm(user);
-    await user.click(screen.getByRole('checkbox', { name: /Mam już mnemonik/u }));
-    await user.type(field('Mnemonik'), `${'abandon '.repeat(11)}abandon`); // bad checksum
-    await user.click(createButton());
-    expect((await screen.findByRole('alert')).textContent).toContain(
-      'Nieprawidłowa fraza odzyskiwania',
-    );
-    expect(screen.getByRole('heading', { name: 'Kreator nowej floty' })).toBeTruthy();
-  });
+  it.each([
+    ['a bad checksum', `${'abandon '.repeat(11)}abandon`],
+    ['a word outside the list', `${'abandon '.repeat(11)}bunndly`],
+  ])(
+    'a mnemonic with %s rejected by the worker shows a Polish message and empties the secrets',
+    async (_title, phrase) => {
+      const user = userEvent.setup();
+      const vault = mockVault(LOCKED, () => Promise.reject(new AppError('INVALID_MNEMONIC')));
+      renderWizard(vault);
+      await openWizard(user);
+      await fillValidForm(user);
+      await user.click(screen.getByRole('checkbox', { name: /Mam już mnemonik/u }));
+      await user.type(field('Mnemonik'), phrase);
+      await user.click(createButton());
+      expect((await screen.findByRole('alert')).textContent).toContain(
+        'Nieprawidłowa fraza odzyskiwania',
+      );
+      expect(screen.getByRole('heading', { name: 'Kreator nowej floty' })).toBeTruthy();
+      expect(createRequests(vault).map((r) => r.mnemonic)).toEqual([phrase]);
+      expect(field('Hasło').value).toBe('');
+      expect(field('Powtórz hasło').value).toBe('');
+      expect(field('Mnemonik').value).toBe('');
+      // back on the form: only the worker's message, no field messages until the user acts
+      expect(fieldErrors()).toEqual([]);
+    },
+  );
 });
 
 describe('secrets handling', () => {
