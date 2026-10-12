@@ -89,7 +89,7 @@ export const PRICE_DIGITS = 12;
 
 /**
  * Effective price in SOL per whole token: `lamports / 10^9` divided by
- * `units / 10^decimals`, rounded down to `digits` places, decimal comma, no trailing
+ * `units / 10^decimals`, rounded down to `digits` places, decimal point, no trailing
  * zeros. Null without tokens.
  */
 export function formatPrice(

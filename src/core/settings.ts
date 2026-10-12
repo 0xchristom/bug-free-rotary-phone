@@ -165,10 +165,10 @@ export function validateGlobalSettings(g: GlobalSettingsV1): SettingsProblem[] {
   const minOk = isIntIn(g.noRouteBackoffMinMs, L.noRouteBackoffMinMs);
   const maxOk = isIntIn(g.noRouteBackoffMaxMs, L.noRouteBackoffMaxMs);
   if (!minOk) {
-    add('noRouteBackoffMinMs', 'The first retry delay must be between 100 and 10,000 ms.');
+    add('noRouteBackoffMinMs', 'The first retry delay must be between 100 and 10000 ms.');
   }
   if (!maxOk) {
-    add('noRouteBackoffMaxMs', 'The longest retry delay must be between 100 and 30,000 ms.');
+    add('noRouteBackoffMaxMs', 'The longest retry delay must be between 100 and 30000 ms.');
   } else if (minOk && g.noRouteBackoffMaxMs < g.noRouteBackoffMinMs) {
     add('noRouteBackoffMaxMs', 'The longest retry delay cannot be shorter than the first one.');
   }
@@ -184,7 +184,7 @@ export function validateGlobalSettings(g: GlobalSettingsV1): SettingsProblem[] {
     if (!isIntIn(g.orderRpm, L.orderRpm)) {
       add(
         'orderRpm',
-        'The /order limit must be a whole number from 1 to 100,000 requests per minute.',
+        'The /order limit must be a whole number from 1 to 100000 requests per minute.',
       );
     }
   } else if (g.orderRpm !== JUPITER_PLAN_RPM[g.jupiterPlan]) {

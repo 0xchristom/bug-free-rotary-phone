@@ -59,7 +59,7 @@ export const ORDER_CHECK_MESSAGES: Record<OrderCheckProblem, string> = {
   TAKER_NOT_SIGNER: 'The wallet is not a signer of the transaction. It was not signed.',
   TAKER_ALREADY_SIGNED: "The wallet's signature slot is not empty. The transaction was not signed.",
   FEE_PAYER_MISMATCH:
-    "The fee payer in the transaction does not match Jupiter's answer. It was not signed.",
+    "The fee payer in the transaction does not match Jupiter's response. It was not signed.",
 };
 
 export const MAX_ORDER_SIGNERS = 2;

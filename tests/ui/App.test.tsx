@@ -132,7 +132,7 @@ describe('vault status changes', () => {
     const vault = mockVault(LOCKED);
     vault.request.mockImplementation(() => Promise.reject(new AppError('VAULT_TIMEOUT')));
     renderApp(vault, 60_000);
-    expect((await screen.findByRole('alert')).textContent).toContain('did not answer');
+    expect((await screen.findByRole('alert')).textContent).toContain('did not respond');
   });
 });
 

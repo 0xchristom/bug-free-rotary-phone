@@ -78,7 +78,7 @@ function confirmOverwrite(fileName: string): boolean {
 /**
  * Unlocked fleet (SPEC 3.2): the fleet table with balances, max spend, reserve, token
  * balance and the active flag; table changes are saved through the vault (saveSettings)
- * and then written to the file on click (D-017). Also "Dodaj portfele" (BUNNDLY-10).
+ * and then written to the file on click (D-017). Also "Add wallets" (BUNNDLY-10).
  */
 export function FleetScreen({
   info,
@@ -247,7 +247,7 @@ export function FleetScreen({
       fileText: result.fileText,
       fleetName: result.info.fleetName,
       note: dryRun ? 'DRY-RUN mode is saved in the vault.' : 'Live mode is saved in the vault.',
-      savedNote: 'with the new buy mode',
+      savedNote: 'with the new DRY-RUN / live mode setting',
       saving: false,
     });
     await refresh();
@@ -372,7 +372,7 @@ export function FleetScreen({
       </div>
       {balances.source === 'fallback' && (
         <p className="notice warning">
-          Helius is not answering. The balances come from the public Solana RPC and may be delayed.
+          Helius is not responding. The balances come from the public Solana RPC and may be delayed.
         </p>
       )}
       {balances.error && (
@@ -496,7 +496,7 @@ export function FleetScreen({
           <p>{phase.note} The updated fleet file is not saved yet.</p>
           {!supportsDirectoryPicker(storage) && (
             <p className="muted">
-              Your browser will download the file. Check the “Downloads” folder then.
+              Your browser will download the file. Then check the “Downloads” folder.
             </p>
           )}
           <div className="actions">
@@ -559,8 +559,8 @@ export function FleetScreen({
 
       <h3>Backup</h3>
       <p className="muted">
-        The only way to a copy of the recovery phrase and the private keys: a plain export after
-        typing the password again.
+        The only way to get a copy of the recovery phrase and the private keys is a plain export
+        after typing the password again.
       </p>
       {exportOpen ? (
         <ExportDialog

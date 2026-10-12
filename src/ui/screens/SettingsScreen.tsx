@@ -38,7 +38,7 @@ const EXPLORER_LABELS: Record<Explorer, string> = {
 
 const MODE_LABELS: Record<BuyMode, string> = {
   'one-shot': 'One-shot (the watcher disarms after the first token)',
-  continuous: 'Continuous (the watcher buys every next detected token)',
+  continuous: 'Continuous (the watcher buys each new detected token)',
 };
 
 const KEY_FIELDS: readonly { name: KeyName; label: string; placeholder: string }[] = [
@@ -57,7 +57,7 @@ const KEY_FIELDS: readonly { name: KeyName; label: string; placeholder: string }
 ];
 
 const CONTINUOUS_WARNING =
-  'Continuous mode: the watcher will not disarm after the first buy and will buy every next detected token until you turn it off. Turn on continuous mode?';
+  'Continuous mode: the watcher will not disarm after the first buy and will buy each new detected token until you turn it off. Turn on continuous mode?';
 
 const LIVE_WARNING =
   'You are turning DRY-RUN off: a buy will send real transactions and spend SOL from the wallets (up to the max spend of each). Turn DRY-RUN off?';
@@ -301,7 +301,7 @@ export function SettingsScreen({ info, storage, onUnsavedChange }: SettingsScree
           </p>
           {!supportsDirectoryPicker(storage) && (
             <p className="muted">
-              Your browser will download the file. Check the “Downloads” folder then.
+              Your browser will download the file. Then check the “Downloads” folder.
             </p>
           )}
           <div className="actions">
@@ -400,8 +400,8 @@ export function SettingsScreen({ info, storage, onUnsavedChange }: SettingsScree
           ) : (
             <p className="muted">
               /order limit: {JUPITER_PLAN_RPM[form.plan]}/min (
-              {String(orderRps(JUPITER_PLAN_RPM[form.plan]))} per second, 60 s window, shared by the
-              whole organization).
+              {String(orderRps(JUPITER_PLAN_RPM[form.plan]))}/s, 60 s window, shared by the whole
+              organization).
             </p>
           )}
           {fieldError('jupiterPlan')}

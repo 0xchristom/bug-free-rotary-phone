@@ -12,11 +12,11 @@ export const CONNECTION_PROBLEMS = {
     'Access forbidden (HTTP 403). The key has no access to this service or a firewall rule blocks it.',
   RATE_LIMITED: 'Rate limit exceeded (HTTP 429). Wait a moment and try again.',
   SERVER_ERROR: 'Service error (HTTP 5xx). Try again in a moment.',
-  HTTP_ERROR: 'The service answered with an unexpected HTTP code.',
-  TIMEOUT: 'The service did not answer in time.',
+  HTTP_ERROR: 'The service responded with an unexpected HTTP code.',
+  TIMEOUT: 'The service did not respond in time.',
   NETWORK:
     'Could not connect to the service. Check your internet connection; in the hosted version the cause may also be CSP.',
-  INVALID_RESPONSE: 'The service returned an answer in an unexpected format.',
+  INVALID_RESPONSE: 'The service returned a response in an unexpected format.',
   RPC_ERROR: 'The RPC node returned a request error.',
   UNHEALTHY: 'The Helius node reports that it is not healthy (getHealth).',
   WS_REFUSED:

@@ -106,7 +106,7 @@ describe('SOL balance refresh on the fleet screen', () => {
     );
     renderFleet(vault);
     await tick(0);
-    expect(screen.getByText(/Helius is not answering/u)).toBeTruthy();
+    expect(screen.getByText(/Helius is not responding/u)).toBeTruthy();
 
     vault.request.mockImplementation((req) =>
       req.type === 'refreshBalances'

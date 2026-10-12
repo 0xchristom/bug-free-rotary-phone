@@ -31,9 +31,9 @@ export interface WatchPanelProps {
 }
 
 const MODE_HELP: Readonly<Record<BuyMode, string>> = {
-  'one-shot': 'One-shot: the first detected token disarms the watcher, and the buy goes on.',
+  'one-shot': 'One-shot: the first detected token disarms the watcher, and the buy continues.',
   continuous:
-    'Continuous: the watcher stays armed and buys every next token of the creator, one after another.',
+    'Continuous: the watcher stays armed and buys each new token from the creator, one after another.',
 };
 
 function shortAddress(address: string): string {
@@ -222,7 +222,7 @@ export function WatchPanel({
             <strong>Turn on continuous mode?</strong>
           </p>
           <p id={`${ids}-cont-text`}>
-            The watcher will not disarm after the first token: every next token of the creator
+            The watcher will not disarm after the first token: each new token from the creator
             starts another buy by the whole fleet.
           </p>
           <div className="actions">

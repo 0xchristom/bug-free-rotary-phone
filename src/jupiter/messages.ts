@@ -9,7 +9,7 @@ const FAILURES: Record<JupiterFailureCode, string> = {
   RATE_LIMITED:
     'Jupiter: rate limit exceeded (HTTP 429). The request will wait for a free slot in the limit window.',
   SERVER_ERROR: 'Jupiter: service error (HTTP 5xx).',
-  TIMEOUT: 'Jupiter did not answer in time.',
+  TIMEOUT: 'Jupiter did not respond in time.',
   NETWORK: 'Could not connect to Jupiter (network, CORS or CSP).',
   NO_ROUTE:
     'Jupiter found no route for this token and amount. A fresh token may have no liquidity yet.',
@@ -17,8 +17,8 @@ const FAILURES: Record<JupiterFailureCode, string> = {
   UNAUTHORIZED: 'Jupiter rejected the API key (HTTP 401). Check the key in Settings.',
   FORBIDDEN:
     'Jupiter: access forbidden (HTTP 403). The key has no access to the Swap API or a firewall blocks it.',
-  HTTP_ERROR: 'Jupiter answered with an unexpected HTTP code.',
-  INVALID_RESPONSE: 'Jupiter returned an answer in an unexpected format.',
+  HTTP_ERROR: 'Jupiter responded with an unexpected HTTP code.',
+  INVALID_RESPONSE: 'Jupiter returned a response in an unexpected format.',
 };
 
 const BUILD_REASONS: Record<OrderBuildReason, string> = {

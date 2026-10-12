@@ -95,11 +95,11 @@ describe('validateGlobalSettings', () => {
     ],
     [
       { noRouteBackoffMinMs: 50 },
-      'noRouteBackoffMinMs: The first retry delay must be between 100 and 10,000 ms.',
+      'noRouteBackoffMinMs: The first retry delay must be between 100 and 10000 ms.',
     ],
     [
       { noRouteBackoffMaxMs: 40_000 },
-      'noRouteBackoffMaxMs: The longest retry delay must be between 100 and 30,000 ms.',
+      'noRouteBackoffMaxMs: The longest retry delay must be between 100 and 30000 ms.',
     ],
     [
       { noRouteBackoffMinMs: 3_000, noRouteBackoffMaxMs: 2_000 },
@@ -116,7 +116,7 @@ describe('validateGlobalSettings', () => {
     ],
     [
       { jupiterPlan: 'custom', orderRpm: 0 },
-      'orderRpm: The /order limit must be a whole number from 1 to 100,000 requests per minute.',
+      'orderRpm: The /order limit must be a whole number from 1 to 100000 requests per minute.',
     ],
   ])('%o → English message', (patch, message) => {
     expect(problems(patch)).toEqual([message]);

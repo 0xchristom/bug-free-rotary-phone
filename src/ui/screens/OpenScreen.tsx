@@ -150,8 +150,8 @@ export function OpenScreen({ storage, onBack, onUnlocked }: OpenScreenProps) {
         </li>
       </ul>
       <p className="notice warning" role="status">
-        The addresses below come from the open part of the file and are not verified yet. Unlock the
-        fleet with the password to check them, copy them or show a QR code.
+        The addresses below come from the unencrypted part of the file and are not verified yet.
+        Unlock the fleet with the password to check them, copy them or show a QR code.
       </p>
 
       {problemBox}

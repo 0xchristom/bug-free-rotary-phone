@@ -8,7 +8,7 @@
 
 /** Code → user-facing message (English). The keys define the ErrorCode union. */
 export const ERROR_MESSAGES = {
-  INVALID_MNEMONIC: 'Invalid recovery phrase (mnemonic). Check the words and their order.',
+  INVALID_MNEMONIC: 'Invalid recovery phrase. Check the words and their order.',
   INVALID_DERIVATION_INDEX:
     'Invalid wallet range. A fleet can have 1 to 100 wallets (indexes 0 to 99).',
   INVALID_FLEET_NAME:
@@ -20,7 +20,7 @@ export const ERROR_MESSAGES = {
   KEYSTORE_UNSUPPORTED_VERSION: 'This fleet file version is not supported. Update the app.',
   KEYSTORE_UNSUPPORTED_KDF: 'The fleet file uses an unsupported password protection method.',
   KEYSTORE_TAMPERED:
-    'The open part of the fleet file does not match the encrypted part. The file may have been modified.',
+    'The unencrypted part of the fleet file does not match the encrypted part. The file may have been modified.',
   INVALID_SETTINGS:
     'The settings are invalid. Fix the marked fields and try again. Nothing was saved.',
   RPC_UNAVAILABLE:
@@ -37,7 +37,7 @@ export const ERROR_MESSAGES = {
     'This is not a valid creator wallet address (base58, 32 bytes, not the SOL mint).',
   WATCH_ARMED:
     'The watcher is armed. Disarm it with DISARM first, then lock the fleet or change the settings or the fleet.',
-  VAULT_TIMEOUT: 'The key vault did not answer in time. Try again.',
+  VAULT_TIMEOUT: 'The key vault did not respond in time. Try again.',
   INTERNAL_ERROR: 'An internal application error occurred. Try again.',
   STORAGE_CANCELLED: 'The file or folder choice was cancelled. No file was saved or loaded.',
   STORAGE_PERMISSION_DENIED:

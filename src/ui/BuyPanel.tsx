@@ -38,7 +38,7 @@ function seconds(ms: number | null): string {
 
 /**
  * Buy panel (SPEC 3.4, 3.6): mode A (BUNNDLY-27: mint, "Buy now") and mode B
- * (BUNNDLY-35: creator watch, UZBRÓJ / ROZBRÓJ) share the DRY-RUN / live label, switching
+ * (BUNNDLY-35: creator watch, ARM / DISARM) share the DRY-RUN / live label, switching
  * to live only through a confirmation with the amount and wallet count, STOP and the
  * progress bar.
  */

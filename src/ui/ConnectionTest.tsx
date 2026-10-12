@@ -38,7 +38,9 @@ function jupiterDetails(j: JupiterCheck): string {
   if (j.outAmount !== null && j.router !== null) {
     parts.push(`0.01 SOL → ${formatUnits(BigInt(j.outAmount), USDC_DECIMALS)} USDC (${j.router})`);
   }
-  parts.push(j.rateLimit ? rateLimitText(j.rateLimit) : 'x-ratelimit-* headers: not in the answer');
+  parts.push(
+    j.rateLimit ? rateLimitText(j.rateLimit) : 'x-ratelimit-* headers: not in the response',
+  );
   return parts.join('; ');
 }
 
@@ -73,7 +75,7 @@ function rowsOf(report: ConnectionReport): Row[] {
 }
 
 /**
- * „Test połączeń” (SPEC 3.3). The vault worker runs the checks with the saved keys and
+ * Connection test (SPEC 3.3). The vault worker runs the checks with the saved keys and
  * returns statuses and times only (D-024).
  */
 export function ConnectionTest() {

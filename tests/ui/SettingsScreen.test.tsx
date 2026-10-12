@@ -83,7 +83,7 @@ describe('form', () => {
     expect(
       screen.getByRole<HTMLSelectElement>('combobox', { name: 'Transaction explorer' }).value,
     ).toBe('solscan');
-    expect(screen.getByText(/\/order limit: 60\/min \(\s*1 per second/u)).toBeTruthy();
+    expect(screen.getByText(/\/order limit: 60\/min \(\s*1\/s/u)).toBeTruthy();
     expect(screen.getAllByText('Not set.')).toHaveLength(4);
     expect(screen.queryByRole('button', { name: /^Remove/u })).toBeNull();
   });
@@ -121,12 +121,12 @@ describe('form', () => {
     const { user } = await setup();
     const plan = screen.getByRole('combobox', { name: 'Jupiter plan' });
     await user.selectOptions(plan, 'developer');
-    expect(screen.getByText(/\/order limit: 600\/min \(\s*10 per second/u)).toBeTruthy();
+    expect(screen.getByText(/\/order limit: 600\/min \(\s*10\/s/u)).toBeTruthy();
     await user.selectOptions(plan, 'keyless');
-    expect(screen.getByText(/\/order limit: 30\/min \(\s*0\.5 per second/u)).toBeTruthy();
+    expect(screen.getByText(/\/order limit: 30\/min \(\s*0\.5\/s/u)).toBeTruthy();
     await user.selectOptions(plan, 'custom');
     await retype(user, '/order limit (requests per minute)', '0');
-    expect(screen.getByText(/from 1 to 100,000 requests per minute/u)).toBeTruthy();
+    expect(screen.getByText(/from 1 to 100000 requests per minute/u)).toBeTruthy();
     await retype(user, '/order limit (requests per minute)', '1200');
     expect(saveButton().disabled).toBe(false);
   });

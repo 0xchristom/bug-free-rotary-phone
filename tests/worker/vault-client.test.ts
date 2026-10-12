@@ -199,7 +199,7 @@ describe('timeouts', () => {
     await vi.advanceTimersByTimeAsync(1);
     const err = await pending;
     expect(isAppError(err) && err.code).toBe('VAULT_TIMEOUT');
-    expect((err as AppError).message).toContain('did not answer');
+    expect((err as AppError).message).toContain('did not respond');
   });
 
   it('create and unlock get the longer timeout (scrypt)', async () => {

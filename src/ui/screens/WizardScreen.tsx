@@ -241,7 +241,7 @@ export function WizardScreen({ storage, onBack, onDone, onUnsavedChange }: Wizar
         </p>
         {download && (
           <p className="muted">
-            Your browser will download the file. Check the “Downloads” folder then.
+            Your browser will download the file. Then check the “Downloads” folder.
           </p>
         )}
         {errorBox}

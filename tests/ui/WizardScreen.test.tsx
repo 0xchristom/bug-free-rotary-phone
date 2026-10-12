@@ -509,7 +509,7 @@ describe('creating and saving', () => {
     await fillValidForm(user);
     await user.click(createButton());
     gate.resolve();
-    expect(await screen.findByText(/Check the “Downloads” folder then/u)).toBeTruthy();
+    expect(await screen.findByText(/Then check the “Downloads” folder/u)).toBeTruthy();
     await user.click(screen.getByRole('button', { name: 'Save the fleet file' }));
     expect(await screen.findByText(/The file was downloaded/u)).toBeTruthy();
     expect(storage.clickDownload).toHaveBeenCalledWith('blob:fake', 'Flota testowa.keystore.json');
