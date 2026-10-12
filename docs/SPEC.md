@@ -182,7 +182,7 @@ Moduły `core`, `executor` i `jupiter` piszemy tak, by dało się je testować w
 - TypeScript `strict`. ESLint i Prettier. Zero `any` w modułach `core`, `executor`, `jupiter`.
 - Wszystkie kwoty w lamportach / jednostkach bazowych jako `bigint`. Konwersja do wyświetlania tylko w UI, z uwzględnieniem `decimals` mintu.
 - Obsługa błędów z typowanymi kodami. Każdy błąd widoczny dla użytkownika ma zrozumiały komunikat po polsku.
-- UI po polsku. Działa na desktopie (Chrome/Edge jako docelowe). Na mobile wystarczy podgląd.
+- UI po polsku. Działa na desktopie (Chrome/Edge jako docelowe). Wersji mobilnej nie ma: układów dla telefonu nie budujemy i nie testujemy (decyzja Krystiana, 12.10.2026).
 - Wydajność: reakcja watcher → pierwsze `/order` poniżej 300 ms od otrzymania logu (pomiar w logu).
 
 ---
@@ -261,3 +261,45 @@ Moduły `core`, `executor` i `jupiter` piszemy tak, by dało się je testować w
 6. **Opcjonalnie (po akceptacji MVP przez Krystiana):** rozsyłanie i zbieranie SOL, sprzedaż.
 
 Po każdym etapie Andy raportuje Krystianowi: co działa, co przetestowano, otwarte pytania, rozbieżności z dokumentacją.
+
+---
+
+## 11. Dashboard floty (Epik 3)
+
+> Decyzja Krystiana z 12.10.2026. Wzór wyglądu i gęstości: panel zadań serwisu Bloom. Zakres produktu: tworzenie portfeli, koordynacja wielu portfeli i parametry handlu. Gdzie ta sekcja mówi co innego niż 3.2, 3.6, 3.7 i 9, rozstrzyga ta sekcja.
+
+### 11.1 Portfele
+
+- „Create wallets” pyta o liczbę i tworzy portfele jednym kliknięciem. Domyślne nazwy: `Wallet 0`, `Wallet 1`, … (numer to indeks derywacji).
+- Folder kopii zapasowej: użytkownik wskazuje go raz. Po każdej zmianie zbioru portfeli aplikacja sama zapisuje tam aktualny plik konta i sprawdza zapis odczytem. Portfel bez potwierdzonej kopii nie bierze udziału w komendach. Brak dostępu do folderu jest stanem alarmowym widocznym na każdym ekranie.
+
+### 11.2 Tabela
+
+Kolumny: zaznaczenie, portfel (nazwa, skrócony adres, kopiuj, eksplorator), saldo SOL z ikoną, saldo tokenu, kwota, slippage (kupno / sprzedaż), opłata priorytetowa (kupno / sprzedaż), postęp, liczba tokenów, status, akcje wiersza.
+
+- Saldo SOL zmienia się w tabeli najpóźniej 2 s po potwierdzeniu wpływu w sieci.
+- Postęp: pasek 0–100%, czyli wykonana część zlecenia portfela potwierdzona w łańcuchu do części zaplanowanej. 100% pojawia się dopiero po potwierdzeniu transakcji i odczycie salda z RPC. W trakcie pasek pokazuje etap (kolejka, wycena, podpis, wysłano). DRY-RUN nigdy nie wygląda jak zakup.
+- Obok paska liczba kupionych albo sprzedanych tokenów odczytana z łańcucha.
+
+### 11.3 Parametry handlu
+
+Na portfel, z wartościami domyślnymi floty i edycją zbiorczą: kwota kupna (SOL albo procent salda), część sprzedaży (procent salda tokenu), slippage kupna i sprzedaży, opłata priorytetowa kupna i sprzedaży. Parametr, którego dana droga zakupu nie przyjmuje, jest pokazany jako „Auto”, nigdy jako liczba, która nie działa.
+
+### 11.4 Komendy floty
+
+Jeden cel: adres mintu albo adres portfela twórcy; aplikacja rozpoznaje, czym jest adres. Komendy: ARM (czekaj na token twórcy i kup), BUY, SELL, STOP. Działają na zaznaczone portfele. Sprzedaż używa tych samych mechanizmów co kupno (kolejka, limiter, maszyna stanów, idempotencja): portfel nigdy nie sprzedaje więcej niż zaplanowana część.
+
+### 11.5 Tryby wykonania
+
+- **Immediate:** wszystkie zaznaczone portfele od razu; tempo ogranicza tylko limiter drogi zakupu.
+- **Stairs:** portfele po kolei, jeden krok co ustawiony odstęp, w kroku ustawiona liczba portfeli. Pauza, wznowienie i STOP. Dotyczy kupna i sprzedaży, także po wykryciu tokenu w trybie obserwacji.
+
+### 11.6 Reakcja interfejsu
+
+- Kliknięcie komendy zmienia stan wierszy od razu, przed odpowiedzią sieci.
+- Zdarzenia z workera są nanoszone najpóźniej w następnej klatce; przy 100 portfelach odświeżają się tylko zmienione wiersze.
+- Stały pasek stanu: sieć, źródło danych, opóźnienie RPC, stan WebSocketu, stan folderu kopii.
+
+### 11.7 Poza zakresem
+
+Copy trading, zlecenia z limitem, śledzenie cudzych portfeli, strategie take-profit, bundle Jito i napiwki.
