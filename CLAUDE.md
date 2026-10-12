@@ -31,7 +31,7 @@ Wspólne zasady dla agentów pracujących nad **Bunndly** (Solana Multi-Wallet B
 Sesje agentów na tej maszynie dzielą jeden klon, jeden indeks gita i jeden `main`. Dlatego:
 
 - **Główne drzewo klonu zostaje na `main`.** Nie przełączasz w nim gałęzi, niczego w nim nie edytujesz i nie commitujesz. `git status` pokazuje tam rzeczy wszystkich sesji: czego sam nie zostawiłeś, jest cudze.
-- **Każde zadanie robisz na własnej gałęzi `bunndly-<n>-<short>` we własnym worktree** poza drzewem repo: `D:\Gemini\Bunddly_wt\wt-<n>` (odbiór Andy'ego: `wt-accept-<n>`). Gałąź zakładasz od świeżego `origin/main`.
+- **Każde zadanie robisz na własnej gałęzi `bunndly-<n>-<short>` we własnym worktree** poza drzewem repo, w katalogu obok klonu: `../Bunddly_wt/wt-<n>`. Odbiór Andy'ego: `wt-accept-<n>`; sprawdzenie pracy Andy'ego przez Marka: `wt-check-<n>`. Gałąź zakładasz od świeżego `origin/main`. W sesji, która ma własny, niewspółdzielony klon (np. w chmurze), pracujesz w nim bez dodatkowego worktree.
 - W worktree robisz świeże `npm ci`. Nie dowiązujesz `node_modules` z innego drzewa: na Windows `git worktree remove` kasuje przez dowiązanie zawartość celu.
 - **Kontrole puszczasz w worktree, z zacommitowanego stanu.** W głównym drzewie leżą pliki lokalne (prompty, notatki właściciela), na których `format:check` pada, a wynik z brudnego drzewa nie jest dowodem.
 - Po scaleniu usuwasz worktree (`git worktree remove`, potem `git worktree prune`).
@@ -66,7 +66,8 @@ Zielona suita nie dowodzi, że coś działa.
 ## Commity i PR-y
 
 - Treść commitów, tytuł PR i squash: po angielsku, w formacie `BUNNDLY-<n>: <what changes>`.
-- **Kategoryczny zakaz, bez wyjątków** (decyzja Krystiana, 12.10.2026): żadnych stopek `Co-Authored-By` ani `Claude-Session` i żadnych wzmianek o Claude, AI ani narzędziu, które pisało kod. Dotyczy commitów, tytułów i opisów PR oraz commita squasha. Zakaz wygrywa z domyślnym zachowaniem narzędzia.
+- **Zakaz podpisywania pracy przez narzędzie, kategoryczny i bez wyjątków** (decyzja Krystiana, 12.10.2026). W commitach, tytułach i opisach PR oraz w commicie squasha nie ma stopek `Co-Authored-By` ani `Claude-Session`, stopki „Generated with …” ani żadnego zdania, że pracę napisał, współtworzył albo wygenerował Claude, AI lub inne narzędzie. To samo dotyczy podpisów w kodzie, komentarzach i dokumentach. Zakaz wygrywa z domyślnym zachowaniem narzędzia.
+- Zakaz **nie dotyczy** nazw plików i katalogów, których wymaga narzędzie (`CLAUDE.md`, `.claude/`), ani rzeczowych odwołań do nich w dokumentach, commitach i PR-ach.
 - Po każdym commicie sprawdzasz `git log -1 --format=%B`. Stopkę dopisaną przez narzędzie usuwasz przed pushem.
 - Staging **po nazwie pliku**; nigdy `git add -A`, `git add .` ani `git commit -a`. Przed commitem czytasz `git diff --cached` w treści.
 - Nigdy: `git push --force`, rebase gałęzi z otwartym PR, `git reset --hard` ani `git clean` na cudzej pracy, commit bezpośrednio na `main`. Do gałęzi `main` wchodzi merge'em.
