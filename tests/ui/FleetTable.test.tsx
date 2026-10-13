@@ -21,7 +21,14 @@ function setup({ count = 3, settings = {}, lamports = () => SOL, probe }: Setup 
   const base = fleetInfo(count);
   let info: VaultInfo = { ...base, settings: { ...base.settings, ...settings } };
   let balanceOf = lamports;
-  const status = (): VaultStatus => ({ locked: false, armed: false, info, buy: null, watch: null });
+  const status = (): VaultStatus => ({
+    locked: false,
+    network: 'mainnet',
+    armed: false,
+    info,
+    buy: null,
+    watch: null,
+  });
   const vault = mockVault(status());
   const saved: FleetSettingsV1[] = [];
   vault.request.mockImplementation((req: VaultRequest) => {
@@ -46,6 +53,7 @@ function setup({ count = 3, settings = {}, lamports = () => SOL, probe }: Setup 
                 },
               }
             : {}),
+          network: 'mainnet',
           source: 'helius',
           fetchedAt: '2026-10-02T12:00:00.000Z',
         });

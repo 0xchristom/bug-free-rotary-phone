@@ -1,5 +1,6 @@
 import { useEffect, useId, useState, type ReactNode } from 'react';
 import { toUserMessage } from '../core/errors.ts';
+import { DEFAULT_NETWORK, NETWORK_LABELS } from '../core/network.ts';
 import type { BuyMode, JupiterPlan } from '../core/settings.ts';
 import type { ApiKeyFlags } from '../worker/protocol.ts';
 import { PLAN_LABELS } from './plan-labels.ts';
@@ -179,7 +180,8 @@ export function BuyPanel({
                 <strong>Przełączyć na tryb na żywo?</strong>
               </p>
               <p id={`${ids}-live-text`}>
-                Następny zakup wyda prawdziwe SOL: do {formatSol(toSpend)} SOL z {readyCount}{' '}
+                Network: {NETWORK_LABELS[status?.network ?? DEFAULT_NETWORK]}. Następny zakup wyda
+                prawdziwe SOL: do {formatSol(toSpend)} SOL z {readyCount}{' '}
                 {readyCount === 1 ? 'portfela' : 'portfeli'}. Transakcji na łańcuchu nie da się
                 cofnąć.
               </p>

@@ -357,6 +357,25 @@ describe('startBuy', () => {
     expect(await codeOf(h.handle({ type: 'lock' }))).toBe('ok');
   });
 
+  it('while running the network cannot change, by the switch or by saved settings (BUNNDLY-44)', async () => {
+    const { clock, h, events, status } = await setup({
+      script: { orderDelayMs: () => 600_000 },
+    });
+    await h.handle({ type: 'startBuy', mint: USDC });
+    await clock.runUntil(clock.now() + 1_000);
+    expect(await codeOf(h.handle({ type: 'setNetwork', network: 'devnet' }))).toBe('BUY_RUNNING');
+    const settings = (await status()).info?.settings;
+    if (!settings) throw new Error('no settings');
+    const devnet = { ...settings, global: { ...settings.global, network: 'devnet' } };
+    expect(await codeOf(h.handle({ type: 'saveSettings', settings: devnet }))).toBe('BUY_RUNNING');
+    // Other settings may still change during a buy, as before.
+    expect(await codeOf(h.handle({ type: 'saveSettings', settings }))).toBe('ok');
+    expect((await status()).network).toBe('mainnet');
+    await runToEnd(clock, events);
+    expect(await codeOf(h.handle({ type: 'setNetwork', network: 'devnet' }))).toBe('ok');
+    expect((await status()).network).toBe('devnet');
+  });
+
   it('stop: no new /order, the status says it is stopping until the run ends', async () => {
     const { clock, jupiter, h, events, status } = await setup({
       dryRun: false,

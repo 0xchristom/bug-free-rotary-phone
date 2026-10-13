@@ -6,8 +6,7 @@ import {
   type RpcTransport,
 } from '@solana/kit';
 import { describe, expect, it, vi } from 'vitest';
-import { PUBLIC_RPC_URL } from '../../src/chain/index.ts';
-import { AppError, defaultFleetSettings } from '../../src/core/index.ts';
+import { AppError, defaultFleetSettings, publicRpcUrl } from '../../src/core/index.ts';
 import type { VaultBalances, VaultFileResult } from '../../src/worker/protocol.ts';
 import {
   createVaultHandler,
@@ -19,6 +18,7 @@ const PASSWORD = 'correct horse battery staple';
 const MNEMONIC_12 = `${'abandon '.repeat(11)}about`;
 const KEY = 'heliusSecretKey777';
 const HELIUS_URL = `https://mainnet.helius-rpc.com/?api-key=${KEY}`;
+const PUBLIC_RPC_URL = publicRpcUrl('mainnet');
 
 interface Payload {
   readonly id: unknown;
@@ -122,7 +122,7 @@ describe('refreshBalances in the vault worker', () => {
     );
     expect(text).not.toContain(KEY);
     expect(text).not.toContain('helius-rpc');
-    expect(Object.keys(res).sort()).toEqual(['balances', 'fetchedAt', 'source']);
+    expect(Object.keys(res).sort()).toEqual(['balances', 'fetchedAt', 'network', 'source']);
   });
 
   it('a custom RPC URL wins over the key', async () => {

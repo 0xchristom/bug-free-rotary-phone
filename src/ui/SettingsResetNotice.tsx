@@ -13,6 +13,7 @@ const FIELD_LABELS: Record<SettingsField, string> = {
   dryRun: 'tryb DRY-RUN',
   jupiterPlan: 'plan Jupitera',
   orderRpm: 'limit /order',
+  network: 'network',
 };
 
 /**
