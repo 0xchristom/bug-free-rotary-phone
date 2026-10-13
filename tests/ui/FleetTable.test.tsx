@@ -6,6 +6,7 @@ import type { FleetSettingsV1 } from '../../src/core/index.ts';
 import { App } from '../../src/ui/App.tsx';
 import type { VaultInfo, VaultRequest, VaultStatus } from '../../src/worker/protocol.ts';
 import { fleetInfo, mockStorage, mockVault } from './fakes.ts';
+import { eventually } from './settle.ts';
 import { setupUser } from './user.ts';
 
 const SOL = 1_000_000_000n;
@@ -96,7 +97,7 @@ function row(label: string): HTMLElement {
 
 /** Waits until the first balance read is on screen. */
 async function ready(): Promise<void> {
-  await screen.findByText(/^Balances as of /u);
+  await eventually(() => screen.getByText(/^Balances as of /u));
 }
 
 function cells(label: string): string[] {
@@ -262,31 +263,47 @@ describe('100 wallets', () => {
   }
 
   it('a balance refresh re-renders only the rows whose balance changed', async () => {
+    const __t0 = performance.now();
     const renders = new Map<number, number>();
+    process.stderr.write('MARK 1 const renders = new Map<number, number>(); ' + String(Math.round(performance.now() - __t0)) + String.fromCharCode(10));
     const probe = (index: number): void => {
       renders.set(index, (renders.get(index) ?? 0) + 1);
     };
+    process.stderr.write('MARK 2 }; ' + String(Math.round(performance.now() - __t0)) + String.fromCharCode(10));
     const { user, setBalances } = setup({ count: 100, probe });
+    process.stderr.write('MARK 3 const { user, setBalances } = setup({ count: 100,  ' + String(Math.round(performance.now() - __t0)) + String.fromCharCode(10));
     await ready();
+    process.stderr.write('MARK 4 await ready(); ' + String(Math.round(performance.now() - __t0)) + String.fromCharCode(10));
     await waitFor(() => {
       expect(cellsOf('W100')[3]).toBe('1');
     });
+    process.stderr.write('MARK 5 }); ' + String(Math.round(performance.now() - __t0)) + String.fromCharCode(10));
     expect(renders.size).toBe(100);
+    process.stderr.write('MARK 6 expect(renders.size).toBe(100); ' + String(Math.round(performance.now() - __t0)) + String.fromCharCode(10));
     const before = new Map(renders);
+    process.stderr.write('MARK 7 const before = new Map(renders); ' + String(Math.round(performance.now() - __t0)) + String.fromCharCode(10));
 
     // same balances: no row renders again
     await user.click(screen.getByRole('button', { name: 'Refresh balances' }));
+    process.stderr.write('MARK 8 await user.click(screen.getByRole("button", { name ' + String(Math.round(performance.now() - __t0)) + String.fromCharCode(10));
     await act(() => Promise.resolve());
+    process.stderr.write('MARK 9 await act(() => Promise.resolve()); ' + String(Math.round(performance.now() - __t0)) + String.fromCharCode(10));
     expect(renders).toEqual(before);
+    process.stderr.write('MARK 10 expect(renders).toEqual(before); ' + String(Math.round(performance.now() - __t0)) + String.fromCharCode(10));
 
     // one wallet changed: only that row renders
     setBalances((i) => (i === 42 ? 2n * SOL : SOL));
+    process.stderr.write('MARK 11 setBalances((i) => (i === 42 ? 2n * SOL : SOL)); ' + String(Math.round(performance.now() - __t0)) + String.fromCharCode(10));
     await user.click(screen.getByRole('button', { name: 'Refresh balances' }));
+    process.stderr.write('MARK 12 await user.click(screen.getByRole("button", { name ' + String(Math.round(performance.now() - __t0)) + String.fromCharCode(10));
     await waitFor(() => {
       expect(cellsOf('W43')[3]).toBe('2');
     });
+    process.stderr.write('MARK 13 }); ' + String(Math.round(performance.now() - __t0)) + String.fromCharCode(10));
     const changed = [...renders].filter(([i, n]) => n !== before.get(i)).map(([i]) => i);
+    process.stderr.write('MARK 14 const changed = [...renders].filter(([i, n]) => n  ' + String(Math.round(performance.now() - __t0)) + String.fromCharCode(10));
     expect(changed).toEqual([42]);
+    process.stderr.write('MARK 15 expect(changed).toEqual([42]); ' + String(Math.round(performance.now() - __t0)) + String.fromCharCode(10));
   });
 });
 
