@@ -30,11 +30,11 @@ export type VerifyStatus =
   | 'UNVERIFIABLE';
 
 export const VERIFY_MESSAGES: Record<VerifyStatus, string> = {
-  MATCH: 'Potwierdzone w łańcuchu: saldo tokenu wzrosło o kupioną ilość.',
-  INCREASED: 'Saldo tokenu wzrosło (ilości z Jupitera brak, więc bez porównania).',
-  MISMATCH: 'Ostrzeżenie: saldo tokenu wzrosło o inną ilość, niż podał Jupiter.',
-  NO_INCREASE: 'Ostrzeżenie: saldo tokenu nie wzrosło po zakupie.',
-  UNVERIFIABLE: 'Nie udało się potwierdzić zakupu odczytem salda tokenu.',
+  MATCH: 'Confirmed on chain: the token balance grew by the bought amount.',
+  INCREASED: 'The token balance grew (Jupiter gave no amount, so there is no comparison).',
+  MISMATCH: 'Warning: the token balance grew by a different amount than Jupiter reported.',
+  NO_INCREASE: 'Warning: the token balance did not grow after the buy.',
+  UNVERIFIABLE: 'The buy could not be confirmed by reading the token balance.',
 };
 
 export interface VerifyEvent {

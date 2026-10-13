@@ -65,9 +65,9 @@ export function WatchGuard() {
   return (
     <div className="notice error alarm" role="alert">
       <p>
-        <strong>Utracono połączenie z Helius przy uzbrojonym watcherze.</strong>{' '}
-        {connectionLabel(lostIn.connection, lostIn.attempt)}. Nowe tokeny nie są teraz wykrywane; po
-        połączeniu przerwa zostanie nadrobiona.
+        <strong>The connection to Helius was lost while the watcher is armed.</strong>{' '}
+        {connectionLabel(lostIn.connection, lostIn.attempt)}. New tokens are not detected now; the
+        gap will be caught up after reconnecting.
       </p>
       {!muted && (
         <div className="actions">
@@ -77,7 +77,7 @@ export function WatchGuard() {
               setMuted(true);
             }}
           >
-            Wycisz
+            Mute
           </button>
         </div>
       )}

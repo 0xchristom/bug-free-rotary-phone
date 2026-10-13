@@ -48,7 +48,7 @@ const DEFAULT_STATUS_POLL_MS = 5_000;
 const DEFAULT_ACTIVITY_THROTTLE_MS = 30_000;
 const ACTIVITY_EVENTS = ['pointerdown', 'keydown'] as const;
 const UNSAVED_CONFIRM =
-  'Plik floty nie został zapisany. Bez niego nie otworzysz floty w obecnym stanie. Kontynuować bez zapisu?';
+  'The fleet file is not saved. Without it you cannot open the fleet in its current state. Continue without saving?';
 
 /**
  * App shell: screen switching in React state (no router, nothing in the URL), the vault
@@ -98,8 +98,8 @@ export function App({
         setScreen((s) => (UNLOCKED_SCREENS.has(s) ? 'start' : s));
         setNotice(
           reason === 'user'
-            ? 'Flota została zablokowana.'
-            : 'Flota została zablokowana automatycznie. Otwórz plik floty ponownie, aby kontynuować.',
+            ? 'The fleet was locked.'
+            : 'The fleet was locked automatically. Open the fleet file again to continue.',
         );
       }
       wasUnlocked.current = false;
@@ -258,7 +258,7 @@ export function App({
               </p>
             )}
             {status === null ? (
-              <p className="muted">Łączenie z sejfem…</p>
+              <p className="muted">Connecting to the vault…</p>
             ) : (
               <>
                 {visible === 'start' && (

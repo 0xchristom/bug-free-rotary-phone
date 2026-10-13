@@ -886,3 +886,20 @@ Rejestr decyzji i rozbieżności z dokumentacją zewnętrzną. Nowe wpisy dopisu
   - Każde przełączenie tworzy nowy plik floty do zapisania. Odrzucone: `localStorage` (lint celowo blokuje to API w `src`, a wybór byłby wspólny dla wszystkich flot w przeglądarce) i sieć trzymana tylko w pamięci sesji (nie byłaby zapamiętana).
   - Starsza wersja aplikacji nie otworzy pliku z polem `network` (nieznany klucz ustawień), tak samo jak przy `dryRun`.
   - USDC ma na devnecie inny mint (znany mi adres `4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU`, niesprawdzony w dokumentacji Circle ani w łańcuchu), a lista `KNOWN_MINTS` w detektorach zawiera minty z mainnetu. Dotyczy BUNNDLY-43.
+
+## D-042: Interfejs wyłącznie po angielsku; format liczb i nazwa pliku eksportu
+
+- Data: 2026-10-12
+- Zadanie: BUNNDLY-50
+- Kontekst: Decyzja Krystiana z 12.10.2026: interfejs wyłącznie po angielsku, bez wyboru języka (SPEC sekcja 5). Zadanie wymaga liczb i dat w formacie angielskim. Kilka zmian wykracza przez to poza sam tekst na ekranie.
+- Decyzja:
+  - **Teksty:** zwykłe napisy w kodzie, bez biblioteki i18n i bez ustawienia języka. Jeden termin ma jedno słowo w całej aplikacji; słownik jest w opisie PR. Test `tests/ui/english-only.test.ts` skanuje `src` poza komentarzami i `index.html`.
+  - **Liczby:** kwoty SOL i tokenów, czasy i limity są pokazywane z kropką dziesiętną, bez separatora tysięcy. Pola kwot i procentów nadal przyjmują kropkę i przecinek (parsowanie bez zmian), więc dotychczasowy nawyk wpisywania `0,5` działa.
+  - **Godziny:** `toLocaleTimeString('en-GB')`, czyli format 24 h, jak dotąd.
+  - **Eksport dziennika:** pole `price` w CSV i JSON ma teraz kropkę (`0.00012` zamiast `0,00012`), bo ta sama funkcja formatuje cenę w tabeli. Kwoty w lamportach i jednostkach bazowych były i są liczbami całkowitymi. Nazwy kolumn bez zmian.
+  - **Eksport jawny:** plik nazywa się `<flota>.PLAIN-EXPORT.txt` albo `.json` (było `.EKSPORT-JAWNY`); etykiety w pliku tekstowym są po angielsku, klucze JSON bez zmian. Ten wpis zastępuje nazwę pliku podaną w starszym wpisie o eksporcie jawnym.
+  - **Bez zmian:** kody błędów, pola formatu pliku floty, nazwy kolumn dziennika, zachowanie i układ ekranów.
+- Konsekwencje / alternatywy:
+  - Arkusz albo skrypt, który czytał `price` z przecinkiem, trzeba dostosować. Odrzucone: osobny formater ceny dla eksportu (dwa formaty tej samej liczby w jednej aplikacji).
+  - Test „kreator nie pokazuje mnemonika” sprawdza teraz, że na stronie nie ma żadnych trzech kolejnych słów mnemonika. Poprzednia wersja sprawdzała pojedyncze słowa, a angielski interfejs zawiera słowa z listy BIP39 (np. „cloud”, „wallet”), więc dawała fałszywy alarm.
+  - Dokumenty w `docs/`, `PROGRESS.md` i komentarze w Plane zostają po polsku (`CLAUDE.md`).

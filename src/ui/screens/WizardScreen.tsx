@@ -48,13 +48,15 @@ function wordCount(text: string): number {
 }
 
 function confirmOverwrite(fileName: string): boolean {
-  return window.confirm(`Plik „${fileName}” już istnieje w wybranym folderze. Nadpisać go?`);
+  return window.confirm(
+    `The file “${fileName}” already exists in the chosen folder. Overwrite it?`,
+  );
 }
 
 /**
  * Fleet wizard (SPEC 3.1): wallet count, fleet name, password with a strength meter and
  * an optional imported mnemonic. The fleet is created in the vault worker (scrypt with
- * progress); the encrypted file is saved only when the user clicks "Zapisz plik floty",
+ * progress); the encrypted file is saved only when the user clicks "Save the fleet file",
  * because the folder picker needs a fresh user gesture. The password and mnemonic are
  * cleared from the form as soon as they are sent to the worker.
  *
@@ -104,21 +106,26 @@ export function WizardScreen({ storage, onBack, onDone, onUnsavedChange }: Wizar
 
   /** What blocks creation, per field; null when the field is fine. */
   const problems: Record<Field, string | null> = {
-    count: countValid ? null : 'Liczba portfeli musi być liczbą całkowitą od 1 do 100.',
+    count: countValid ? null : 'The number of wallets must be a whole number from 1 to 100.',
     name: nameValid
       ? null
       : fleetName === ''
-        ? 'Podaj nazwę floty.'
+        ? 'Enter a fleet name.'
         : ERROR_MESSAGES.INVALID_FLEET_NAME,
     pw: strength.acceptable
       ? null
-      : `Hasło musi mieć co najmniej ${String(MIN_PASSWORD_LENGTH)} znaków (teraz: ${String(strength.length)}).`,
-    pw2: password2 === '' ? 'Powtórz hasło.' : passwordsMatch ? null : 'Hasła nie są takie same.',
+      : `The password must have at least ${String(MIN_PASSWORD_LENGTH)} characters (now: ${String(strength.length)}).`,
+    pw2:
+      password2 === ''
+        ? 'Repeat the password.'
+        : passwordsMatch
+          ? null
+          : 'The passwords do not match.',
     mn: mnemonicValid
       ? null
       : words === 0
-        ? 'Wpisz mnemonik albo odznacz import.'
-        : `Mnemonik musi mieć 12, 15, 18, 21 albo 24 słowa (teraz: ${String(words)}).`,
+        ? 'Enter the recovery phrase or untick the import.'
+        : `The recovery phrase must have 12, 15, 18, 21 or 24 words (now: ${String(words)}).`,
   };
   /** A wrong value shows its message at once; an empty field only after blur or submit. */
   const typed: Record<Field, boolean> = {
@@ -212,9 +219,9 @@ export function WizardScreen({ storage, onBack, onDone, onUnsavedChange }: Wizar
     const percent = Math.round(phase.progress * 100);
     return (
       <section className="screen" aria-labelledby={`${ids}-title`}>
-        <h2 id={`${ids}-title`}>Tworzenie floty…</h2>
-        <p>Szyfruję plik floty. To może potrwać kilka sekund.</p>
-        <progress max={100} value={percent} aria-label="Postęp szyfrowania" />
+        <h2 id={`${ids}-title`}>Creating the fleet…</h2>
+        <p>Encrypting the fleet file. This may take a few seconds.</p>
+        <progress max={100} value={percent} aria-label="Encryption progress" />
         <p className="muted">{percent}%</p>
       </section>
     );
@@ -224,16 +231,18 @@ export function WizardScreen({ storage, onBack, onDone, onUnsavedChange }: Wizar
     const download = !supportsDirectoryPicker(storage);
     return (
       <section className="screen" aria-labelledby={`${ids}-title`}>
-        <h2 id={`${ids}-title`}>Flota utworzona</h2>
+        <h2 id={`${ids}-title`}>Fleet created</h2>
         <p>
-          Portfele: <strong>{phase.info.wallets.length}</strong>, nazwa floty:{' '}
+          Wallets: <strong>{phase.info.wallets.length}</strong>, fleet name:{' '}
           <strong>{phase.info.fleetName}</strong>
         </p>
         <p className="notice warning" role="status">
-          Plik floty nie jest jeszcze zapisany. Bez tego pliku nie otworzysz floty ponownie.
+          The fleet file is not saved yet. Without this file you cannot open the fleet again.
         </p>
         {download && (
-          <p className="muted">Twoja przeglądarka pobierze plik. Sprawdź potem folder „Pobrane”.</p>
+          <p className="muted">
+            Your browser will download the file. Then check the “Downloads” folder.
+          </p>
         )}
         {errorBox}
         <div className="actions">
@@ -243,7 +252,7 @@ export function WizardScreen({ storage, onBack, onDone, onUnsavedChange }: Wizar
             disabled={phase.saving}
             onClick={() => void save(phase.fileText, phase.info)}
           >
-            {phase.saving ? 'Zapisywanie…' : 'Zapisz plik floty'}
+            {phase.saving ? 'Saving…' : 'Save the fleet file'}
           </button>
         </div>
       </section>
@@ -254,26 +263,26 @@ export function WizardScreen({ storage, onBack, onDone, onUnsavedChange }: Wizar
     const { result, info } = phase;
     return (
       <section className="screen" aria-labelledby={`${ids}-title`}>
-        <h2 id={`${ids}-title`}>Plik floty zapisany</h2>
+        <h2 id={`${ids}-title`}>Fleet file saved</h2>
         <ul>
           <li>
-            Portfele: <strong>{info.wallets.length}</strong>
+            Wallets: <strong>{info.wallets.length}</strong>
           </li>
           <li>
-            Plik: <strong>{result.fileName}</strong>
+            File: <strong>{result.fileName}</strong>
             {result.method === 'directory' && result.folder !== '' && (
-              <> w folderze „{result.folder}”</>
+              <> in the folder “{result.folder}”</>
             )}
           </li>
         </ul>
         {result.method === 'download' && (
           <p className="muted">
-            Plik został pobrany. Sprawdź folder „Pobrane” i przenieś go w bezpieczne miejsce.
+            The file was downloaded. Check the “Downloads” folder and move it to a safe place.
           </p>
         )}
         <p className="notice warning" role="status">
-          Zapamiętaj hasło. Bez hasła i bez mnemonika nie da się odzyskać środków z tej floty. Zrób
-          teraz kopię zapasową mnemonika i przechowuj ją offline.
+          Remember the password. Without the password and without the recovery phrase the funds of
+          this fleet cannot be recovered. Back up the recovery phrase now and keep it offline.
         </p>
         <div className="actions">
           <button
@@ -282,10 +291,10 @@ export function WizardScreen({ storage, onBack, onDone, onUnsavedChange }: Wizar
               setExportOpen(true);
             }}
           >
-            Zrób kopię zapasową mnemonika
+            Back up the recovery phrase
           </button>
           <button type="button" className="primary" onClick={onDone}>
-            Przejdź do floty
+            Go to the fleet
           </button>
         </div>
         {exportOpen && (
@@ -302,10 +311,10 @@ export function WizardScreen({ storage, onBack, onDone, onUnsavedChange }: Wizar
 
   return (
     <section className="screen" aria-labelledby={`${ids}-title`}>
-      <h2 id={`${ids}-title`}>Kreator nowej floty</h2>
+      <h2 id={`${ids}-title`}>New fleet wizard</h2>
       {errorBox}
       <form className="form" onSubmit={(e) => void create(e)} noValidate>
-        <label htmlFor={`${ids}-count`}>Liczba portfeli</label>
+        <label htmlFor={`${ids}-count`}>Number of wallets</label>
         <input
           id={`${ids}-count`}
           type="number"
@@ -321,7 +330,7 @@ export function WizardScreen({ storage, onBack, onDone, onUnsavedChange }: Wizar
         />
         {fieldError('count')}
 
-        <label htmlFor={`${ids}-name`}>Nazwa floty</label>
+        <label htmlFor={`${ids}-name`}>Fleet name</label>
         <input
           id={`${ids}-name`}
           type="text"
@@ -338,7 +347,7 @@ export function WizardScreen({ storage, onBack, onDone, onUnsavedChange }: Wizar
         />
         {fieldError('name')}
 
-        <label htmlFor={`${ids}-pw`}>Hasło</label>
+        <label htmlFor={`${ids}-pw`}>Password</label>
         <input
           id={`${ids}-pw`}
           type="password"
@@ -360,10 +369,10 @@ export function WizardScreen({ storage, onBack, onDone, onUnsavedChange }: Wizar
           high={3}
           optimum={4}
           value={strength.score}
-          aria-label="Siła hasła"
+          aria-label="Password strength"
         />
         <p className="muted" aria-live="polite">
-          Siła hasła: {strength.label}
+          Password strength: {strength.label}
         </p>
         {fieldError('pw')}
         {shown('pw') === null &&
@@ -373,7 +382,7 @@ export function WizardScreen({ storage, onBack, onDone, onUnsavedChange }: Wizar
             </p>
           ))}
 
-        <label htmlFor={`${ids}-pw2`}>Powtórz hasło</label>
+        <label htmlFor={`${ids}-pw2`}>Repeat the password</label>
         <input
           id={`${ids}-pw2`}
           type="password"
@@ -399,16 +408,16 @@ export function WizardScreen({ storage, onBack, onDone, onUnsavedChange }: Wizar
               if (!e.target.checked) setMnemonic('');
             }}
           />
-          Mam już mnemonik (import 12–24 słów)
+          I already have a recovery phrase (import 12–24 words)
         </label>
         <p className="hint">
-          Import jest opcjonalny: bez niego aplikacja sama wygeneruje nowy mnemonik (24 słowa), a
-          mnemonik z portfela takiego jak Phantom sprawi, że pierwsze portfele floty będą tymi
-          samymi kontami co w tamtym portfelu (ta sama ścieżka <code>{MNEMONIC_PATH}</code>).
+          The import is optional: without it the app generates a new recovery phrase (24 words), and
+          a phrase from a wallet such as Phantom makes the first wallets of the fleet the same
+          accounts as in that wallet (the same path <code>{MNEMONIC_PATH}</code>).
         </p>
         {importMnemonic && (
           <>
-            <label htmlFor={`${ids}-mn`}>Mnemonik</label>
+            <label htmlFor={`${ids}-mn`}>Recovery phrase</label>
             <div className="inline">
               <input
                 id={`${ids}-mn`}
@@ -432,7 +441,7 @@ export function WizardScreen({ storage, onBack, onDone, onUnsavedChange }: Wizar
                   setShowMnemonic((s) => !s);
                 }}
               >
-                {showMnemonic ? 'Ukryj' : 'Pokaż'}
+                {showMnemonic ? 'Hide' : 'Show'}
               </button>
             </div>
             {fieldError('mn')}
@@ -441,10 +450,10 @@ export function WizardScreen({ storage, onBack, onDone, onUnsavedChange }: Wizar
 
         <div className="actions">
           <button type="submit" className="primary">
-            Utwórz flotę
+            Create the fleet
           </button>
           <button type="button" onClick={onBack}>
-            Wróć
+            Back
           </button>
         </div>
       </form>

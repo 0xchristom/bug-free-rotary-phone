@@ -45,16 +45,16 @@ async function setup() {
       balanceRefreshMs={60_000}
     />,
   );
-  await screen.findByRole('heading', { name: 'Dziennik operacji' });
+  await screen.findByRole('heading', { name: 'Operations log' });
   return { vault, storage, blobs, user: userEvent.setup() };
 }
 
 describe('operations log panel', () => {
   it('empty: download buttons disabled', async () => {
     await setup();
-    expect(screen.getByText(/Brak wpisów/u)).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Pobierz CSV' })).toHaveProperty('disabled', true);
-    expect(screen.getByRole('button', { name: 'Pobierz JSON' })).toHaveProperty('disabled', true);
+    expect(screen.getByText(/No entries/u)).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Download CSV' })).toHaveProperty('disabled', true);
+    expect(screen.getByRole('button', { name: 'Download JSON' })).toHaveProperty('disabled', true);
   });
 
   it('counts events and downloads CSV and JSON with addresses and exact amounts', async () => {
@@ -63,10 +63,10 @@ describe('operations log panel', () => {
       vault.emit(walletEvent(1, 'QUEUED'));
       vault.emit(walletEvent(1, 'CONFIRMED'));
     });
-    expect(await screen.findByText(/Wpisów: 2\./u)).toBeTruthy();
+    expect(await screen.findByText(/Entries: 2\./u)).toBeTruthy();
 
-    await user.click(screen.getByRole('button', { name: 'Pobierz CSV' }));
-    await user.click(screen.getByRole('button', { name: 'Pobierz JSON' }));
+    await user.click(screen.getByRole('button', { name: 'Download CSV' }));
+    await user.click(screen.getByRole('button', { name: 'Download JSON' }));
     expect(storage.clickDownload).toHaveBeenCalledTimes(2);
     const names = storage.clickDownload.mock.calls.map((c) => (c as unknown[])[1]);
     expect(names[0]).toMatch(/^bunndly-log-3-.*\.csv$/u);

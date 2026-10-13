@@ -182,8 +182,8 @@ Moduły `core`, `executor` i `jupiter` piszemy tak, by dało się je testować w
 
 - TypeScript `strict`. ESLint i Prettier. Zero `any` w modułach `core`, `executor`, `jupiter`.
 - Wszystkie kwoty w lamportach / jednostkach bazowych jako `bigint`. Konwersja do wyświetlania tylko w UI, z uwzględnieniem `decimals` mintu.
-- Obsługa błędów z typowanymi kodami. Każdy błąd widoczny dla użytkownika ma zrozumiały komunikat po polsku.
-- UI po polsku. Działa na desktopie (Chrome/Edge jako docelowe). Wersji mobilnej nie ma: układów dla telefonu nie budujemy i nie testujemy (decyzja Krystiana, 12.10.2026).
+- Obsługa błędów z typowanymi kodami. Każdy błąd widoczny dla użytkownika ma zrozumiały komunikat po angielsku.
+- UI wyłącznie po angielsku, bez wyboru języka. Działa na desktopie (Chrome/Edge jako docelowe). Wersji mobilnej nie ma: układów dla telefonu nie budujemy i nie testujemy (decyzja Krystiana, 12.10.2026).
 - Wydajność: reakcja watcher → pierwsze `/order` poniżej 300 ms od otrzymania logu (pomiar w logu).
 
 ---

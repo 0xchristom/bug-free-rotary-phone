@@ -93,7 +93,7 @@ export const PRICE_DIGITS = 12;
 
 /**
  * Effective price in SOL per whole token: `lamports / 10^9` divided by
- * `units / 10^decimals`, rounded down to `digits` places, decimal comma, no trailing
+ * `units / 10^decimals`, rounded down to `digits` places, decimal point, no trailing
  * zeros. Null without tokens.
  */
 export function formatPrice(
@@ -107,7 +107,7 @@ export function formatPrice(
   const scaled = (lamports * 10n ** BigInt(decimals) * scale) / (units * 10n ** LAMPORTS_DECIMALS);
   const whole = scaled / scale;
   const fraction = (scaled % scale).toString().padStart(digits, '0').replace(/0+$/u, '');
-  return fraction === '' ? whole.toString() : `${whole.toString()},${fraction}`;
+  return fraction === '' ? whole.toString() : `${whole.toString()}.${fraction}`;
 }
 
 export interface LogContext {
@@ -145,10 +145,11 @@ const EMPTY = {
   reactionMs: null,
 } as const;
 
-const DISARMED_MESSAGE = 'Rozbrojono watcher, zanim ten token doczekał się zakupu.';
-const STALE_MESSAGE = 'Transakcja sprzed uzbrojenia: to nie jest nowy token, więc nie ma zakupu.';
+const DISARMED_MESSAGE = 'The watcher was disarmed before this token was bought.';
+const STALE_MESSAGE =
+  'The transaction is from before arming: this is not a new token, so there is no buy.';
 const MISMATCH_MESSAGE =
-  'Transakcja nie tworzy mintu wykrytego z logu. Zakup już ruszył: sprawdź token.';
+  'The transaction does not create the mint detected from the log. The buy has already started: check the token.';
 
 function problemMessage(problem: DetectionProblem): string {
   if (problem === 'DISARMED') return DISARMED_MESSAGE;
