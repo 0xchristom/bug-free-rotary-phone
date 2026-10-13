@@ -10,6 +10,8 @@ import { scryptAsync } from './fast-kdf.ts';
 vi.mock('@noble/hashes/scrypt.js', () => import('./fast-kdf.ts'));
 
 const PASSWORD = 'correct horse battery staple';
+/** Same length, one character changed: only the content tells the two apart. */
+const OTHER_PASSWORD = 'correct horse battery stapl3';
 const SECRET = new TextEncoder().encode('abandon abandon about');
 
 async function codeOf(promise: Promise<unknown>): Promise<string | undefined> {
@@ -23,7 +25,7 @@ describe('scrypt stand-in for tests', () => {
   it('the same password opens the secrets, another password does not', async () => {
     const encrypted = await encryptSecrets(SECRET, PASSWORD);
     expect(await decryptSecrets(encrypted, PASSWORD)).toEqual(SECRET);
-    expect(await codeOf(decryptSecrets(encrypted, `${PASSWORD}!`))).toBe(
+    expect(await codeOf(decryptSecrets(encrypted, OTHER_PASSWORD))).toBe(
       'KEYSTORE_WRONG_PASSWORD_OR_CORRUPTED',
     );
   });
@@ -37,7 +39,7 @@ describe('scrypt stand-in for tests', () => {
     const base = await hex(pw, salt, cost);
     expect(base).toHaveLength(64);
     expect(await hex(pw, salt, cost)).toBe(base);
-    expect(await hex(new TextEncoder().encode(`${PASSWORD}!`), salt, cost)).not.toBe(base);
+    expect(await hex(new TextEncoder().encode(OTHER_PASSWORD), salt, cost)).not.toBe(base);
     expect(await hex(pw, new Uint8Array(32).fill(8), cost)).not.toBe(base);
     expect(await hex(pw, salt, { ...cost, N: 2 ** 18 })).not.toBe(base);
     expect(await hex(pw, salt, { ...cost, p: 2 })).not.toBe(base);
