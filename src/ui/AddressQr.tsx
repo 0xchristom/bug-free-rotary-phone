@@ -30,7 +30,7 @@ export function AddressQr({ address, size = 192 }: AddressQrProps) {
     <svg
       className="qr"
       role="img"
-      aria-label={`Kod QR adresu ${address}`}
+      aria-label={`QR code of the address ${address}`}
       width={size}
       height={size}
       viewBox={`0 0 ${String(dimension)} ${String(dimension)}`}

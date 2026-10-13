@@ -102,26 +102,26 @@ export type WalletReason =
   | { readonly kind: 'UNKNOWN'; readonly code: UnknownReason; readonly detail: string | null };
 
 export const SKIP_MESSAGES: Record<SkipReason, string> = {
-  INSUFFICIENT_SOL: 'Za mało SOL: saldo jest mniejsze niż max spend plus rezerwa.',
-  BALANCE_UNKNOWN: 'Saldo portfela nie zostało jeszcze odczytane.',
-  INSUFFICIENT_FUNDS: 'Jupiter: za mało środków w portfelu.',
-  INSUFFICIENT_SOL_FOR_GAS: 'Jupiter: za mało SOL na opłatę transakcyjną.',
-  DRY_RUN: 'DRY-RUN: transakcja podpisana i odrzucona, nic nie zostało wysłane.',
-  STOPPED: 'Zatrzymane przyciskiem STOP przed wysłaniem.',
-  PRICE_CEILING: 'Cena powyżej sufitu względem pierwszego zakupu floty.',
+  INSUFFICIENT_SOL: 'Not enough SOL: the balance is below max spend plus the reserve.',
+  BALANCE_UNKNOWN: 'The wallet balance has not been read yet.',
+  INSUFFICIENT_FUNDS: 'Jupiter: not enough funds in the wallet.',
+  INSUFFICIENT_SOL_FOR_GAS: 'Jupiter: not enough SOL for the transaction fee.',
+  DRY_RUN: 'DRY-RUN: the transaction was signed and discarded, nothing was sent.',
+  STOPPED: 'Stopped with STOP before sending.',
+  PRICE_CEILING: "The price is above the ceiling relative to the fleet's first buy.",
 };
 
 export const FAIL_MESSAGES: Record<FailReason, string> = {
-  ORDER_FAILED: 'Jupiter odrzucił zapytanie o zlecenie.',
-  CHECK_FAILED: 'Transakcja nie przeszła kontroli przed podpisem.',
-  EXECUTE_FAILED: 'Jupiter odrzucił transakcję.',
-  MAX_ATTEMPTS: 'Wyczerpany limit prób.',
-  NO_ROUTE: 'Brak trasy dla tego tokena po upływie okna „no route”.',
+  ORDER_FAILED: 'Jupiter rejected the order request.',
+  CHECK_FAILED: 'The transaction failed the pre-sign checks.',
+  EXECUTE_FAILED: 'Jupiter rejected the transaction.',
+  MAX_ATTEMPTS: 'All attempts are used up.',
+  NO_ROUTE: 'Still no route for this token after the “no route” window.',
 };
 
 export const UNKNOWN_MESSAGES: Record<UnknownReason, string> = {
   EXECUTE_NO_ANSWER:
-    'Transakcja została wysłana, ale wynik nie jest znany. Sprawdzam łańcuch, zanim portfel spróbuje ponownie.',
+    'The transaction was sent, but the outcome is not known. Checking the chain before the wallet tries again.',
   LANDING_UNRESOLVED:
-    'Nie udało się ustalić, czy transakcja wylądowała. Portfel nie próbuje ponownie; sprawdź go w eksploratorze.',
+    'Could not tell whether the transaction landed. The wallet does not try again; check it in the explorer.',
 };

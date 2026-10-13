@@ -31,7 +31,7 @@ function rasterize(svg: SVGSVGElement): { width: number; height: number; data: U
 describe('AddressQr', () => {
   it('draws a QR code that decodes back to the address, with a quiet zone', () => {
     render(<AddressQr address={ADDRESS} />);
-    const svg = screen.getByRole('img', { name: `Kod QR adresu ${ADDRESS}` });
+    const svg = screen.getByRole('img', { name: `QR code of the address ${ADDRESS}` });
     if (!(svg instanceof SVGSVGElement)) throw new Error('expected an <svg>');
     expect(decodeQR(rasterize(svg))).toBe(ADDRESS);
     // the first 4 rows/columns stay white

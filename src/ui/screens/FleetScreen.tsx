@@ -72,14 +72,14 @@ function activeDrafts(info: VaultInfo): ActiveDrafts {
 
 function confirmOverwrite(fileName: string): boolean {
   return window.confirm(
-    `Plik „${fileName}” już istnieje w wybranym folderze. Zastąpić go zaktualizowanym plikiem floty?`,
+    `The file “${fileName}” already exists in the chosen folder. Replace it with the updated fleet file?`,
   );
 }
 
 /**
  * Unlocked fleet (SPEC 3.2): the fleet table with balances, max spend, reserve, token
  * balance and the active flag; table changes are saved through the vault (saveSettings)
- * and then written to the file on click (D-017). Also "Dodaj portfele" (BUNNDLY-10).
+ * and then written to the file on click (D-017). Also "Add wallets" (BUNNDLY-10).
  */
 export function FleetScreen({
   info,
@@ -162,7 +162,7 @@ export function FleetScreen({
       setCopied(index);
     } catch {
       setCopied(null);
-      setError('Nie udało się skopiować adresu. Zaznacz go i skopiuj ręcznie.');
+      setError('The address could not be copied. Select it and copy it by hand.');
     }
   };
 
@@ -227,9 +227,9 @@ export function FleetScreen({
     buyRouteOf(global.network) === null
       ? NO_BUY_ROUTE_MESSAGE
       : tableDirty
-        ? 'Najpierw zapisz zmiany w tabeli: zakup używa ustawień zapisanych w sejfie.'
+        ? 'Save the table changes first: a buy uses the settings saved in the vault.'
         : !global.dryRun && !hasRpc
-          ? 'Tryb na żywo wymaga klucza Helius (Ustawienia).'
+          ? 'Live mode needs a Helius key (Settings).'
           : null;
   const token = balances.token;
   useEffect(() => {
@@ -256,10 +256,8 @@ export function FleetScreen({
       kind: 'unsaved',
       fileText: result.fileText,
       fleetName: result.info.fleetName,
-      note: dryRun
-        ? 'Tryb DRY-RUN jest zapisany w sejfie.'
-        : 'Tryb na żywo jest zapisany w sejfie.',
-      savedNote: 'z nowym trybem zakupu',
+      note: dryRun ? 'DRY-RUN mode is saved in the vault.' : 'Live mode is saved in the vault.',
+      savedNote: 'with the new DRY-RUN / live mode setting',
       saving: false,
     });
     await refresh();
@@ -281,9 +279,9 @@ export function FleetScreen({
       fleetName: result.info.fleetName,
       note:
         mode === 'continuous'
-          ? 'Tryb ciągły jest zapisany w sejfie.'
-          : 'Tryb jednorazowy jest zapisany w sejfie.',
-      savedNote: 'z nowym trybem obserwacji',
+          ? 'Continuous mode is saved in the vault.'
+          : 'One-shot mode is saved in the vault.',
+      savedNote: 'with the new watcher mode',
       saving: false,
     });
     await refresh();
@@ -311,8 +309,8 @@ export function FleetScreen({
         kind: 'unsaved',
         fileText: result.fileText,
         fleetName: result.info.fleetName,
-        note: 'Zmiany w tabeli (max spend, aktywne portfele) są zapisane w sejfie.',
-        savedNote: 'z nowymi ustawieniami floty',
+        note: 'The table changes (max spend, active wallets) are saved in the vault.',
+        savedNote: 'with the new fleet settings',
         saving: false,
       });
       await refresh();
@@ -340,8 +338,8 @@ export function FleetScreen({
         kind: 'unsaved',
         fileText: result.fileText,
         fleetName: result.info.fleetName,
-        note: `Nowe portfele: ${String(count)}. Stary plik otworzy flotę bez nowych portfeli.`,
-        savedNote: 'z nowymi portfelami',
+        note: `New wallets: ${String(count)}. The old file opens the fleet without the new wallets.`,
+        savedNote: 'with the new wallets',
         saving: false,
       });
       setAddCount('1');
@@ -368,23 +366,23 @@ export function FleetScreen({
 
   return (
     <section className="screen" aria-labelledby={`${ids}-title`}>
-      <h2 id={`${ids}-title`}>Flota</h2>
+      <h2 id={`${ids}-title`}>Fleet</h2>
       <p>
-        Portfele we flocie: <strong>{info.wallets.length}</strong>
+        Wallets in the fleet: <strong>{info.wallets.length}</strong>
       </p>
       <div className="inline balances-bar">
         <span className="muted" aria-live="polite">
           {balances.fetchedAt
-            ? `Salda z ${new Date(balances.fetchedAt).toLocaleTimeString('pl-PL')}`
-            : 'Salda: wczytywanie…'}
+            ? `Balances as of ${new Date(balances.fetchedAt).toLocaleTimeString('en-GB')}`
+            : 'Balances: loading…'}
         </span>
         <button type="button" onClick={balances.refresh}>
-          Odśwież salda
+          Refresh balances
         </button>
       </div>
       {balances.source === 'fallback' && (
         <p className="notice warning">
-          Helius nie odpowiada. Salda pochodzą z publicznego RPC Solany i mogą być opóźnione.
+          Helius is not responding. The balances come from the public Solana RPC and may be delayed.
         </p>
       )}
       {balances.error && (
@@ -401,7 +399,7 @@ export function FleetScreen({
       <SettingsResetNotice fields={info.settings.resetFields} />
 
       <form className="token-bar" onSubmit={showToken}>
-        <label htmlFor={`${ids}-mint`}>Adres tokenu (mint)</label>
+        <label htmlFor={`${ids}-mint`}>Token address (mint)</label>
         <div className="inline">
           <input
             id={`${ids}-mint`}
@@ -415,7 +413,7 @@ export function FleetScreen({
               setMintText(e.target.value);
             }}
           />
-          <button type="submit">Pokaż saldo tokenu</button>
+          <button type="submit">Show token balance</button>
         </div>
         {mintError ? (
           <p className="field-error" id={`${ids}-mint-help`} role="alert">
@@ -423,7 +421,7 @@ export function FleetScreen({
           </p>
         ) : (
           <p className="hint" id={`${ids}-mint-help`}>
-            Tylko podgląd sald; adres nie jest zapisywany w pliku floty.
+            Balance preview only; the address is not saved in the fleet file.
           </p>
         )}
       </form>
@@ -495,21 +493,21 @@ export function FleetScreen({
           }
           onClick={() => void saveTable()}
         >
-          {phase.kind === 'savingTable' ? 'Zapisywanie…' : 'Zapisz zmiany w tabeli'}
+          {phase.kind === 'savingTable' ? 'Saving…' : 'Save table changes'}
         </button>
         {watchArmed ? (
           <span className="muted">{WATCH_FROZEN}</span>
         ) : (
-          tableDirty && <span className="muted">Masz niezapisane zmiany w tabeli.</span>
+          tableDirty && <span className="muted">You have unsaved table changes.</span>
         )}
       </div>
 
       {phase.kind === 'unsaved' && (
         <div className="notice warning" role="status">
-          <p>{phase.note} Zaktualizowany plik floty nie jest jeszcze zapisany.</p>
+          <p>{phase.note} The updated fleet file is not saved yet.</p>
           {!supportsDirectoryPicker(storage) && (
             <p className="muted">
-              Twoja przeglądarka pobierze plik. Sprawdź potem folder „Pobrane”.
+              Your browser will download the file. Then check the “Downloads” folder.
             </p>
           )}
           <div className="actions">
@@ -519,27 +517,27 @@ export function FleetScreen({
               disabled={phase.saving}
               onClick={() => void save(phase)}
             >
-              {phase.saving ? 'Zapisywanie…' : 'Zapisz zaktualizowany plik floty'}
+              {phase.saving ? 'Saving…' : 'Save the updated fleet file'}
             </button>
           </div>
         </div>
       )}
       {phase.kind === 'saved' && (
         <p className="notice" role="status">
-          Zapisano plik {phase.result.fileName} {phase.savedNote}.
+          Saved {phase.result.fileName} {phase.savedNote}.
         </p>
       )}
 
-      <h3>Dodaj portfele</h3>
+      <h3>Add wallets</h3>
       {phase.kind === 'unsaved' || tableDirty ? (
         <p className="muted">
-          Najpierw zapisz zmiany w tabeli i zaktualizowany plik floty, potem dodaj portfele.
+          Save the table changes and the updated fleet file first, then add wallets.
         </p>
       ) : room === 0 ? (
-        <p className="muted">Flota ma już maksymalnie {MAX_WALLETS} portfeli.</p>
+        <p className="muted">The fleet already has the maximum of {MAX_WALLETS} wallets.</p>
       ) : (
         <form className="form" onSubmit={(e) => void add(e)} noValidate>
-          <label htmlFor={`${ids}-add`}>Liczba nowych portfeli</label>
+          <label htmlFor={`${ids}-add`}>Number of new wallets</label>
           <input
             id={`${ids}-add`}
             type="number"
@@ -554,7 +552,7 @@ export function FleetScreen({
           />
           {!countValid && (
             <p className="field-error">
-              Możesz dodać od 1 do {room} portfeli (łącznie najwyżej {MAX_WALLETS}).
+              You can add 1 to {room} wallets (at most {MAX_WALLETS} in total).
             </p>
           )}
           <div className="actions">
@@ -563,17 +561,17 @@ export function FleetScreen({
               className="primary"
               disabled={watchArmed || !countValid || phase.kind === 'adding'}
             >
-              {phase.kind === 'adding' ? 'Dodawanie…' : 'Dodaj portfele'}
+              {phase.kind === 'adding' ? 'Adding…' : 'Add wallets'}
             </button>
             {watchArmed && <span className="muted">{WATCH_FROZEN}</span>}
           </div>
         </form>
       )}
 
-      <h3>Kopia zapasowa</h3>
+      <h3>Backup</h3>
       <p className="muted">
-        Jedyna droga do kopii mnemonika i kluczy prywatnych: eksport jawny po ponownym wpisaniu
-        hasła.
+        The only way to get a copy of the recovery phrase and the private keys is a plain export
+        after typing the password again.
       </p>
       {exportOpen ? (
         <ExportDialog
@@ -590,7 +588,7 @@ export function FleetScreen({
               setExportOpen(true);
             }}
           >
-            Eksport jawny (mnemonik i klucze)
+            Plain export (recovery phrase and keys)
           </button>
         </div>
       )}

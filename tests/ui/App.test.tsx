@@ -33,38 +33,38 @@ describe('navigation', () => {
   it('locked vault: start screen, wizard and back; no fleet navigation or lock button', async () => {
     const user = userEvent.setup();
     renderApp(mockVault(LOCKED));
-    expect(await screen.findByRole('heading', { name: 'Witaj w Bunndly' })).toBeTruthy();
+    expect(await screen.findByRole('heading', { name: 'Welcome to Bunndly' })).toBeTruthy();
     expect(screen.queryByRole('navigation')).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Zablokuj' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Lock' })).toBeNull();
 
-    await user.click(screen.getByRole('button', { name: 'Utwórz nową flotę' }));
-    expect(screen.getByRole('heading', { name: 'Kreator nowej floty' })).toBeTruthy();
-    await user.click(screen.getByRole('button', { name: 'Wróć' }));
-    expect(screen.getByRole('heading', { name: 'Witaj w Bunndly' })).toBeTruthy();
+    await user.click(screen.getByRole('button', { name: 'Create a new fleet' }));
+    expect(screen.getByRole('heading', { name: 'New fleet wizard' })).toBeTruthy();
+    await user.click(screen.getByRole('button', { name: 'Back' }));
+    expect(screen.getByRole('heading', { name: 'Welcome to Bunndly' })).toBeTruthy();
   });
 
   it('unlocked vault: fleet screen with the fleet name; switches to settings and back', async () => {
     const user = userEvent.setup();
     renderApp(mockVault(unlocked()));
-    expect(await screen.findByRole('heading', { name: 'Flota' })).toBeTruthy();
+    expect(await screen.findByRole('heading', { name: 'Fleet' })).toBeTruthy();
     expect(screen.getByText('Flota testowa')).toBeTruthy();
-    expect(screen.getByText(/Portfele we flocie/u).textContent).toBe('Portfele we flocie: 3');
+    expect(screen.getByText(/Wallets in the fleet/u).textContent).toBe('Wallets in the fleet: 3');
 
-    const nav = screen.getByRole('navigation', { name: 'Nawigacja' });
-    await user.click(within(nav).getByRole('button', { name: 'Ustawienia' }));
-    expect(screen.getByRole('heading', { name: 'Ustawienia' })).toBeTruthy();
-    expect(
-      within(nav).getByRole('button', { name: 'Ustawienia' }).getAttribute('aria-current'),
-    ).toBe('page');
+    const nav = screen.getByRole('navigation', { name: 'Navigation' });
+    await user.click(within(nav).getByRole('button', { name: 'Settings' }));
+    expect(screen.getByRole('heading', { name: 'Settings' })).toBeTruthy();
+    expect(within(nav).getByRole('button', { name: 'Settings' }).getAttribute('aria-current')).toBe(
+      'page',
+    );
 
-    await user.click(within(nav).getByRole('button', { name: 'Flota' }));
-    expect(screen.getByRole('heading', { name: 'Flota' })).toBeTruthy();
+    await user.click(within(nav).getByRole('button', { name: 'Fleet' }));
+    expect(screen.getByRole('heading', { name: 'Fleet' })).toBeTruthy();
     expect(screen.getByRole('status').textContent).toContain('15 min');
   });
 
   it('shows that auto-lock is suspended while armed', async () => {
     renderApp(mockVault(unlocked(true)));
-    expect((await screen.findByRole('status')).textContent).toContain('wstrzymana');
+    expect((await screen.findByRole('status')).textContent).toContain('paused');
   });
 });
 
@@ -72,11 +72,11 @@ describe('vault status changes', () => {
   it('auto-lock in the worker brings the UI back to the start screen', async () => {
     const vault = mockVault(unlocked());
     renderApp(vault);
-    expect(await screen.findByRole('heading', { name: 'Flota' })).toBeTruthy();
+    expect(await screen.findByRole('heading', { name: 'Fleet' })).toBeTruthy();
 
     vault.setStatus(LOCKED);
-    expect(await screen.findByRole('heading', { name: 'Witaj w Bunndly' })).toBeTruthy();
-    expect(screen.getByRole('alert').textContent).toContain('zablokowana automatycznie');
+    expect(await screen.findByRole('heading', { name: 'Welcome to Bunndly' })).toBeTruthy();
+    expect(screen.getByRole('alert').textContent).toContain('locked automatically');
     expect(screen.queryByRole('navigation')).toBeNull();
     expect(screen.queryByText('Flota testowa')).toBeNull();
   });
@@ -86,19 +86,19 @@ describe('vault status changes', () => {
     const vault = mockVault(unlocked());
     render(<App vault={vault.client} storage={mockStorage().env} />); // default poll interval
     await act(() => vi.advanceTimersByTimeAsync(0));
-    expect(screen.getByRole('heading', { name: 'Flota' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Fleet' })).toBeTruthy();
 
     vault.setStatus(LOCKED);
     await act(() => vi.advanceTimersByTimeAsync(4_999));
-    expect(screen.getByRole('heading', { name: 'Flota' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Fleet' })).toBeTruthy();
     await act(() => vi.advanceTimersByTimeAsync(1));
-    expect(screen.getByRole('heading', { name: 'Witaj w Bunndly' })).toBeTruthy();
-    expect(screen.getByRole('alert').textContent).toContain('zablokowana automatycznie');
+    expect(screen.getByRole('heading', { name: 'Welcome to Bunndly' })).toBeTruthy();
+    expect(screen.getByRole('alert').textContent).toContain('locked automatically');
     // the fleet data is gone from the page
     expect(screen.queryByText('Flota testowa')).toBeNull();
   });
 
-  it('a worker failure rejects pending requests at once and shows a Polish message', async () => {
+  it('a worker failure rejects pending requests at once and shows an English message', async () => {
     let fail: (() => void) | undefined;
     const port: VaultPort = {
       postMessage: vi.fn(), // the "worker" never answers
@@ -110,29 +110,29 @@ describe('vault status changes', () => {
     render(
       <App vault={createVaultClient(port)} storage={mockStorage().env} statusPollMs={60_000} />,
     );
-    expect(screen.getByText('Łączenie z sejfem…')).toBeTruthy();
+    expect(screen.getByText('Connecting to the vault…')).toBeTruthy();
     expect(screen.queryByRole('alert')).toBeNull();
     act(() => {
       fail?.();
     });
-    expect((await screen.findByRole('alert')).textContent).toContain('wewnętrzny błąd');
+    expect((await screen.findByRole('alert')).textContent).toContain('internal application error');
   });
 
-  it('“Zablokuj” calls lock and returns to the start screen', async () => {
+  it('“Lock” calls lock and returns to the start screen', async () => {
     const user = userEvent.setup();
     const vault = mockVault(unlocked());
     renderApp(vault, 60_000);
-    await user.click(await screen.findByRole('button', { name: 'Zablokuj' }));
+    await user.click(await screen.findByRole('button', { name: 'Lock' }));
     expect(vault.calls('lock')).toBe(1);
-    expect(await screen.findByRole('heading', { name: 'Witaj w Bunndly' })).toBeTruthy();
-    expect(screen.getByRole('alert').textContent).toBe('Flota została zablokowana.');
+    expect(await screen.findByRole('heading', { name: 'Welcome to Bunndly' })).toBeTruthy();
+    expect(screen.getByRole('alert').textContent).toBe('The fleet was locked.');
   });
 
-  it('a vault error is shown as a Polish message', async () => {
+  it('a vault error is shown as an English message', async () => {
     const vault = mockVault(LOCKED);
     vault.request.mockImplementation(() => Promise.reject(new AppError('VAULT_TIMEOUT')));
     renderApp(vault, 60_000);
-    expect((await screen.findByRole('alert')).textContent).toContain('nie odpowiedział');
+    expect((await screen.findByRole('alert')).textContent).toContain('did not respond');
   });
 });
 
@@ -142,15 +142,15 @@ describe('activity reporting', () => {
     const vault = mockVault(unlocked());
     renderApp(vault, 60_000);
     const nav = await screen.findByRole('navigation');
-    await user.click(within(nav).getByRole('button', { name: 'Ustawienia' }));
-    await user.click(within(nav).getByRole('button', { name: 'Flota' }));
+    await user.click(within(nav).getByRole('button', { name: 'Settings' }));
+    await user.click(within(nav).getByRole('button', { name: 'Fleet' }));
     await user.keyboard('a');
     expect(vault.calls('activity')).toBe(1);
 
     cleanup();
     const locked = mockVault(LOCKED);
     renderApp(locked, 60_000);
-    await user.click(await screen.findByRole('button', { name: 'Utwórz nową flotę' }));
+    await user.click(await screen.findByRole('button', { name: 'Create a new fleet' }));
     expect(locked.calls('activity')).toBe(0);
   });
 });
@@ -166,11 +166,11 @@ describe('nothing in storage or the URL (SPEC 6.1)', () => {
     renderApp(vault);
 
     const nav = await screen.findByRole('navigation');
-    await user.click(within(nav).getByRole('button', { name: 'Ustawienia' }));
-    await user.click(within(nav).getByRole('button', { name: 'Flota' }));
-    await user.click(screen.getByRole('button', { name: 'Zablokuj' }));
-    await user.click(await screen.findByRole('button', { name: 'Utwórz nową flotę' }));
-    await user.click(screen.getByRole('button', { name: 'Wróć' }));
+    await user.click(within(nav).getByRole('button', { name: 'Settings' }));
+    await user.click(within(nav).getByRole('button', { name: 'Fleet' }));
+    await user.click(screen.getByRole('button', { name: 'Lock' }));
+    await user.click(await screen.findByRole('button', { name: 'Create a new fleet' }));
+    await user.click(screen.getByRole('button', { name: 'Back' }));
     await waitFor(() => {
       expect(vault.calls('status')).toBeGreaterThan(1);
     });

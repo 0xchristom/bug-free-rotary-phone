@@ -46,20 +46,20 @@ interface RowProps extends FleetRowData {
 }
 
 const STATE_LABELS: Record<WalletState, string> = {
-  IDLE: 'Czeka',
-  QUEUED: 'W kolejce',
-  QUOTING: 'Wycena',
-  SIGNING: 'Podpis',
-  SUBMITTED: 'Wysłano',
-  CONFIRMED: 'Kupiono',
-  FAILED: 'Nieudany',
-  UNKNOWN: 'Nieznany',
-  SKIPPED: 'Pominięty',
+  IDLE: 'Waiting',
+  QUEUED: 'Queued',
+  QUOTING: 'Quoting',
+  SIGNING: 'Signing',
+  SUBMITTED: 'Sent',
+  CONFIRMED: 'Bought',
+  FAILED: 'Failed',
+  UNKNOWN: 'Unknown',
+  SKIPPED: 'Skipped',
 };
 
 function stateLabel(row: BuyRow): string {
   if (row.state === 'UNKNOWN' && row.reason?.code === 'EXECUTE_NO_ANSWER') {
-    return 'Sprawdzam łańcuch';
+    return 'Checking the chain';
   }
   if (row.state === 'SKIPPED' && row.reason?.code === 'DRY_RUN') return 'DRY-RUN';
   return STATE_LABELS[row.state];
@@ -87,15 +87,15 @@ function reasonText(reason: WalletReason | null): string | null {
 }
 
 const VERIFY_LABELS: Record<VerifyStatus, string> = {
-  MATCH: 'potwierdzone',
-  INCREASED: 'saldo wzrosło',
-  MISMATCH: 'inna ilość',
-  NO_INCREASE: 'brak wzrostu',
-  UNVERIFIABLE: 'nie sprawdzono',
+  MATCH: 'confirmed',
+  INCREASED: 'balance grew',
+  MISMATCH: 'different amount',
+  NO_INCREASE: 'no increase',
+  UNVERIFIABLE: 'not checked',
 };
 
 function seconds(ms: number): string {
-  return `${(ms / 1000).toFixed(1).replace('.', ',')} s`;
+  return `${(ms / 1000).toFixed(1)} s`;
 }
 
 function tokens(amount: bigint, decimals: number | null): string {
@@ -150,7 +150,7 @@ function BuyCells({
         {received !== null ? (
           tokens(received, decimals)
         ) : quote && buy.reason?.code === 'DRY_RUN' ? (
-          <span className="muted" title="Wycena z /order w trybie DRY-RUN">
+          <span className="muted" title="Quote from /order in DRY-RUN mode">
             ≈ {tokens(quote.outAmount, decimals)}
           </span>
         ) : (
@@ -174,7 +174,7 @@ function BuyCells({
       <td>
         {url ? (
           <a href={url} target="_blank" rel="noopener noreferrer">
-            Transakcja
+            Transaction
           </a>
         ) : (
           '–'
@@ -225,13 +225,13 @@ const FleetRow = memo(function FleetRow(p: RowProps) {
           }}
         />
         {input !== null && !input.ok && <p className="field-error">{input.message}</p>}
-        {state.overBalance && <p className="field-error">Więcej niż saldo portfela.</p>}
+        {state.overBalance && <p className="field-error">More than the wallet balance.</p>}
       </td>
       <td className="amount">
         {state.reserve === null ? '–' : formatSol(state.reserve < 0n ? 0n : state.reserve)}
         {state.reserveTooLow && (
-          <span className="badge danger" title="Rezerwa poniżej MIN_RESERVE_SOL">
-            za mała
+          <span className="badge danger" title="Reserve below MIN_RESERVE_SOL">
+            too low
           </span>
         )}
       </td>
@@ -239,7 +239,7 @@ const FleetRow = memo(function FleetRow(p: RowProps) {
       <td>
         <input
           type="checkbox"
-          aria-label={`Aktywny ${p.label}`}
+          aria-label={`Active ${p.label}`}
           checked={p.active}
           onChange={(e) => {
             p.onActive(p.index, e.target.checked);
@@ -252,16 +252,16 @@ const FleetRow = memo(function FleetRow(p: RowProps) {
       <td>
         <button
           type="button"
-          aria-label={`Kopiuj adres ${p.label}`}
+          aria-label={`Copy address ${p.label}`}
           onClick={() => {
             p.onCopy(p.index, p.address);
           }}
         >
-          {p.copied ? 'Skopiowano' : 'Kopiuj'}
+          {p.copied ? 'Copied' : 'Copy'}
         </button>{' '}
         <button
           type="button"
-          aria-label={`Kod QR ${p.label}`}
+          aria-label={`QR code ${p.label}`}
           aria-expanded={p.qrOpen}
           onClick={() => {
             p.onQr(p.index);
@@ -308,32 +308,32 @@ export function FleetTable(t: FleetTableProps) {
     <div className="table-wrap">
       <table className="wallets">
         <caption>
-          Portfele (adresy zweryfikowane; rezerwa = saldo − max spend, minimum{' '}
+          Wallets (addresses verified; reserve = balance − max spend, minimum{' '}
           {formatSol(t.minReserve)} SOL)
         </caption>
         <thead>
           <tr>
             <th scope="col">#</th>
-            <th scope="col">Etykieta</th>
-            <th scope="col">Adres depozytu</th>
-            <th scope="col">Saldo SOL</th>
+            <th scope="col">Label</th>
+            <th scope="col">Deposit address</th>
+            <th scope="col">SOL balance</th>
             <th scope="col">Max spend (SOL)</th>
-            <th scope="col">Rezerwa (SOL)</th>
+            <th scope="col">Reserve (SOL)</th>
             <th scope="col">{t.tokenLabel ?? 'Token'}</th>
-            <th scope="col">Aktywny</th>
+            <th scope="col">Active</th>
             {showBuy && (
               <>
-                <th scope="col">Status zakupu</th>
-                <th scope="col">Czas</th>
-                <th scope="col">Próby</th>
-                <th scope="col">Kupione</th>
-                <th scope="col">Wydano (SOL)</th>
-                <th scope="col">Cena (SOL/token)</th>
-                <th scope="col">Łańcuch</th>
-                <th scope="col">Transakcja</th>
+                <th scope="col">Buy status</th>
+                <th scope="col">Time</th>
+                <th scope="col">Attempts</th>
+                <th scope="col">Bought</th>
+                <th scope="col">Spent (SOL)</th>
+                <th scope="col">Price (SOL/token)</th>
+                <th scope="col">Chain</th>
+                <th scope="col">Transaction</th>
               </>
             )}
-            <th scope="col">Akcje</th>
+            <th scope="col">Actions</th>
           </tr>
         </thead>
         <tbody>

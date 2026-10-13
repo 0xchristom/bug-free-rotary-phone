@@ -232,8 +232,8 @@ describe('index range', () => {
 
   it('error message states the same range as MAX_FLEET_SIZE', () => {
     const message = ERROR_MESSAGES.INVALID_DERIVATION_INDEX;
-    expect(message).toContain(`od 1 do ${String(MAX_FLEET_SIZE)}`);
-    expect(message).toContain(`od 0 do ${String(MAX_FLEET_SIZE - 1)}`);
+    expect(message).toContain(`1 to ${String(MAX_FLEET_SIZE)}`);
+    expect(message).toContain(`0 to ${String(MAX_FLEET_SIZE - 1)}`);
   });
 
   it('checks the range before touching the mnemonic', () => {

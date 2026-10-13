@@ -82,7 +82,7 @@ describe('the button', () => {
         .getAllByRole('button')
         .map((b) => b.textContent),
     ).toEqual(['Mainnet', 'Devnet']);
-    await user.click(screen.getByRole('button', { name: 'Ustawienia' }));
+    await user.click(screen.getByRole('button', { name: 'Settings' }));
     expect(await pressed()).toEqual(['Mainnet']);
     expect(document.body.textContent).not.toMatch(/Solana\s+(Mainnet|Devnet)/iu);
   });
@@ -92,7 +92,7 @@ describe('the button', () => {
     expect(await pressed()).toEqual(['Mainnet']);
     expect((await button('Devnet')).disabled).toBe(true);
     expect((await group()).title).toMatch(/open a fleet/u);
-    await user.click(screen.getByRole('button', { name: 'Utwórz nową flotę' }));
+    await user.click(screen.getByRole('button', { name: 'Create a new fleet' }));
     expect(await pressed()).toEqual(['Mainnet']);
     expect(requests('setNetwork')).toEqual([]);
   });
@@ -256,10 +256,10 @@ describe('balances follow the network', () => {
         balanceRefreshMs={3_600_000}
       />,
     );
-    expect(await screen.findAllByText('1,5')).toHaveLength(3);
+    expect(await screen.findAllByText('1.5')).toHaveLength(3);
 
     holdNext = true;
-    await user.click(screen.getByRole('button', { name: 'Odśwież salda' }));
+    await user.click(screen.getByRole('button', { name: 'Refresh balances' }));
     await waitFor(() => {
       expect(lateMainnet).not.toBeNull();
     });
@@ -268,7 +268,7 @@ describe('balances follow the network', () => {
     await waitFor(async () => {
       expect(await pressed()).toEqual(['Devnet']);
     });
-    expect(screen.queryAllByText('1,5')).toEqual([]);
+    expect(screen.queryAllByText('1.5')).toEqual([]);
 
     // The mainnet answer arrives late, while the devnet read that follows is still on its
     // way: nothing from mainnet may fill the gap.
@@ -279,11 +279,11 @@ describe('balances follow the network', () => {
     await waitFor(() => {
       expect(lateMainnet).not.toBeNull();
     });
-    expect(screen.queryAllByText('1,5')).toEqual([]);
-    expect(screen.getByText('Salda: wczytywanie…')).toBeTruthy();
+    expect(screen.queryAllByText('1.5')).toEqual([]);
+    expect(screen.getByText('Balances: loading…')).toBeTruthy();
     (lateMainnet as ((value: VaultBalances) => void) | null)?.(balances('devnet'));
     expect(await screen.findAllByText('7')).toHaveLength(3);
-    expect(screen.queryAllByText('1,5')).toEqual([]);
+    expect(screen.queryAllByText('1.5')).toEqual([]);
   });
 });
 
@@ -327,10 +327,10 @@ describe('balances follow the network', () => {
     expect(await pressed()).toEqual(['Mainnet']);
     // 7 SOL is devnet's: not in the table, where “max spend as % of the balance” reads it.
     expect(screen.queryAllByText('7')).toEqual([]);
-    expect(screen.getByText('Salda: wczytywanie…')).toBeTruthy();
+    expect(screen.getByText('Balances: loading…')).toBeTruthy();
 
-    await user.click(screen.getByRole('button', { name: 'Odśwież salda' }));
-    expect(await screen.findAllByText('1,5')).toHaveLength(3);
+    await user.click(screen.getByRole('button', { name: 'Refresh balances' }));
+    expect(await screen.findAllByText('1.5')).toHaveLength(3);
     expect(screen.queryAllByText('7')).toEqual([]);
     expect(answered).toBe(2);
   });
@@ -348,12 +348,12 @@ describe('an unsaved fleet file on the screen', () => {
     // No pause between keystrokes: on Windows each one costs a 16 ms timer.
     const user = userEvent.setup({ delay: null });
     render(<App vault={vault.client} storage={storage.env} statusPollMs={20} />);
-    await user.click(await screen.findByRole('button', { name: 'Utwórz nową flotę' }));
-    await user.type(screen.getByLabelText('Nazwa floty'), 'Nowa');
-    await user.type(screen.getByLabelText('Hasło'), 'Tk9#mQ2!vR8&');
-    await user.type(screen.getByLabelText('Powtórz hasło'), 'Tk9#mQ2!vR8&');
-    await user.click(screen.getByRole('button', { name: 'Utwórz flotę' }));
-    await screen.findByRole('heading', { name: 'Flota utworzona' });
+    await user.click(await screen.findByRole('button', { name: 'Create a new fleet' }));
+    await user.type(screen.getByLabelText('Fleet name'), 'Nowa');
+    await user.type(screen.getByLabelText('Password'), 'Tk9#mQ2!vR8&');
+    await user.type(screen.getByLabelText('Repeat the password'), 'Tk9#mQ2!vR8&');
+    await user.click(screen.getByRole('button', { name: 'Create the fleet' }));
+    await screen.findByRole('heading', { name: 'Fleet created' });
 
     await waitFor(async () => {
       expect((await button('Devnet')).disabled).toBe(false);
@@ -365,14 +365,14 @@ describe('an unsaved fleet file on the screen', () => {
     expect(await pressed()).toEqual(['Mainnet']);
     expect(vault.calls('setNetwork')).toBe(0);
 
-    await user.click(screen.getByRole('button', { name: 'Zapisz plik floty' }));
-    await screen.findByRole('heading', { name: 'Plik floty zapisany' });
+    await user.click(screen.getByRole('button', { name: 'Save the fleet file' }));
+    await screen.findByRole('heading', { name: 'Fleet file saved' });
     // The screen reports the saved file in an effect, one render after the heading.
     await waitFor(() => {
       expect(screen.queryByRole('alert')).toBeNull();
     });
-    await user.click(screen.getByRole('button', { name: 'Przejdź do floty' }));
-    await screen.findByRole('heading', { name: 'Flota' });
+    await user.click(screen.getByRole('button', { name: 'Go to the fleet' }));
+    await screen.findByRole('heading', { name: 'Fleet' });
     expect(screen.queryByText(/then change the network/u)).toBeNull();
 
     // Nothing unsaved is left: the switch works now.
@@ -385,17 +385,17 @@ describe('an unsaved fleet file on the screen', () => {
 });
 
 describe('devnet has no buy', () => {
-  it('“Kupuj teraz” and UZBRÓJ are off with one sentence; no startBuy and no arm leave the UI', async () => {
+  it('“Buy now” and ARM are off with one sentence; no startBuy and no arm leave the UI', async () => {
     const { user, requests } = setup(onDevnet());
     const sentence = 'Buying and the watcher are off on Devnet: Jupiter works on Mainnet only.';
-    const buy = await screen.findByRole<HTMLButtonElement>('button', { name: 'Kupuj teraz' });
+    const buy = await screen.findByRole<HTMLButtonElement>('button', { name: 'Buy now' });
     expect(buy.disabled).toBe(true);
     expect(screen.getByText(sentence)).toBeTruthy();
     await user.click(buy);
 
-    await user.click(screen.getByRole('button', { name: 'Tryb B: obserwacja twórcy' }));
-    await user.type(screen.getByLabelText(/Adres twórcy/u), CREATOR);
-    const arm = screen.getByRole<HTMLButtonElement>('button', { name: 'UZBRÓJ' });
+    await user.click(screen.getByRole('button', { name: 'Mode B: watch a creator' }));
+    await user.type(screen.getByLabelText(/Creator address/u), CREATOR);
+    const arm = screen.getByRole<HTMLButtonElement>('button', { name: 'ARM' });
     expect(arm.disabled).toBe(true);
     expect(screen.getByText(sentence)).toBeTruthy();
     await user.click(arm);
@@ -416,7 +416,7 @@ describe('devnet has no buy', () => {
         settings: { ...settings, global: { ...settings.global, network: 'mainnet' } },
       },
     });
-    await screen.findByRole('button', { name: 'Kupuj teraz' });
+    await screen.findByRole('button', { name: 'Buy now' });
     expect(screen.queryByText(/off on Devnet/u)).toBeNull();
   });
 });
@@ -424,7 +424,7 @@ describe('devnet has no buy', () => {
 describe('confirmations name the network', () => {
   it('switching to live mode says which network will spend SOL', async () => {
     const { user } = setup(unlocked());
-    await user.click(await screen.findByRole('button', { name: 'Przełącz na tryb na żywo…' }));
+    await user.click(await screen.findByRole('button', { name: 'Switch to live mode…' }));
     expect(screen.getByRole('alertdialog').textContent).toContain('Network: Mainnet.');
   });
 });

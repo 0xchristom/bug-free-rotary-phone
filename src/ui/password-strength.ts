@@ -18,11 +18,11 @@ export interface PasswordStrength {
 }
 
 const LABELS: Record<StrengthScore, string> = {
-  0: 'Za krótkie',
-  1: 'Słabe',
-  2: 'Średnie',
-  3: 'Dobre',
-  4: 'Bardzo dobre',
+  0: 'Too short',
+  1: 'Weak',
+  2: 'Fair',
+  3: 'Good',
+  4: 'Very good',
 };
 
 /**
@@ -120,7 +120,7 @@ export function passwordStrength(password: string): PasswordStrength {
       label: LABELS[0],
       length,
       acceptable: false,
-      hints: [`Użyj co najmniej ${String(MIN_PASSWORD_LENGTH)} znaków (teraz: ${String(length)}).`],
+      hints: [`Use at least ${String(MIN_PASSWORD_LENGTH)} characters (now: ${String(length)}).`],
     };
   }
   const hints: string[] = [];
@@ -128,22 +128,26 @@ export function passwordStrength(password: string): PasswordStrength {
   const classes = characterClasses(password);
   if (classes >= 3) score += 1;
   if (classes >= 4 || length >= 24) score += 1;
-  if (classes < 3) hints.push('Połącz małe i wielkie litery, cyfry oraz znaki specjalne.');
+  if (classes < 3) hints.push('Mix lower and upper case letters, digits and symbols.');
 
   if (hasRepeats(password, length)) {
     score -= 1;
-    hints.push('Unikaj powtórzeń tych samych znaków.');
+    hints.push('Avoid repeating the same characters.');
   }
   if (hasSequence(password) || hasKeyboardRun(password)) {
     score -= 1;
-    hints.push('Unikaj sekwencji (abcd, 1234) i układów klawiatury (qwerty).');
+    hints.push('Avoid sequences (abcd, 1234) and keyboard patterns (qwerty).');
   }
   if (hasNoLetters(password)) {
     score = Math.min(score, 1);
-    hints.push('Hasło ma same cyfry i symbole. Dodaj litery albo użyj frazy z kilku słów.');
+    hints.push(
+      'The password has only digits and symbols. Add letters or use a phrase of several words.',
+    );
   } else if (containsCommon(password)) {
     score = Math.min(score, 1);
-    hints.push('Hasło zawiera popularne słowo lub wzorzec. Użyj frazy z kilku przypadkowych słów.');
+    hints.push(
+      'The password contains a common word or pattern. Use a phrase of several random words.',
+    );
   }
   const clamped = Math.max(1, Math.min(4, score)) as StrengthScore;
   return { score: clamped, label: LABELS[clamped], length, acceptable: true, hints };

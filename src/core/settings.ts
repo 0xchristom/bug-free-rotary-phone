@@ -1,6 +1,6 @@
 /**
  * Fleet settings (SPEC 3.3): types, defaults, the Jupiter plan → rate limit table and
- * range validation with Polish messages. Dependency-free, so the UI can validate the
+ * range validation with English messages. Dependency-free, so the UI can validate the
  * form with exactly the rules the vault worker applies before saving (DECISIONS D-019).
  */
 import {
@@ -111,7 +111,7 @@ export type SettingsField = keyof GlobalSettingsV1;
 
 export interface SettingsProblem {
   readonly field: SettingsField;
-  /** Polish message for the form. Never contains the entered value. */
+  /** English message for the form. Never contains the entered value. */
   readonly message: string;
 }
 
@@ -163,42 +163,45 @@ export function validateGlobalSettings(g: GlobalSettingsV1): SettingsProblem[] {
     g.minReserveLamports < L.minReserveLamports.min ||
     g.minReserveLamports > L.minReserveLamports.max
   ) {
-    add('minReserveLamports', 'Minimalna rezerwa musi wynosić od 0,005 do 1 SOL.');
+    add('minReserveLamports', 'The minimum reserve must be between 0.005 and 1 SOL.');
   }
   if (!isIntIn(g.maxAttempts, L.maxAttempts)) {
-    add('maxAttempts', 'Liczba prób musi być liczbą całkowitą od 1 do 10.');
+    add('maxAttempts', 'Attempts must be a whole number from 1 to 10.');
   }
   if (!isIntIn(g.priceCeilingPercent, L.priceCeilingPercent)) {
-    add('priceCeilingPercent', 'Sufit ceny musi być liczbą całkowitą od 1 do 1000%.');
+    add('priceCeilingPercent', 'The price ceiling must be a whole number from 1 to 1000%.');
   }
   if (!isIntIn(g.noRouteWindowMs, L.noRouteWindowMs)) {
-    add('noRouteWindowMs', 'Okno „no route” musi wynosić od 1 do 120 s.');
+    add('noRouteWindowMs', 'The “no route” window must be between 1 and 120 s.');
   }
   const minOk = isIntIn(g.noRouteBackoffMinMs, L.noRouteBackoffMinMs);
   const maxOk = isIntIn(g.noRouteBackoffMaxMs, L.noRouteBackoffMaxMs);
   if (!minOk) {
-    add('noRouteBackoffMinMs', 'Początkowy odstęp ponowień musi wynosić od 100 do 10 000 ms.');
+    add('noRouteBackoffMinMs', 'The first retry delay must be between 100 and 10000 ms.');
   }
   if (!maxOk) {
-    add('noRouteBackoffMaxMs', 'Maksymalny odstęp ponowień musi wynosić od 100 do 30 000 ms.');
+    add('noRouteBackoffMaxMs', 'The longest retry delay must be between 100 and 30000 ms.');
   } else if (minOk && g.noRouteBackoffMaxMs < g.noRouteBackoffMinMs) {
-    add('noRouteBackoffMaxMs', 'Maksymalny odstęp ponowień nie może być krótszy niż początkowy.');
+    add('noRouteBackoffMaxMs', 'The longest retry delay cannot be shorter than the first one.');
   }
-  if (!oneOf(BUY_MODES, g.mode)) add('mode', 'Wybierz tryb: jednorazowy albo ciągły.');
-  if (!oneOf(EXPLORERS, g.explorer)) add('explorer', 'Wybierz explorer z listy.');
-  if (typeof g.dryRun !== 'boolean') add('dryRun', 'Wybierz, czy działać w trybie DRY-RUN.');
+  if (!oneOf(BUY_MODES, g.mode)) add('mode', 'Choose the mode: one-shot or continuous.');
+  if (!oneOf(EXPLORERS, g.explorer)) add('explorer', 'Choose an explorer from the list.');
+  if (typeof g.dryRun !== 'boolean') add('dryRun', 'Choose whether to run in DRY-RUN mode.');
   if (!oneOf(NETWORKS, g.network)) add('network', 'Choose the network: Mainnet or Devnet.');
   if (!isIntIn(g.autoLockMinutes, L.autoLockMinutes)) {
-    add('autoLockMinutes', 'Automatyczna blokada musi wynosić od 1 do 120 minut.');
+    add('autoLockMinutes', 'Auto-lock must be between 1 and 120 minutes.');
   }
   if (!oneOf(JUPITER_PLANS, g.jupiterPlan)) {
-    add('jupiterPlan', 'Wybierz plan Jupitera z listy.');
+    add('jupiterPlan', 'Choose a Jupiter plan from the list.');
   } else if (g.jupiterPlan === 'custom') {
     if (!isIntIn(g.orderRpm, L.orderRpm)) {
-      add('orderRpm', 'Limit /order musi być liczbą całkowitą od 1 do 100 000 zapytań na minutę.');
+      add(
+        'orderRpm',
+        'The /order limit must be a whole number from 1 to 100000 requests per minute.',
+      );
     }
   } else if (g.orderRpm !== JUPITER_PLAN_RPM[g.jupiterPlan]) {
-    add('orderRpm', 'Limit /order nie zgadza się z wybranym planem. Wybierz plan „Własny”.');
+    add('orderRpm', 'The /order limit does not match the chosen plan. Choose the “Custom” plan.');
   }
   return problems;
 }
@@ -215,24 +218,24 @@ export function isHeliusHost(hostname: string): boolean {
 }
 
 /**
- * Why a custom endpoint is not accepted, as a Polish message, or null if it is fine:
+ * Why a custom endpoint is not accepted, as an English message, or null if it is fine:
  * `https:` for RPC or `wss:` for WebSocket, a Helius host, no user/password in the URL.
  */
 export function endpointUrlProblem(value: string, protocol: 'https:' | 'wss:'): string | null {
   const scheme = protocol === 'https:' ? 'https://' : 'wss://';
   if (value.length === 0 || value.length > 512) {
-    return 'Adres musi mieć od 1 do 512 znaków.';
+    return 'The address must have 1 to 512 characters.';
   }
   let url: URL;
   try {
     url = new URL(value);
   } catch {
-    return `To nie jest prawidłowy adres URL. Zacznij od ${scheme}.`;
+    return `This is not a valid URL. Start with ${scheme}.`;
   }
-  if (url.protocol !== protocol) return `Adres musi zaczynać się od ${scheme}.`;
-  if (url.username || url.password) return 'Adres nie może zawierać nazwy użytkownika ani hasła.';
+  if (url.protocol !== protocol) return `The address must start with ${scheme}.`;
+  if (url.username || url.password) return 'The address cannot contain a user name or a password.';
   if (!isHeliusHost(url.hostname)) {
-    return `Dozwolone są tylko adresy Helius w domenie ${HELIUS_DOMAIN} (np. ${scheme}${heliusHost('mainnet')}/?api-key=…).`;
+    return `Only Helius addresses in the ${HELIUS_DOMAIN} domain are allowed (e.g. ${scheme}${heliusHost('mainnet')}/?api-key=…).`;
   }
   return null;
 }

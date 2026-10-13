@@ -28,19 +28,19 @@ function rateLimitText(limit: RateLimitHeaders): string {
   if (limit.remaining !== null) parts.push(`x-ratelimit-remaining ${String(limit.remaining)}`);
   if (limit.current !== null) parts.push(`x-ratelimit-current ${String(limit.current)}`);
   if (limit.reset !== null) {
-    const time = new Date(limit.reset * 1000).toLocaleTimeString('pl-PL');
+    const time = new Date(limit.reset * 1000).toLocaleTimeString('en-GB');
     parts.push(`x-ratelimit-reset ${String(limit.reset)} (${time})`);
   }
   return parts.join(', ');
 }
 
 function jupiterDetails(j: JupiterCheck): string {
-  const parts: string[] = [j.keyless ? 'plan Keyless (bez klucza)' : 'z kluczem API'];
+  const parts: string[] = [j.keyless ? 'Keyless plan (no key)' : 'with an API key'];
   if (j.outAmount !== null && j.router !== null) {
-    parts.push(`0,01 SOL → ${formatUnits(BigInt(j.outAmount), USDC_DECIMALS)} USDC (${j.router})`);
+    parts.push(`0.01 SOL → ${formatUnits(BigInt(j.outAmount), USDC_DECIMALS)} USDC (${j.router})`);
   }
   parts.push(
-    j.rateLimit ? rateLimitText(j.rateLimit) : 'nagłówki x-ratelimit-*: brak w odpowiedzi',
+    j.rateLimit ? rateLimitText(j.rateLimit) : 'x-ratelimit-* headers: not in the response',
   );
   return parts.join('; ');
 }
@@ -68,10 +68,10 @@ function rowsOf(report: ConnectionReport): Row[] {
       details:
         ws.firstEventMs === null
           ? ''
-          : `połączenie ${timeOf(ws.connectMs)}, pierwsze zdarzenie po ${timeOf(ws.firstEventMs)}, slot ${String(ws.slot)}`,
+          : `connected in ${timeOf(ws.connectMs)}, first event after ${timeOf(ws.firstEventMs)}, slot ${String(ws.slot)}`,
     },
     {
-      name: 'Jupiter (quote SOL → USDC, bez wykonania)',
+      name: 'Jupiter (quote SOL → USDC, not executed)',
       check: jupiter,
       details: jupiter === null ? JUPITER_SKIPPED : jupiterDetails(jupiter),
     },
@@ -79,7 +79,7 @@ function rowsOf(report: ConnectionReport): Row[] {
 }
 
 /**
- * „Test połączeń” (SPEC 3.3). The vault worker runs the checks with the saved keys and
+ * Connection test (SPEC 3.3). The vault worker runs the checks with the saved keys and
  * returns statuses and times only (D-024).
  */
 export function ConnectionTest() {
@@ -104,10 +104,10 @@ export function ConnectionTest() {
 
   return (
     <section aria-labelledby={`${ids}-title`}>
-      <h3 id={`${ids}-title`}>Test połączeń</h3>
+      <h3 id={`${ids}-title`}>Connection test</h3>
       <p className="muted">
-        Sprawdza Helius (HTTP i WebSocket) oraz Jupiter (sam quote, bez transakcji) z kluczami
-        zapisanymi w sejfie. Niezapisane zmiany kluczy nie są brane pod uwagę.
+        Checks Helius (HTTP and WebSocket) and Jupiter (a quote only, no transaction) with the keys
+        saved in the vault. Unsaved key changes are not used.
       </p>
       <div className="actions">
         <button
@@ -117,7 +117,7 @@ export function ConnectionTest() {
             void run();
           }}
         >
-          {running ? 'Testowanie…' : 'Test połączeń'}
+          {running ? 'Testing…' : 'Test connections'}
         </button>
       </div>
       {error && (
@@ -129,12 +129,12 @@ export function ConnectionTest() {
         // Wrapped like the fleet table: on a phone the table scrolls, not the page.
         <div className="table-wrap">
           <p className="muted">Network: {NETWORK_LABELS[report.network]}</p>
-          <table aria-label="Wyniki testu połączeń" className="connections">
+          <table aria-label="Connection test results" className="connections">
             <thead>
               <tr>
-                <th scope="col">Usługa</th>
-                <th scope="col">Wynik i czas</th>
-                <th scope="col">Szczegóły</th>
+                <th scope="col">Service</th>
+                <th scope="col">Result and time</th>
+                <th scope="col">Details</th>
               </tr>
             </thead>
             <tbody>
@@ -142,7 +142,7 @@ export function ConnectionTest() {
                 <tr key={row.name} className={row.check?.ok === false ? 'row-error' : ''}>
                   <th scope="row">{row.name}</th>
                   <td>
-                    {row.check === null ? 'Skipped' : row.check.ok ? 'OK' : 'Błąd'}
+                    {row.check === null ? 'Skipped' : row.check.ok ? 'OK' : 'Error'}
                     {row.check === null || row.check.ms === null ? '' : `, ${timeOf(row.check.ms)}`}
                   </td>
                   <td>
