@@ -5,7 +5,7 @@
  * bytes or to export keys without the password (DECISIONS D-013). Responses carry
  * the encrypted file text and public data only; errors carry only a code (D-008).
  */
-import type { ExecutorEvent } from '../executor/executor.ts';
+import type { ExecutorEvent, Side } from '../executor/executor.ts';
 import type { WatchEvent, WatchStatus } from '../watcher/watch.ts';
 import type {
   ApiKeyName,
@@ -82,6 +82,20 @@ export type VaultRequest =
    * otherwise. While it runs the vault is armed: no auto-lock and no manual lock.
    */
   | { readonly type: 'startBuy'; readonly mint: string }
+  /**
+   * Sell `mint` for SOL with the listed wallets (SPEC 11.4, BUNNDLY-60). The token balances
+   * are read first; each wallet sells `floor(balance × percent / 100)` of that read and
+   * never more. The same run as a buy: DRY-RUN unless the settings say otherwise, armed
+   * while it runs, `stop` stops it, and no buy or other sell starts meanwhile.
+   */
+  | {
+      readonly type: 'startSell';
+      readonly mint: string;
+      /** Wallet indices; each at most once. */
+      readonly wallets: readonly number[];
+      /** Part of the token balance to sell: an integer 1-100. 100 when omitted. */
+      readonly percent?: number;
+    }
   /** STOP: no new `/order`; transactions already sent are followed to the end. */
   | { readonly type: 'stop' }
   /**
@@ -146,10 +160,12 @@ export interface VaultBalances {
 }
 
 export interface BuyStatus {
+  /** Present for a sell only. */
+  readonly side?: Side;
   readonly runId: number;
   readonly mint: string;
   readonly dryRun: boolean;
-  /** Wallets taking part (active, with a max spend). */
+  /** Wallets taking part (a buy: active, with a max spend; a sell: the listed ones). */
   readonly wallets: number;
   /** False after STOP, while sent transactions finish. */
   readonly accepting: boolean;
@@ -187,6 +203,7 @@ export interface VaultResultMap {
   readonly setNetwork: VaultFileResult;
   readonly addWallets: VaultFileResult;
   readonly startBuy: BuyStatus;
+  readonly startSell: BuyStatus;
   readonly stop: VaultStatus;
   readonly arm: VaultStatus;
   readonly disarm: VaultStatus;

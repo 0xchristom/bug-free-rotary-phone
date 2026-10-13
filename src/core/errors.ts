@@ -37,6 +37,7 @@ export const ERROR_MESSAGES = {
     'Trwa zakup. Zatrzymaj go przyciskiem STOP i poczekaj, aż wysłane transakcje się zakończą.',
   NO_WALLETS_TO_BUY:
     'Żaden portfel nie może kupować: zaznacz aktywne portfele i ustaw im max spend.',
+  NO_WALLETS_TO_SELL: 'Żaden portfel nie jest zaznaczony do sprzedaży.',
   INVALID_MINT_ADDRESS: 'To nie jest prawidłowy adres mintu tokenu (base58, 32–44 znaki).',
   INVALID_CREATOR_ADDRESS:
     'To nie jest prawidłowy adres portfela twórcy (base58, 32 bajty, inny niż mint SOL).',

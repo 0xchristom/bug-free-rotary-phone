@@ -65,6 +65,8 @@ export type SkipReason =
   | 'INSUFFICIENT_SOL'
   /** No balance read yet, so the reserve cannot be checked. */
   | 'BALANCE_UNKNOWN'
+  /** A sell with nothing to sell: the planned part of the token balance is 0. */
+  | 'NO_TOKENS'
   /** `/order` built no transaction: not enough funds. */
   | 'INSUFFICIENT_FUNDS'
   /** `/order` built no transaction: not enough SOL for the fee. */
@@ -104,6 +106,7 @@ export type WalletReason =
 export const SKIP_MESSAGES: Record<SkipReason, string> = {
   INSUFFICIENT_SOL: 'Za mało SOL: saldo jest mniejsze niż max spend plus rezerwa.',
   BALANCE_UNKNOWN: 'Saldo portfela nie zostało jeszcze odczytane.',
+  NO_TOKENS: 'Brak tokenów do sprzedania.',
   INSUFFICIENT_FUNDS: 'Jupiter: za mało środków w portfelu.',
   INSUFFICIENT_SOL_FOR_GAS: 'Jupiter: za mało SOL na opłatę transakcyjną.',
   DRY_RUN: 'DRY-RUN: transakcja podpisana i odrzucona, nic nie zostało wysłane.',

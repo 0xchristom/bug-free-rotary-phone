@@ -18,11 +18,21 @@
  *   The window counts from the first "no route" of the run, and once the gate has opened,
  *   from each re-close; when it ends, the waiting wallets fail without further requests.
  * - Price ceiling: after the first fill, a quote above it by more than the ceiling skips.
+ * - A sell (BUNNDLY-60, `side: 'sell'`) is the same run with the mints swapped: each
+ *   wallet puts in its planned token amount and gets SOL. It differs in two places only:
+ *   a wallet with nothing planned is skipped before any request, and there is no price
+ *   ceiling (and no floor). Queue, limiter, retries and the chain check are shared.
  *
  * Pure logic with injected Jupiter client, signer, limiters and clock; no DOM, no keys.
  * Events carry no keys and no signed transactions.
  */
-import type { JupiterClient, JupiterExecution, JupiterOrder } from '../jupiter/client.ts';
+import {
+  SOL_MINT,
+  type JupiterClient,
+  type JupiterExecution,
+  type JupiterOrder,
+  type OrderRequest,
+} from '../jupiter/client.ts';
 import type { VerifyEvent } from './verify.ts';
 import {
   LANDING_POLL_MS,
@@ -50,10 +60,16 @@ import {
   type WalletState,
 } from './states.ts';
 
+/** What a run does with the mint (BUNNDLY-60): buy it for SOL, or sell it for SOL. */
+export type Side = 'buy' | 'sell';
+
 export interface ExecutorWallet {
   readonly index: number;
   readonly address: string;
-  /** Lamports to spend; every order asks for exactly this. */
+  /**
+   * What the wallet puts in, and every order asks for exactly this: lamports to spend for
+   * a buy, the planned raw token units for a sell.
+   */
   readonly maxSpend: bigint;
   /** Last read SOL balance, null when never read. */
   readonly balance: bigint | null;
@@ -62,7 +78,12 @@ export interface ExecutorWallet {
 /** The vault's signer (BUNNDLY-22): checks, then signs. Never throws. */
 export type OrderSigner = (
   walletIndex: number,
-  request: { readonly outputMint: string; readonly amount: bigint },
+  request: {
+    /** Present for a sell only: the token sold. A buy pays in SOL. */
+    readonly inputMint?: string;
+    readonly outputMint: string;
+    readonly amount: bigint;
+  },
   order: JupiterOrder,
 ) => Promise<
   | { readonly ok: true; readonly signedTransaction: string; readonly signature: string | null }
@@ -96,6 +117,8 @@ export interface WalletTimes {
 
 export interface WalletEvent {
   readonly kind: 'wallet';
+  /** Present for a sell only; the events of a buy are as they were before BUNNDLY-60. */
+  readonly side?: Side;
   readonly runId: number;
   /** When it happened (Unix ms, executor clock). */
   readonly at: number;
@@ -113,6 +136,8 @@ export type RunPhase = 'started' | 'stopping' | 'finished';
 
 export interface RunEvent {
   readonly kind: 'run';
+  /** Present for a sell only. */
+  readonly side?: Side;
   readonly runId: number;
   readonly at: number;
   readonly phase: RunPhase;
@@ -137,6 +162,8 @@ export interface ExecutorDeps {
 
 export interface RunOptions {
   readonly runId: number;
+  /** Buy by default. A sell skips the SOL pre-check and the price ceiling. */
+  readonly side?: Side;
   readonly mint: string;
   readonly wallets: readonly ExecutorWallet[];
   readonly dryRun: boolean;
@@ -215,6 +242,13 @@ function emptyCounts(): Record<WalletState, number> {
 
 export function startRun(deps: ExecutorDeps, options: RunOptions): ExecutorRun {
   const { clock, jupiter } = deps;
+  const selling = options.side === 'sell';
+  const sideField = selling ? ({ side: 'sell' } as const) : {};
+  /** What is asked of `/order` for a wallet; the signer checks the answer against it. */
+  const askOf = (wallet: ExecutorWallet): Omit<OrderRequest, 'taker'> =>
+    selling
+      ? { inputMint: options.mint, outputMint: SOL_MINT, amount: wallet.maxSpend }
+      : { outputMint: options.mint, amount: wallet.maxSpend };
   const startedAt = Math.min(options.triggeredAt ?? clock.now(), clock.now());
   const slots = new Map<number, Slot>(
     options.wallets.map((wallet) => [
@@ -303,6 +337,7 @@ export function startRun(deps: ExecutorDeps, options: RunOptions): ExecutorRun {
   const emitRun = (phase: RunPhase): void => {
     deps.emit({
       kind: 'run',
+      ...sideField,
       runId: options.runId,
       at: clock.now(),
       phase,
@@ -320,6 +355,7 @@ export function startRun(deps: ExecutorDeps, options: RunOptions): ExecutorRun {
     if (reason !== null || FINAL_STATES.has(to)) slot.reason = reason;
     deps.emit({
       kind: 'wallet',
+      ...sideField,
       runId: options.runId,
       at: clock.now(),
       index,
@@ -459,7 +495,15 @@ export function startRun(deps: ExecutorDeps, options: RunOptions): ExecutorRun {
       totalOutputAmount: execution.totalOutputAmount,
     };
     const { totalInputAmount: input, totalOutputAmount: output } = execution;
-    if (entry === null && input !== null && output !== null && input > 0n && output > 0n) {
+    // The entry price is for the buy ceiling only; a sell has no price floor (BUNNDLY-60).
+    if (
+      !selling &&
+      entry === null &&
+      input !== null &&
+      output !== null &&
+      input > 0n &&
+      output > 0n
+    ) {
       entry = { input, output };
     }
     move(index, 'CONFIRMED');
@@ -523,11 +567,8 @@ export function startRun(deps: ExecutorDeps, options: RunOptions): ExecutorRun {
     move(index, 'QUOTING');
 
     const orderStart = clock.now();
-    const ordered = await jupiter.getOrder({
-      outputMint: options.mint,
-      amount: wallet.maxSpend,
-      taker: wallet.address,
-    });
+    const asked = askOf(wallet);
+    const ordered = await jupiter.getOrder({ ...asked, taker: wallet.address });
     slot.orderMs = clock.now() - orderStart;
     deps.orderLimiter.report({
       httpStatus: ordered.ok ? 200 : ordered.httpStatus,
@@ -566,11 +607,7 @@ export function startRun(deps: ExecutorDeps, options: RunOptions): ExecutorRun {
 
     move(index, 'SIGNING');
     const signStart = clock.now();
-    const signed = await deps.sign(
-      index,
-      { outputMint: options.mint, amount: wallet.maxSpend },
-      order,
-    );
+    const signed = await deps.sign(index, asked, order);
     slot.signMs = clock.now() - signStart;
     if (!signed.ok) {
       fail(index, 'CHECK_FAILED', signed.problem);
@@ -658,7 +695,16 @@ export function startRun(deps: ExecutorDeps, options: RunOptions): ExecutorRun {
     // Before /order: balances from the last refresh only, no requests on the hot path.
     for (const slot of slots.values()) {
       const { wallet } = slot;
-      if (wallet.balance === null) {
+      if (selling) {
+        // Nothing to sell: no request. The fee is Jupiter's call (it may sponsor the gas),
+        // so a wallet short of SOL is skipped by the `/order` answer, not guessed here.
+        if (wallet.maxSpend <= 0n) {
+          skip(wallet.index, 'NO_TOKENS');
+        } else {
+          move(wallet.index, 'QUEUED');
+          queue.push(wallet.index);
+        }
+      } else if (wallet.balance === null) {
         skip(wallet.index, 'BALANCE_UNKNOWN');
       } else if (wallet.balance < wallet.maxSpend + options.minReserveLamports) {
         skip(wallet.index, 'INSUFFICIENT_SOL');

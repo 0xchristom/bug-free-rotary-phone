@@ -136,8 +136,10 @@ export interface JupiterOrder {
 }
 
 export interface OrderRequest {
+  /** The token to sell (BUNNDLY-60); omit for a buy, which pays in SOL. */
+  readonly inputMint?: string;
   readonly outputMint: string;
-  /** Lamports of SOL to spend. */
+  /** Smallest units of the input token: lamports for a buy, raw token units for a sell. */
   readonly amount: bigint;
   /** Wallet that will sign; omit for a quote only (connection test). */
   readonly taker?: string;
@@ -398,7 +400,7 @@ export interface JupiterClient {
 /** URL of `/order` for a request: exactly the four documented required parameters. */
 export function orderUrl(request: OrderRequest): string {
   const params = new URLSearchParams({
-    inputMint: SOL_MINT,
+    inputMint: request.inputMint ?? SOL_MINT,
     outputMint: request.outputMint,
     amount: request.amount.toString(),
   });

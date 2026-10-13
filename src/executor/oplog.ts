@@ -10,8 +10,8 @@ import { ERROR_MESSAGES } from '../core/errors.ts';
 import { parseNetwork, type Network } from '../core/network.ts';
 import type { DetectionProblem, WatchEvent } from '../watcher/watch.ts';
 import { FAIL_MESSAGES, SKIP_MESSAGES, UNKNOWN_MESSAGES } from './states.ts';
-import { VERIFY_MESSAGES } from './verify.ts';
-import type { ExecutorEvent } from './executor.ts';
+import { verifyMessage } from './verify.ts';
+import type { ExecutorEvent, Side } from './executor.ts';
 
 /** What the log records: the executor's events and, in mode B, the watcher's. */
 export type LoggedEvent = ExecutorEvent | WatchEvent;
@@ -30,13 +30,16 @@ export interface LogEntry {
   readonly detail: string | null;
   readonly message: string | null;
   readonly attempt: number | null;
-  /** Quote: lamports in, raw token units out. */
+  /** Quote: lamports in, raw token units out; a sell: raw token units in, lamports out. */
   readonly quoteIn: bigint | null;
   readonly quoteOut: bigint | null;
   readonly router: string | null;
   readonly signature: string | null;
   readonly slot: bigint | null;
-  /** `/execute`: SOL spent (lamports) and tokens received (raw units). */
+  /**
+   * `/execute`: SOL spent (lamports) and tokens received (raw units); a sell: tokens sold
+   * (raw units) and SOL received (lamports).
+   */
   readonly spent: bigint | null;
   readonly received: bigint | null;
   /** SOL per whole token, when the token's decimals are known. */
@@ -44,7 +47,7 @@ export interface LogEntry {
   readonly orderMs: number | null;
   readonly signMs: number | null;
   readonly executeMs: number | null;
-  /** Verification: expected and observed token growth. */
+  /** Verification: expected and observed token growth (a sell: fall). */
   readonly expected: bigint | null;
   readonly observed: bigint | null;
   /** Mode B: the detected mint, its detector and path, and log → first `/order`. */
@@ -52,6 +55,8 @@ export interface LogEntry {
   readonly source: string | null;
   readonly path: string | null;
   readonly reactionMs: number | null;
+  /** Buy or sell (BUNNDLY-60); null for watcher entries. */
+  readonly side: Side | null;
   /** The network the event happened on (BUNNDLY-44). */
   readonly network: Network;
 }
@@ -84,6 +89,7 @@ export const LOG_COLUMNS = [
   'source',
   'path',
   'reactionMs',
+  'side',
   'network',
 ] as const satisfies readonly (keyof LogEntry)[];
 
@@ -143,6 +149,7 @@ const EMPTY = {
   source: null,
   path: null,
   reactionMs: null,
+  side: null,
 } as const;
 
 const DISARMED_MESSAGE = 'Rozbrojono watcher, zanim ten token doczekał się zakupu.';
@@ -202,7 +209,14 @@ function entryOf(event: LoggedEvent, context: LogContext): Omit<LogEntry, 'netwo
     case 'watch':
       return watchEntry(event, time);
     case 'run':
-      return { ...EMPTY, time, runId: event.runId, event: 'run', state: event.phase };
+      return {
+        ...EMPTY,
+        time,
+        runId: event.runId,
+        event: 'run',
+        state: event.phase,
+        side: event.side ?? 'buy',
+      };
     case 'verify':
       return {
         ...EMPTY,
@@ -212,9 +226,10 @@ function entryOf(event: LoggedEvent, context: LogContext): Omit<LogEntry, 'netwo
         state: event.status,
         wallet: event.index,
         address: context.addressOf(event.index),
-        message: VERIFY_MESSAGES[event.status],
+        message: verifyMessage(event.status, event.side),
         expected: event.expected,
         observed: event.observed,
+        side: event.side ?? 'buy',
       };
     case 'wallet': {
       const { reason, quote, result, times } = event;
@@ -247,13 +262,17 @@ function entryOf(event: LoggedEvent, context: LogContext): Omit<LogEntry, 'netwo
         slot: result?.slot ?? null,
         spent,
         received,
+        // SOL per whole token either way: a sell received the lamports and spent the units.
         price:
           spent !== null && received !== null && context.decimals !== null
-            ? formatPrice(spent, received, context.decimals)
+            ? event.side === 'sell'
+              ? formatPrice(received, spent, context.decimals)
+              : formatPrice(spent, received, context.decimals)
             : null,
         orderMs: times.orderMs,
         signMs: times.signMs,
         executeMs: times.executeMs,
+        side: event.side ?? 'buy',
       };
     }
   }
