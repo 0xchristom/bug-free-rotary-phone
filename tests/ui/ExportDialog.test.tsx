@@ -155,14 +155,53 @@ describe('wizard', () => {
     if (!vault) throw new Error('not unlocked');
     const words = new TextDecoder().decode(vault.mnemonic).split(' ');
     expect(words).toHaveLength(24);
-    const page = ` ${document.body.textContent.toLowerCase()} `;
-    expect(page).not.toContain(words.join(' '));
+    const page = pageWords();
+    // The page was really read: these words of the final screen are in it.
+    expect(page).toEqual(expect.arrayContaining(['plain', 'export', 'fleet', 'password']));
     // The interface is English, so single BIP39 words ("cloud", "wallet", "file") are on
-    // the page anyway. Three words in the mnemonic's order are not.
+    // the page anyway. Three words in the mnemonic's order are not, however the page lays
+    // them out: one per list item, numbered, one per line or in a field.
+    const text = ` ${page.join(' ')} `;
     const triples = words
       .slice(0, -2)
-      .map((w, i) => `${w} ${String(words[i + 1])} ${String(words[i + 2])}`);
+      .map((w, i) => ` ${w} ${String(words[i + 1])} ${String(words[i + 2])} `);
     expect(triples).toHaveLength(22);
-    expect(triples.filter((t) => page.includes(t))).toEqual([]);
+    expect(triples.filter((t) => text.includes(t))).toEqual([]);
+    // A shuffled mnemonic has no such triple, so the words are counted too. This screen
+    // holds 24 BIP39 words (measured, BUNNDLY-50), so a random mnemonic shares more than
+    // MAX_SHARED_WORDS with it about 3 times in 10^7 runs.
+    const onPage = new Set(page);
+    const shared = [...new Set(words)].filter((w) => onPage.has(w));
+    expect(shared.length).toBeLessThanOrEqual(MAX_SHARED_WORDS);
   });
 });
+
+const MAX_SHARED_WORDS = 5;
+
+/**
+ * The words of the page as a person meets them: every text node, the value of every field
+ * and the attributes that are shown or read out. Anything that is not a letter separates
+ * words, so list numbers, line breaks and punctuation between two words do not hide them.
+ */
+function pageWords(): string[] {
+  const parts: string[] = [];
+  const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+  while (walker.nextNode()) parts.push(walker.currentNode.textContent ?? '');
+  for (const el of document.body.querySelectorAll('*')) {
+    if (
+      el instanceof HTMLInputElement ||
+      el instanceof HTMLTextAreaElement ||
+      el instanceof HTMLSelectElement
+    ) {
+      parts.push(el.value);
+    }
+    for (const name of ['value', 'title', 'aria-label', 'placeholder', 'alt']) {
+      parts.push(el.getAttribute(name) ?? '');
+    }
+  }
+  return parts
+    .join(' ')
+    .toLowerCase()
+    .split(/[^a-z]+/u)
+    .filter((word) => word !== '');
+}
