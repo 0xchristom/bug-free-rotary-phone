@@ -63,6 +63,20 @@ async function fillValidForm(user: UserEvent, password = PASSWORD): Promise<void
   await user.type(field('Repeat the password'), password);
 }
 
+/**
+ * Whether the browser would ask before closing the tab. From the outside this is what tells
+ * that the app holds a fleet file that is not saved yet.
+ *
+ * The wizard reports "unsaved" to the app in an effect, one render after the heading
+ * changes, and the keyboard and mouse of `setupUser()` do not wait for it. A test whose next
+ * click depends on that report waits for this state first.
+ */
+function closingTabAsks(): boolean {
+  const event = new Event('beforeunload', { cancelable: true });
+  window.dispatchEvent(event);
+  return event.defaultPrevented;
+}
+
 function createButton(): HTMLButtonElement {
   return screen.getByRole('button', { name: 'Create the fleet' });
 }
@@ -498,6 +512,10 @@ describe('creating and saving', () => {
     ).toBeTruthy();
     expect(document.body.textContent).not.toContain('abandon');
 
+    // saved: the app no longer guards the file, so the button leaves without a question
+    await waitFor(() => {
+      expect(closingTabAsks()).toBe(false);
+    });
     await user.click(screen.getByRole('button', { name: 'Go to the fleet' }));
     expect(await screen.findByRole('heading', { name: 'Fleet' })).toBeTruthy();
   });
@@ -558,6 +576,9 @@ describe('unsaved file protection', () => {
       expect(screen.getByRole('button', { name: 'Lock' })).toBeTruthy();
     });
     expect(screen.getByRole('heading', { name: 'Fleet created' })).toBeTruthy();
+    await waitFor(() => {
+      expect(closingTabAsks()).toBe(true);
+    });
 
     const confirm = vi.spyOn(window, 'confirm').mockReturnValueOnce(false);
     await user.click(screen.getByRole('button', { name: 'Fleet' }));
