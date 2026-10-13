@@ -1,8 +1,8 @@
 import { useEffect, useId, useState, type SyntheticEvent } from 'react';
 import { toUserMessage } from '../../core/errors.ts';
+import { EXPLORERS, NETWORK_LABELS, type Explorer, type Network } from '../../core/network.ts';
 import {
   BUY_MODES,
-  EXPLORERS,
   JUPITER_PLANS,
   JUPITER_PLAN_RPM,
   JUPITER_RATE_LIMITS_URL,
@@ -10,7 +10,6 @@ import {
   orderRps,
   validateGlobalSettings,
   type BuyMode,
-  type Explorer,
   type GlobalSettingsV1,
   type JupiterPlan,
   type SettingsField,
@@ -59,8 +58,9 @@ const KEY_FIELDS: readonly { name: KeyName; label: string; placeholder: string }
 const CONTINUOUS_WARNING =
   'Tryb ciągły: watcher nie rozbroi się po pierwszym zakupie i będzie kupował każdy kolejny wykryty token, aż go wyłączysz. Włączyć tryb ciągły?';
 
-const LIVE_WARNING =
-  'Wyłączasz DRY-RUN: zakup wyśle prawdziwe transakcje i wyda SOL z portfeli (do max spend każdego). Wyłączyć DRY-RUN?';
+function liveWarning(network: Network): string {
+  return `Network: ${NETWORK_LABELS[network]}. Wyłączasz DRY-RUN: zakup wyśle prawdziwe transakcje i wyda SOL z portfeli (do max spend każdego). Wyłączyć DRY-RUN?`;
+}
 
 interface Form {
   dryRun: boolean;
@@ -112,7 +112,7 @@ function int(text: string): number {
   return /^\d{1,9}$/u.test(text.trim()) ? Number(text.trim()) : Number.NaN;
 }
 
-function settingsOf(f: Form): GlobalSettingsV1 {
+function settingsOf(f: Form, network: Network): GlobalSettingsV1 {
   const windowS = /^\d{1,4}([.,]\d)?$/u.test(f.noRouteWindowS.trim())
     ? Math.round(Number(f.noRouteWindowS.trim().replace(',', '.')) * 1000)
     : Number.NaN;
@@ -130,6 +130,8 @@ function settingsOf(f: Form): GlobalSettingsV1 {
     jupiterPlan: f.plan,
     orderRpm: f.plan === 'custom' ? int(f.customRpm) : JUPITER_PLAN_RPM[f.plan],
     dryRun: f.dryRun,
+    // Not in the form: the network is changed in the header and kept as the vault has it.
+    network,
   };
 }
 
@@ -177,7 +179,8 @@ export function SettingsScreen({ info, storage, onUnsavedChange }: SettingsScree
     };
   }, [unsaved, onUnsavedChange]);
 
-  const candidate = settingsOf(form);
+  const { network } = info.settings.global;
+  const candidate = settingsOf(form, network);
   const fieldErrors = new Map<SettingsField, string>(
     validateGlobalSettings(candidate).map((p) => [p.field, p.message]),
   );
@@ -468,7 +471,7 @@ export function SettingsScreen({ info, storage, onUnsavedChange }: SettingsScree
               type="checkbox"
               checked={form.dryRun}
               onChange={(e) => {
-                if (!e.target.checked && !window.confirm(LIVE_WARNING)) return;
+                if (!e.target.checked && !window.confirm(liveWarning(network))) return;
                 set('dryRun', e.target.checked);
               }}
             />

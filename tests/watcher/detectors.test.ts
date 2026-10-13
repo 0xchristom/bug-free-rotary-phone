@@ -108,6 +108,53 @@ describe('slow path: inner instructions (CPI)', () => {
   );
 });
 
+describe('program ids per network (BUNNDLY-44)', () => {
+  // Raydium LaunchLab has another program id on devnet (docs.raydium.io, program addresses).
+  // No devnet transaction is in the fixtures: a mainnet one with the id swapped stands in,
+  // so this checks the id table only, not the instruction layout on devnet.
+  const DEVNET_LAUNCHLAB = 'DRay6fNdQ5J82H7xV6uq2aV3mNrUZ1J4PgSKsWgptcm6';
+  const raydium = positives.filter(([, f]) => f.expectedSource === 'raydium-launchlab');
+  const asDevnet = (tx: unknown) => {
+    const swapped = asTransaction(
+      JSON.parse(
+        JSON.stringify(tx).replaceAll(RAYDIUM_LAUNCHLAB_PROGRAM, DEVNET_LAUNCHLAB),
+      ) as unknown,
+    );
+    if (!swapped) throw new Error('fixture is not a transaction');
+    return swapped;
+  };
+
+  it.each(raydium)('%s: LaunchLab under its devnet id is LaunchLab only on devnet', (_n, f) => {
+    const expected = [{ mint: f.expectedMint, source: 'raydium-launchlab' }];
+    expect(detectFromTransaction(asDevnet(f.tx), f.watched, 'devnet')).toEqual(expected);
+    // On mainnet that id is not LaunchLab: only the generic fallback sees the mint.
+    expect(detectFromTransaction(asDevnet(f.tx), f.watched, 'mainnet')).toEqual([
+      { mint: f.expectedMint, source: 'initialize-mint' },
+    ]);
+    // And the mainnet id is not LaunchLab on devnet.
+    const original = asTransaction(f.tx);
+    if (!original) throw new Error('fixture is not a transaction');
+    expect(detectFromTransaction(original, f.watched, 'devnet')).toEqual([
+      { mint: f.expectedMint, source: 'initialize-mint' },
+    ]);
+    expect(detectFromTransaction(original, f.watched)).toEqual(expected);
+  });
+
+  it('pump.fun and Meteora DBC keep their ids on devnet', () => {
+    const same = positives.filter(
+      ([, f]) => f.expectedSource === 'pump.fun' || f.expectedSource === 'meteora-dbc',
+    );
+    expect(same.length).toBeGreaterThanOrEqual(4);
+    for (const [, f] of same) {
+      const tx = asTransaction(f.tx);
+      if (!tx) throw new Error('fixture is not a transaction');
+      expect(detectFromTransaction(tx, f.watched, 'devnet')).toEqual([
+        { mint: f.expectedMint, source: f.expectedSource },
+      ]);
+    }
+  });
+});
+
 describe('slow path (getTransaction)', () => {
   it.each(positives)('%s: the right mint and source', (_name, f) => {
     expect(detectFromTransaction(txOf(f), f.watched)).toEqual([

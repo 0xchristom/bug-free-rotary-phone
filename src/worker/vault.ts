@@ -13,7 +13,6 @@
 import { base58 } from '@scure/base';
 import type { RpcTransport } from '@solana/kit';
 import {
-  PUBLIC_RPC_URL,
   createBalancesRpc,
   createHttpTransport,
   createLandingChecker,
@@ -58,8 +57,13 @@ import {
   secretKeyToBase58,
   serializeKeystoreFile,
   CONNECTION_TEST_TIMEOUT_MS,
+  DEFAULT_NETWORK,
+  NETWORKS,
+  buyRouteOf,
+  endpointNetwork,
   heliusRpcUrl,
   heliusWsUrl,
+  publicRpcUrl,
   effectiveJupiterPlan,
   validateGlobalSettings,
   wipe,
@@ -70,6 +74,7 @@ import {
   type FleetSettingsV1,
   type KeystoreSecretsV1,
   type KeystoreSession,
+  type Network,
   type OpenedKeystore,
   type PublicWalletV1,
 } from '../core/index.ts';
@@ -274,6 +279,7 @@ function parseSettings(value: unknown, walletIndices: ReadonlySet<number>): Flee
     jupiterPlan: g.jupiterPlan,
     orderRpm: g.orderRpm,
     dryRun: g.dryRun,
+    network: g.network,
   } as FleetSettingsV1['global'];
   if (validateGlobalSettings(global).length > 0) return invalidSettings();
   return { maxSpend, active, global };
@@ -394,8 +400,13 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
     unlocked = next;
   };
 
+  /** The open fleet's network; a locked vault touches no network at all. */
+  const networkOf = (vault: UnlockedVault | null): Network =>
+    vault?.settings.global.network ?? DEFAULT_NETWORK;
+
   const status = (): VaultStatus => ({
     locked: unlocked === null,
+    network: networkOf(unlocked),
     armed: isArmed(),
     info: unlocked ? infoOf(unlocked) : null,
     buy: buy === null ? null : { ...buy.status },
@@ -442,8 +453,35 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
 
   const createTransport = options.chain?.createTransport ?? createHttpTransport;
 
-  const rpcUrlOf = (apiKeys: UnlockedVault['apiKeys']): string | null =>
-    apiKeys.heliusRpcUrl ?? (apiKeys.helius === undefined ? null : heliusRpcUrl(apiKeys.helius));
+  /**
+   * A custom endpoint serves only the network its host names; on the other network the
+   * address built from the Helius key applies (D-041).
+   */
+  const customFor = (url: string | undefined, network: Network): string | null =>
+    url !== undefined && endpointNetwork(url) === network ? url : null;
+
+  const rpcUrlOf = (vault: UnlockedVault): string | null => {
+    const { apiKeys } = vault;
+    const network = networkOf(vault);
+    return (
+      customFor(apiKeys.heliusRpcUrl, network) ??
+      (apiKeys.helius === undefined ? null : heliusRpcUrl(network, apiKeys.helius))
+    );
+  };
+
+  const wsUrlOf = (vault: UnlockedVault): string | null => {
+    const { apiKeys } = vault;
+    const network = networkOf(vault);
+    return (
+      customFor(apiKeys.heliusWsUrl, network) ??
+      (apiKeys.helius === undefined ? null : heliusWsUrl(network, apiKeys.helius))
+    );
+  };
+
+  /** Buying needs a route on the fleet's network; devnet has none yet (D-041). */
+  const requireBuyRoute = (vault: UnlockedVault): void => {
+    if (buyRouteOf(networkOf(vault)) === null) throw new AppError('NO_BUY_ROUTE_ON_NETWORK');
+  };
 
   /**
    * Reads SOL balances with the Helius key, which never leaves the worker (D-016). Not
@@ -453,16 +491,16 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
     if (mint !== undefined && typeof mint !== 'string') return badRequest();
     checkAutoLock();
     const vault = requireUnlocked();
-    const { apiKeys } = vault;
-    const url = rpcUrlOf(apiKeys);
+    const url = rpcUrlOf(vault);
     if (url === null) throw new AppError('HELIUS_KEY_MISSING');
     const wallets = [...vault.publicWallets];
     const readSession = session;
+    const network = networkOf(vault);
     return async () => {
       let source: RpcSource = 'helius';
       const transport = createResilientTransport({
         primary: createTransport(url),
-        fallback: createTransport(PUBLIC_RPC_URL),
+        fallback: createTransport(publicRpcUrl(network)),
         ...(options.chain?.sleep ? { sleep: options.chain.sleep } : {}),
         onSource: (s) => {
           if (s === 'fallback') source = 'fallback';
@@ -489,8 +527,13 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
       }
       // Locked (or another fleet opened) while reading: do not hand out stale data.
       if (session !== readSession || unlocked === null) throw new AppError('VAULT_LOCKED');
-      balances = new Map(wallets.map((w, i) => [w.index, lamports[i] ?? 0n]));
+      // The network changed while reading: the answer is labelled with the network it
+      // came from and never becomes the pre-check balance of the new one.
+      if (networkOf(unlocked) === network) {
+        balances = new Map(wallets.map((w, i) => [w.index, lamports[i] ?? 0n]));
+      }
       return {
+        network,
         balances: wallets.map((w, i) => ({ index: w.index, lamports: lamports[i] ?? 0n })),
         ...(token ? { token } : {}),
         source,
@@ -508,12 +551,12 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
     checkAutoLock();
     const vault = requireUnlocked();
     touch();
-    const { apiKeys } = vault;
-    const rpcUrl =
-      apiKeys.heliusRpcUrl ?? (apiKeys.helius === undefined ? null : heliusRpcUrl(apiKeys.helius));
-    const wsUrl =
-      apiKeys.heliusWsUrl ?? (apiKeys.helius === undefined ? null : heliusWsUrl(apiKeys.helius));
-    const jupiterKey = apiKeys.jupiter ?? null;
+    const network = networkOf(vault);
+    const rpcUrl = rpcUrlOf(vault);
+    const wsUrl = wsUrlOf(vault);
+    const jupiterKey = vault.apiKeys.jupiter ?? null;
+    // No request leaves for Jupiter on a network it does not serve.
+    const withJupiter = buyRouteOf(network) === 'jupiter';
     const net = options.net ?? {};
     const fetchFn: FetchLike = net.fetch ?? ((url, init) => globalThis.fetch(url, init));
     const createWebSocket: WebSocketFactory = net.createWebSocket ?? ((url) => new WebSocket(url));
@@ -528,10 +571,12 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
         wsUrl === null
           ? { ...missing, connectMs: null, firstEventMs: null, slot: null }
           : checkHeliusWs({ url: wsUrl, createWebSocket, timeoutMs, clock }),
-        checkJupiterQuote({ apiKey: jupiterKey, fetch: fetchFn, timeoutMs, clock }),
+        withJupiter
+          ? checkJupiterQuote({ apiKey: jupiterKey, fetch: fetchFn, timeoutMs, clock })
+          : null,
       ]);
       if (unlocked !== vault) throw new AppError('VAULT_LOCKED');
-      return { heliusHttp, heliusWs, jupiter, testedAt: new Date(now()).toISOString() };
+      return { network, heliusHttp, heliusWs, jupiter, testedAt: new Date(now()).toISOString() };
     };
   };
 
@@ -573,7 +618,7 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
     // Live mode never retries without the chain check, which needs the RPC.
     if (
       !vault.settings.global.dryRun &&
-      rpcUrlOf(vault.apiKeys) === null &&
+      rpcUrlOf(vault) === null &&
       options.executor?.landing === undefined
     ) {
       throw new AppError('HELIUS_KEY_MISSING');
@@ -589,6 +634,8 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
   const startBuy = (rawMint: unknown, trigger: BuyTrigger | null = null): BuyStatus => {
     const vault = requireUnlocked();
     if (buy !== null) throw new AppError('BUY_RUNNING');
+    requireBuyRoute(vault);
+    const network = networkOf(vault);
     const mint = str(rawMint).trim();
     if (!/^[1-9A-HJ-NP-Za-km-z]{32,44}$/u.test(mint) || mint === SOL_MINT) {
       throw new AppError('INVALID_MINT_ADDRESS');
@@ -597,13 +644,13 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
     const wallets = buyWallets(vault);
     const live = !global.dryRun;
     const injected = options.executor;
-    const rpcUrl = rpcUrlOf(vault.apiKeys);
+    const rpcUrl = rpcUrlOf(vault);
     const transport =
       rpcUrl === null
         ? null
         : createResilientTransport({
             primary: createTransport(rpcUrl),
-            fallback: createTransport(PUBLIC_RPC_URL),
+            fallback: createTransport(publicRpcUrl(network)),
             ...(options.chain?.sleep ? { sleep: options.chain.sleep } : {}),
           });
     const landing: LandingChecker =
@@ -705,6 +752,8 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
     const vault = requireUnlocked();
     if (buy !== null) throw new AppError('BUY_RUNNING');
     if (watchActive()) throw new AppError('WATCH_ARMED');
+    requireBuyRoute(vault);
+    const network = networkOf(vault);
     const creator = str(rawCreator).trim();
     let bytes: Uint8Array | null;
     try {
@@ -715,17 +764,15 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
     if (bytes?.length !== 32 || creator === SOL_MINT) {
       throw new AppError('INVALID_CREATOR_ADDRESS');
     }
-    const { apiKeys } = vault;
-    const wsUrl =
-      apiKeys.heliusWsUrl ?? (apiKeys.helius === undefined ? null : heliusWsUrl(apiKeys.helius));
-    const rpcUrl = rpcUrlOf(apiKeys);
+    const wsUrl = wsUrlOf(vault);
+    const rpcUrl = rpcUrlOf(vault);
     if (wsUrl === null || rpcUrl === null) throw new AppError('HELIUS_KEY_MISSING');
     buyWallets(vault); // the same checks as a buy, now rather than at the detection
     await prepareRefresh(undefined)();
     const rpc = createWatchRpc(
       createResilientTransport({
         primary: createTransport(rpcUrl),
-        fallback: createTransport(PUBLIC_RPC_URL),
+        fallback: createTransport(publicRpcUrl(network)),
         ...(options.chain?.sleep ? { sleep: options.chain.sleep } : {}),
       }),
     );
@@ -747,6 +794,7 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
       },
       {
         url: wsUrl,
+        network,
         creator,
         mode: vault.settings.global.mode,
         ...(options.watch?.balanceRefreshMs === undefined
@@ -776,7 +824,12 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
     }
     // An armed watcher buys on its own with the settings confirmed at arming: they stay
     // frozen (DRY-RUN or live, max spend, wallets) until it is disarmed (D-039).
-    if ((request.type === 'saveSettings' || request.type === 'addWallets') && watchActive()) {
+    if (
+      (request.type === 'saveSettings' ||
+        request.type === 'setNetwork' ||
+        request.type === 'addWallets') &&
+      watchActive()
+    ) {
       throw new AppError('WATCH_ARMED');
     }
 
@@ -819,12 +872,32 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
       case 'saveSettings': {
         const vault = requireUnlocked();
         const indices = new Set(vault.wallets.map((w) => w.index));
-        return rebuild(
+        const settings = parseSettings(request.settings, indices);
+        const switched = settings.global.network !== networkOf(vault);
+        // A running buy keeps its network to the end (an armed watcher is refused above).
+        if (switched && buy !== null) throw new AppError('BUY_RUNNING');
+        const result = await rebuild(
           vault,
           vault.wallets,
-          parseSettings(request.settings, indices),
+          settings,
           applyKeyChanges(vault.apiKeys, request.apiKeys),
         );
+        if (switched) balances = new Map(); // they were read on the other network
+        return result;
+      }
+      case 'setNetwork': {
+        const vault = requireUnlocked();
+        const raw: unknown = request.network;
+        const network = NETWORKS.find((n) => n === raw) ?? badRequest();
+        if (buy !== null) throw new AppError('BUY_RUNNING');
+        const result = await rebuild(
+          vault,
+          vault.wallets,
+          { ...vault.settings, global: { ...vault.settings.global, network } },
+          vault.apiKeys,
+        );
+        balances = new Map(); // they were read on the other network
+        return result;
       }
       case 'addWallets': {
         const vault = requireUnlocked();

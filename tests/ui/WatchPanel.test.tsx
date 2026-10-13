@@ -127,6 +127,7 @@ function setup(o: Setup = {}) {
   let watch: WatchStatus | null = null;
   const status = (): VaultStatus => ({
     locked: false,
+    network: 'mainnet',
     armed: watch?.armed ?? false,
     info,
     buy: null,
@@ -143,6 +144,7 @@ function setup(o: Setup = {}) {
       case 'refreshBalances':
         return Promise.resolve({
           balances: info.wallets.map((w) => ({ index: w.index, lamports: 1_000_000_000n })),
+          network: 'mainnet',
           source: 'helius',
           fetchedAt: '2026-10-03T12:00:00.000Z',
         });

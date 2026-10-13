@@ -2,7 +2,6 @@
 export {
   DEFAULT_BASE_DELAY_MS,
   DEFAULT_RETRIES,
-  PUBLIC_RPC_URL,
   createHttpTransport,
   createResilientTransport,
   httpStatusOf,

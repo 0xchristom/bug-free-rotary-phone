@@ -16,6 +16,7 @@ Solana Multi-Wallet Buyer: statyczna aplikacja SPA (bez backendu) do zarządzani
 - [Wdrożenie na Cloudflare Pages](#wdrożenie-na-cloudflare-pages)
 - [Cloudflare Access: dostęp tylko dla Ciebie](#cloudflare-access-dostęp-tylko-dla-ciebie)
 - [Pierwsze kroki w aplikacji](#pierwsze-kroki-w-aplikacji)
+- [Sieć: Mainnet i Devnet](#sieć-mainnet-i-devnet)
 - [Zakup: tryb A](#zakup-tryb-a)
 - [Zakup: tryb B](#zakup-tryb-b)
 - [Dla programistów](#dla-programistów)
@@ -117,6 +118,19 @@ Otwórz `https://<project>.pages.dev` w oknie prywatnym. Powinna się pokazać s
 7. **Tabela floty:** ustaw max spend dla portfeli (ręcznie albo akcjami zbiorczymi: kwota dla wszystkich lub % salda), zaznacz aktywne portfele. Rezerwa (saldo − max spend) musi wynosić co najmniej `MIN_RESERVE_SOL` (domyślnie 0,015 SOL); za mała rezerwa podświetla wiersz na czerwono. Zapisz: **Zapisz zmiany w tabeli**, potem **Zapisz zaktualizowany plik floty**.
 8. **Saldo tokenu:** wpisz adres mintu w polu **Adres tokenu (mint)** i kliknij **Pokaż saldo tokenu**.
 9. **Później:** **Otwórz plik floty** > wybierz plik > sprawdź podgląd adresów > wpisz hasło. Po 15 minutach bezczynności flota blokuje się sama.
+
+## Sieć: Mainnet i Devnet
+
+W nagłówku, na każdym ekranie, jest przełącznik **Mainnet / Devnet**. Nowa flota pracuje na Mainnecie.
+
+1. **Przełączenie:** otwórz flotę i kliknij **Devnet** albo **Mainnet**. Sieć zmienia się od razu: salda są czytane od nowa, a linki do transakcji prowadzą do stron wybranej sieci.
+2. **Zapis:** sieć jest ustawieniem floty, więc po przełączeniu kliknij **Save the fleet file with the new network**. Stary plik otworzy flotę na poprzedniej sieci.
+3. **Kiedy się nie da:** w trakcie zakupu, przy uzbrojonym watcherze i gdy czeka niezapisany plik floty. Aplikacja mówi, co trzeba najpierw zrobić.
+4. **Devnet służy do testów:** zakup („Kupuj teraz”) i watcher są tam wyłączone, bo Jupiter działa tylko na Mainnecie; aplikacja nie wysyła wtedy do Jupitera żadnego zapytania. Test połączeń sprawdza na Devnecie sam Helius.
+5. **Klucz Helius:** aplikacja używa na obu sieciach tego samego klucza z Ustawień. Własne adresy RPC i WebSocket z Ustawień działają tylko na tej sieci, na którą wskazuje ich host (`devnet.helius-rpc.com` to Devnet, każdy inny to Mainnet); na drugiej sieci aplikacja używa adresu zbudowanego z klucza.
+6. **Powrót na Mainnet z wyłączonym DRY-RUN** wymaga potwierdzenia, bo następny zakup wyda prawdziwe SOL.
+
+Sieć jest też w dzienniku operacji (kolumna `network` w CSV i JSON) i w dialogach potwierdzenia trybu na żywo.
 
 ## Zakup: tryb A
 
