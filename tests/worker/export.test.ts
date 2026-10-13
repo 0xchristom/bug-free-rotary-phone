@@ -52,7 +52,7 @@ describe('exportPlain', () => {
       password: PASSWORD,
       format: 'json',
     })) as PlainExport;
-    expect(res.fileName).toBe('Eksport.EKSPORT-JAWNY.json');
+    expect(res.fileName).toBe('Eksport.PLAIN-EXPORT.json');
     expect(res.mimeType).toBe('application/json');
     const json = JSON.parse(res.text) as {
       warning: string;
@@ -81,14 +81,14 @@ describe('exportPlain', () => {
       password: PASSWORD,
       format: 'txt',
     })) as PlainExport;
-    expect(res.fileName).toBe('Eksport.EKSPORT-JAWNY.txt');
+    expect(res.fileName).toBe('Eksport.PLAIN-EXPORT.txt');
     expect(res.text.startsWith(PLAIN_EXPORT_WARNING)).toBe(true);
     expect(res.text).toContain(MNEMONIC_24);
     for (const [i, address] of ADDRESSES.entries()) {
-      expect(res.text).toContain(`indeks ${String(i)}, ścieżka m/44'/501'/${String(i)}'/0'`);
-      expect(res.text).toContain(`Adres: ${address}`);
+      expect(res.text).toContain(`index ${String(i)}, path m/44'/501'/${String(i)}'/0'`);
+      expect(res.text).toContain(`Address: ${address}`);
     }
-    expect(res.text.match(/Klucz prywatny: [1-9A-HJ-NP-Za-km-z]{80,90}/gu)).toHaveLength(3);
+    expect(res.text.match(/Private key: [1-9A-HJ-NP-Za-km-z]{80,90}/gu)).toHaveLength(3);
   }, 60_000);
 
   it('a wrong password is refused when the message goes straight to the worker', async () => {

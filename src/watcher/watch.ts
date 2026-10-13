@@ -16,6 +16,7 @@
  */
 import type { ErrorCode } from '../core/errors.ts';
 import { isAppError } from '../core/errors.ts';
+import type { Network } from '../core/network.ts';
 import type { BuyMode } from '../core/settings.ts';
 import type { WebSocketFactory } from '../chain/connection-test.ts';
 import {
@@ -135,6 +136,8 @@ export interface WatchDeps {
 export interface WatchOptions {
   /** Helius WebSocket URL with the key; only the stream sees it. */
   readonly url: string;
+  /** The fleet's network, for the launchpad program ids; mainnet by default. */
+  readonly network?: Network;
   readonly creator: string;
   readonly mode: BuyMode;
   readonly balanceRefreshMs?: number;
@@ -293,7 +296,10 @@ export function startWatch(deps: WatchDeps, options: WatchOptions): Watch {
         }
       },
     },
-    { watched: options.creator },
+    {
+      watched: options.creator,
+      ...(options.network === undefined ? {} : { network: options.network }),
+    },
   );
 
   emit({ kind: 'watch', at: armedAt, type: 'armed', creator: options.creator, mode: options.mode });

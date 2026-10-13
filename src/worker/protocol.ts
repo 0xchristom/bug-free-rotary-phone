@@ -12,6 +12,7 @@ import type {
   ConnectionReport,
   ErrorCode,
   FleetSettingsV1,
+  Network,
   PlainExport,
   PublicWalletV1,
 } from '../core/index.ts';
@@ -59,6 +60,11 @@ export type VaultRequest =
       readonly settings: FleetSettingsV1;
       readonly apiKeys?: ApiKeyChanges;
     }
+  /**
+   * Mainnet or devnet for the open fleet (BUNNDLY-44). Saved with the settings: the answer
+   * is the new file text. Refused while a buy runs or the watcher is armed.
+   */
+  | { readonly type: 'setNetwork'; readonly network: Network }
   | { readonly type: 'addWallets'; readonly count: number }
   /**
    * Plain export of the mnemonic and private keys (SPEC 3.1, D-023). The password is
@@ -128,6 +134,8 @@ export interface VaultTokenBalances {
 }
 
 export interface VaultBalances {
+  /** The network the balances were read on. */
+  readonly network: Network;
   readonly balances: readonly WalletBalance[];
   /** Present when the request named a mint. */
   readonly token?: VaultTokenBalances;
@@ -149,6 +157,8 @@ export interface BuyStatus {
 
 export interface VaultStatus {
   readonly locked: boolean;
+  /** The open fleet's network; mainnet while locked (nothing is read then). */
+  readonly network: Network;
   /** A buy is running or the watcher is armed (auto-lock and lock suspended). */
   readonly armed: boolean;
   readonly info: VaultInfo | null;
@@ -174,6 +184,7 @@ export interface VaultResultMap {
   readonly lock: VaultStatus;
   readonly status: VaultStatus;
   readonly saveSettings: VaultFileResult;
+  readonly setNetwork: VaultFileResult;
   readonly addWallets: VaultFileResult;
   readonly startBuy: BuyStatus;
   readonly stop: VaultStatus;

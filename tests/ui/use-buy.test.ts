@@ -2,7 +2,7 @@
 import { describe, expect, it } from 'vitest';
 import type { ExecutorEvent, RunEvent, WalletEvent } from '../../src/executor/index.ts';
 import { EMPTY_BUY, reduceBuy } from '../../src/ui/use-buy.ts';
-import { transactionUrl } from '../../src/ui/explorer.ts';
+import { transactionUrl } from '../../src/core/network.ts';
 
 const SIG = '5'.repeat(88);
 
@@ -99,10 +99,12 @@ describe('reduceBuy', () => {
 
 describe('explorer links', () => {
   it('per explorer from Settings; only plain signatures', () => {
-    expect(transactionUrl('solscan', SIG)).toBe(`https://solscan.io/tx/${SIG}`);
-    expect(transactionUrl('orb', SIG)).toBe(`https://orb.helius.dev/tx/${SIG}`);
-    expect(transactionUrl('solana-explorer', SIG)).toBe(`https://explorer.solana.com/tx/${SIG}`);
-    expect(transactionUrl('solscan', 'javascript:alert(1)')).toBeNull();
-    expect(transactionUrl('solscan', `${SIG}?x=1`)).toBeNull();
+    expect(transactionUrl('solscan', 'mainnet', SIG)).toBe(`https://solscan.io/tx/${SIG}`);
+    expect(transactionUrl('orb', 'mainnet', SIG)).toBe(`https://orbmarkets.io/tx/${SIG}`);
+    expect(transactionUrl('solana-explorer', 'mainnet', SIG)).toBe(
+      `https://explorer.solana.com/tx/${SIG}`,
+    );
+    expect(transactionUrl('solscan', 'mainnet', 'javascript:alert(1)')).toBeNull();
+    expect(transactionUrl('solscan', 'mainnet', `${SIG}?x=1`)).toBeNull();
   });
 });

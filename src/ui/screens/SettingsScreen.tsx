@@ -1,8 +1,8 @@
 import { useEffect, useId, useState, type SyntheticEvent } from 'react';
 import { toUserMessage } from '../../core/errors.ts';
+import { EXPLORERS, NETWORK_LABELS, type Explorer, type Network } from '../../core/network.ts';
 import {
   BUY_MODES,
-  EXPLORERS,
   JUPITER_PLANS,
   JUPITER_PLAN_RPM,
   JUPITER_RATE_LIMITS_URL,
@@ -10,7 +10,6 @@ import {
   orderRps,
   validateGlobalSettings,
   type BuyMode,
-  type Explorer,
   type GlobalSettingsV1,
   type JupiterPlan,
   type SettingsField,
@@ -37,30 +36,31 @@ const EXPLORER_LABELS: Record<Explorer, string> = {
 };
 
 const MODE_LABELS: Record<BuyMode, string> = {
-  'one-shot': 'Jednorazowy (po pierwszym tokenie watcher się rozbraja)',
-  continuous: 'Ciągły (watcher kupuje każdy kolejny wykryty token)',
+  'one-shot': 'One-shot (the watcher disarms after the first token)',
+  continuous: 'Continuous (the watcher buys each new detected token)',
 };
 
 const KEY_FIELDS: readonly { name: KeyName; label: string; placeholder: string }[] = [
-  { name: 'helius', label: 'Klucz API Helius', placeholder: 'Wpisz nowy klucz, aby go zmienić' },
+  { name: 'helius', label: 'Helius API key', placeholder: 'Type a new key to change it' },
   {
     name: 'heliusRpcUrl',
-    label: 'Własny URL RPC (HTTPS, opcjonalnie)',
-    placeholder: 'https://….helius-rpc.com/?api-key=… (traktowany jak klucz)',
+    label: 'Custom RPC URL (HTTPS, optional)',
+    placeholder: 'https://….helius-rpc.com/?api-key=… (treated like a key)',
   },
   {
     name: 'heliusWsUrl',
-    label: 'Własny URL WebSocket (WSS, opcjonalnie)',
-    placeholder: 'wss://….helius-rpc.com/?api-key=… (traktowany jak klucz)',
+    label: 'Custom WebSocket URL (WSS, optional)',
+    placeholder: 'wss://….helius-rpc.com/?api-key=… (treated like a key)',
   },
-  { name: 'jupiter', label: 'Klucz API Jupiter', placeholder: 'Wpisz nowy klucz, aby go zmienić' },
+  { name: 'jupiter', label: 'Jupiter API key', placeholder: 'Type a new key to change it' },
 ];
 
 const CONTINUOUS_WARNING =
-  'Tryb ciągły: watcher nie rozbroi się po pierwszym zakupie i będzie kupował każdy kolejny wykryty token, aż go wyłączysz. Włączyć tryb ciągły?';
+  'Continuous mode: the watcher will not disarm after the first buy and will buy each new detected token until you turn it off. Turn on continuous mode?';
 
-const LIVE_WARNING =
-  'Wyłączasz DRY-RUN: zakup wyśle prawdziwe transakcje i wyda SOL z portfeli (do max spend każdego). Wyłączyć DRY-RUN?';
+function liveWarning(network: Network): string {
+  return `Network: ${NETWORK_LABELS[network]}. You are turning DRY-RUN off: a buy will send real transactions and spend SOL from the wallets (up to the max spend of each). Turn DRY-RUN off?`;
+}
 
 interface Form {
   dryRun: boolean;
@@ -112,7 +112,7 @@ function int(text: string): number {
   return /^\d{1,9}$/u.test(text.trim()) ? Number(text.trim()) : Number.NaN;
 }
 
-function settingsOf(f: Form): GlobalSettingsV1 {
+function settingsOf(f: Form, network: Network): GlobalSettingsV1 {
   const windowS = /^\d{1,4}([.,]\d)?$/u.test(f.noRouteWindowS.trim())
     ? Math.round(Number(f.noRouteWindowS.trim().replace(',', '.')) * 1000)
     : Number.NaN;
@@ -130,6 +130,8 @@ function settingsOf(f: Form): GlobalSettingsV1 {
     jupiterPlan: f.plan,
     orderRpm: f.plan === 'custom' ? int(f.customRpm) : JUPITER_PLAN_RPM[f.plan],
     dryRun: f.dryRun,
+    // Not in the form: the network is changed in the header and kept as the vault has it.
+    network,
   };
 }
 
@@ -143,7 +145,7 @@ const EMPTY_DRAFTS: Record<KeyName, KeyDraft> = {
 
 function confirmOverwrite(fileName: string): boolean {
   return window.confirm(
-    `Plik „${fileName}” już istnieje w wybranym folderze. Zastąpić go zaktualizowanym plikiem floty?`,
+    `The file “${fileName}” already exists in the chosen folder. Replace it with the updated fleet file?`,
   );
 }
 
@@ -177,7 +179,8 @@ export function SettingsScreen({ info, storage, onUnsavedChange }: SettingsScree
     };
   }, [unsaved, onUnsavedChange]);
 
-  const candidate = settingsOf(form);
+  const { network } = info.settings.global;
+  const candidate = settingsOf(form, network);
   const fieldErrors = new Map<SettingsField, string>(
     validateGlobalSettings(candidate).map((p) => [p.field, p.message]),
   );
@@ -281,10 +284,10 @@ export function SettingsScreen({ info, storage, onUnsavedChange }: SettingsScree
 
   return (
     <section className="screen" aria-labelledby={`${ids}-title`}>
-      <h2 id={`${ids}-title`}>Ustawienia</h2>
+      <h2 id={`${ids}-title`}>Settings</h2>
       <p className="muted">
-        Ustawienia i klucze API są zapisywane w zaszyfrowanym pliku floty. Klucze nie są nigdy
-        pokazywane: wpisany klucz zastępuje zapisany.
+        Settings and API keys are saved in the encrypted fleet file. Keys are never shown: a typed
+        key replaces the saved one.
       </p>
       <SettingsResetNotice fields={info.settings.resetFields} />
       {error && (
@@ -296,12 +299,12 @@ export function SettingsScreen({ info, storage, onUnsavedChange }: SettingsScree
       {phase.kind === 'unsaved' && (
         <div className="notice warning" role="status">
           <p>
-            Ustawienia zapisane w sejfie, ale plik floty nie jest jeszcze zaktualizowany. Bez tego
-            po ponownym otwarciu wrócą poprzednie ustawienia.
+            The settings are saved in the vault, but the fleet file is not updated yet. Without that
+            the previous settings come back when you open the fleet again.
           </p>
           {!supportsDirectoryPicker(storage) && (
             <p className="muted">
-              Twoja przeglądarka pobierze plik. Sprawdź potem folder „Pobrane”.
+              Your browser will download the file. Then check the “Downloads” folder.
             </p>
           )}
           <div className="actions">
@@ -311,20 +314,20 @@ export function SettingsScreen({ info, storage, onUnsavedChange }: SettingsScree
               disabled={phase.writing}
               onClick={() => void writeFile(phase.fileText)}
             >
-              {phase.writing ? 'Zapisywanie…' : 'Zapisz zaktualizowany plik floty'}
+              {phase.writing ? 'Saving…' : 'Save the updated fleet file'}
             </button>
           </div>
         </div>
       )}
       {phase.kind === 'written' && (
         <p className="notice" role="status">
-          Zapisano plik {phase.fileName} z nowymi ustawieniami.
+          Saved {phase.fileName} with the new settings.
         </p>
       )}
 
       <form className="form" onSubmit={(e) => void save(e)} noValidate>
         <fieldset disabled={locked}>
-          <legend>Klucze API i połączenia</legend>
+          <legend>API keys and connections</legend>
           {KEY_FIELDS.map(({ name, label, placeholder }) => {
             const d = drafts[name];
             const isSet = info.apiKeys[name];
@@ -333,10 +336,10 @@ export function SettingsScreen({ info, storage, onUnsavedChange }: SettingsScree
                 <label htmlFor={`${ids}-key-${name}`}>{label}</label>
                 <p className="muted" id={`${ids}-key-${name}-state`}>
                   {d.remove
-                    ? 'Zostanie usunięty po zapisaniu ustawień.'
+                    ? 'Will be removed when the settings are saved.'
                     : isSet
-                      ? 'Ustawiony.'
-                      : 'Nie ustawiono.'}
+                      ? 'Set.'
+                      : 'Not set.'}
                 </p>
                 <div className="inline">
                   <input
@@ -354,23 +357,23 @@ export function SettingsScreen({ info, storage, onUnsavedChange }: SettingsScree
                   />
                   <button
                     type="button"
-                    aria-label={`${d.show ? 'Ukryj' : 'Pokaż'} wpisywany tekst: ${label}`}
+                    aria-label={`${d.show ? 'Hide' : 'Show'} the typed text: ${label}`}
                     disabled={d.remove || d.text === ''}
                     onClick={() => {
                       setDraft(name, { show: !d.show });
                     }}
                   >
-                    {d.show ? 'Ukryj' : 'Pokaż'}
+                    {d.show ? 'Hide' : 'Show'}
                   </button>
                   {isSet && (
                     <button
                       type="button"
-                      aria-label={`${d.remove ? 'Nie usuwaj' : 'Usuń'}: ${label}`}
+                      aria-label={`${d.remove ? 'Keep' : 'Remove'}: ${label}`}
                       onClick={() => {
                         setDraft(name, { remove: !d.remove, text: '', show: false });
                       }}
                     >
-                      {d.remove ? 'Cofnij usunięcie' : 'Usuń'}
+                      {d.remove ? 'Undo removal' : 'Remove'}
                     </button>
                   )}
                 </div>
@@ -379,7 +382,7 @@ export function SettingsScreen({ info, storage, onUnsavedChange }: SettingsScree
             );
           })}
 
-          <label htmlFor={`${ids}-plan`}>Plan Jupitera</label>
+          <label htmlFor={`${ids}-plan`}>Jupiter plan</label>
           <select
             id={`${ids}-plan`}
             value={form.plan}
@@ -396,17 +399,17 @@ export function SettingsScreen({ info, storage, onUnsavedChange }: SettingsScree
             ))}
           </select>
           {form.plan === 'custom' ? (
-            numberField('customRpm', 'orderRpm', 'Limit /order (zapytań na minutę)', '/min')
+            numberField('customRpm', 'orderRpm', '/order limit (requests per minute)', '/min')
           ) : (
             <p className="muted">
-              Limit /order: {JUPITER_PLAN_RPM[form.plan]}/min (
-              {String(orderRps(JUPITER_PLAN_RPM[form.plan])).replace('.', ',')} zapytania na
-              sekundę, okno 60 s, wspólny dla całej organizacji).
+              /order limit: {JUPITER_PLAN_RPM[form.plan]}/min (
+              {String(orderRps(JUPITER_PLAN_RPM[form.plan]))}/s, 60 s window, shared by the whole
+              organization).
             </p>
           )}
           {fieldError('jupiterPlan')}
           <p className="hint">
-            Limity według dokumentacji Jupitera:{' '}
+            Limits per the Jupiter documentation:{' '}
             <a href={JUPITER_RATE_LIMITS_URL} target="_blank" rel="noreferrer noopener">
               Rate Limits
             </a>
@@ -415,32 +418,32 @@ export function SettingsScreen({ info, storage, onUnsavedChange }: SettingsScree
         </fieldset>
 
         <fieldset disabled={locked}>
-          <legend>Zakupy</legend>
+          <legend>Buys</legend>
           {numberField(
             'minReserve',
             'minReserveLamports',
-            'Minimalna rezerwa (MIN_RESERVE_SOL)',
+            'Minimum reserve (MIN_RESERVE_SOL)',
             'SOL',
             'decimal',
           )}
-          {numberField('maxAttempts', 'maxAttempts', 'Maks. liczba prób na portfel', 'prób')}
+          {numberField('maxAttempts', 'maxAttempts', 'Max attempts per wallet', 'attempts')}
           {numberField(
             'priceCeiling',
             'priceCeilingPercent',
-            'Sufit ceny (maks. odchylenie od pierwszego zakupu floty)',
+            "Price ceiling (max deviation from the fleet's first buy)",
             '%',
           )}
           {numberField(
             'noRouteWindowS',
             'noRouteWindowMs',
-            'Okno ponawiania „no route”',
+            '“No route” retry window',
             's',
             'decimal',
           )}
-          {numberField('backoffMin', 'noRouteBackoffMinMs', 'Odstęp ponowień: początkowy', 'ms')}
-          {numberField('backoffMax', 'noRouteBackoffMaxMs', 'Odstęp ponowień: maksymalny', 'ms')}
+          {numberField('backoffMin', 'noRouteBackoffMinMs', 'Retry delay: first', 'ms')}
+          {numberField('backoffMax', 'noRouteBackoffMaxMs', 'Retry delay: longest', 'ms')}
 
-          <p id={`${ids}-mode`}>Tryb</p>
+          <p id={`${ids}-mode`}>Mode</p>
           <div role="radiogroup" aria-labelledby={`${ids}-mode`}>
             {BUY_MODES.map((mode) => (
               <label key={mode} className="checkbox">
@@ -460,7 +463,7 @@ export function SettingsScreen({ info, storage, onUnsavedChange }: SettingsScree
           </div>
           {form.mode === 'continuous' && (
             <p className="notice warning">
-              Tryb ciągły jest włączony: watcher nie rozbroi się po pierwszym zakupie.
+              Continuous mode is on: the watcher will not disarm after the first buy.
             </p>
           )}
           <label className="checkbox">
@@ -468,22 +471,20 @@ export function SettingsScreen({ info, storage, onUnsavedChange }: SettingsScree
               type="checkbox"
               checked={form.dryRun}
               onChange={(e) => {
-                if (!e.target.checked && !window.confirm(LIVE_WARNING)) return;
+                if (!e.target.checked && !window.confirm(liveWarning(network))) return;
                 set('dryRun', e.target.checked);
               }}
             />
-            DRY-RUN: zakup bez wysyłania transakcji (prawdziwe zapytania o cenę, zero wydanych SOL)
+            DRY-RUN: buy without sending transactions (real price requests, no SOL spent)
           </label>
           {!form.dryRun && (
-            <p className="notice warning">
-              DRY-RUN jest wyłączony: zakup wyśle prawdziwe transakcje.
-            </p>
+            <p className="notice warning">DRY-RUN is off: a buy will send real transactions.</p>
           )}
         </fieldset>
 
         <fieldset disabled={locked}>
-          <legend>Aplikacja</legend>
-          <label htmlFor={`${ids}-explorer`}>Explorer transakcji</label>
+          <legend>Application</legend>
+          <label htmlFor={`${ids}-explorer`}>Transaction explorer</label>
           <select
             id={`${ids}-explorer`}
             value={form.explorer}
@@ -497,17 +498,12 @@ export function SettingsScreen({ info, storage, onUnsavedChange }: SettingsScree
               </option>
             ))}
           </select>
-          {numberField(
-            'autoLock',
-            'autoLockMinutes',
-            'Automatyczna blokada po bezczynności',
-            'min',
-          )}
+          {numberField('autoLock', 'autoLockMinutes', 'Auto-lock after inactivity', 'min')}
         </fieldset>
 
         <div className="actions">
           <button type="submit" className="primary" disabled={invalid || locked || watchArmed}>
-            {phase.kind === 'saving' ? 'Zapisywanie…' : 'Zapisz ustawienia'}
+            {phase.kind === 'saving' ? 'Saving…' : 'Save settings'}
           </button>
           {watchArmed && <span className="muted">{WATCH_FROZEN}</span>}
         </div>

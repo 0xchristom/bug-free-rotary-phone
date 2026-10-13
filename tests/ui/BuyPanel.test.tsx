@@ -39,6 +39,7 @@ function setup({ count = 3, global = {}, probe, jupiterKey = false }: Setup = {}
   let buy: VaultStatus['buy'] = null;
   const status = (): VaultStatus => ({
     locked: false,
+    network: info.settings.global.network,
     armed: buy !== null,
     info,
     buy,
@@ -65,6 +66,7 @@ function setup({ count = 3, global = {}, probe, jupiterKey = false }: Setup = {}
                 },
               }
             : {}),
+          network: info.settings.global.network,
           source: 'helius',
           fetchedAt: '2026-10-02T12:00:00.000Z',
         });
@@ -151,9 +153,9 @@ function walletEvent(
 }
 
 async function showMint(user: ReturnType<typeof userEvent.setup>): Promise<void> {
-  await screen.findByText(/^Salda z /u);
-  await user.type(screen.getByLabelText('Adres tokenu (mint)'), MINT);
-  await user.click(screen.getByRole('button', { name: 'Pokaż saldo tokenu' }));
+  await screen.findByText(/^Balances as of /u);
+  await user.type(screen.getByLabelText('Token address (mint)'), MINT);
+  await user.click(screen.getByRole('button', { name: 'Show token balance' }));
   await screen.findByRole('columnheader', { name: 'Token (SPL)' });
 }
 
@@ -164,15 +166,15 @@ function row(label: string): HTMLElement {
 }
 
 describe('mode A', () => {
-  it('"Kupuj teraz" only with a mint the worker checked and a ready wallet', async () => {
+  it('"Buy now" only with a mint the worker checked and a ready wallet', async () => {
     const { user, requests } = setup();
-    await screen.findByText(/^Salda z /u);
-    const buy = screen.getByRole('button', { name: 'Kupuj teraz' });
+    await screen.findByText(/^Balances as of /u);
+    const buy = screen.getByRole('button', { name: 'Buy now' });
     expect(buy).toHaveProperty('disabled', true);
     await showMint(user);
-    expect(screen.getByRole('button', { name: 'Kupuj teraz' })).toHaveProperty('disabled', false);
-    expect(screen.getByLabelText('Przed zakupem').textContent).toContain('0,03 SOL');
-    await user.click(screen.getByRole('button', { name: 'Kupuj teraz' }));
+    expect(screen.getByRole('button', { name: 'Buy now' })).toHaveProperty('disabled', false);
+    expect(screen.getByLabelText('Before the buy').textContent).toContain('0.03 SOL');
+    await user.click(screen.getByRole('button', { name: 'Buy now' }));
     expect(requests.find((r) => r.type === 'startBuy')).toEqual({ type: 'startBuy', mint: MINT });
   });
 
@@ -181,7 +183,7 @@ describe('mode A', () => {
       global: { dryRun: false, explorer: 'orb' },
     });
     await showMint(user);
-    await user.click(screen.getByRole('button', { name: 'Kupuj teraz' }));
+    await user.click(screen.getByRole('button', { name: 'Buy now' }));
     act(() => {
       vault.emit(runEvent('started'));
       vault.emit(walletEvent(0, 'QUEUED'));
@@ -192,14 +194,14 @@ describe('mode A', () => {
         }),
       );
     });
-    expect(await screen.findByText(/0\/3 potwierdzonych/u)).toBeTruthy();
-    expect(screen.getByText(/2 w trakcie/u)).toBeTruthy();
-    expect(screen.getByText(/Nie zamykaj ani nie przeładowuj tej karty/u)).toBeTruthy();
+    expect(await screen.findByText(/0\/3 confirmed/u)).toBeTruthy();
+    expect(screen.getByText(/2 in progress/u)).toBeTruthy();
+    expect(screen.getByText(/Do not close or reload this tab/u)).toBeTruthy();
 
     // STOP is there for the whole buy and sends stop
     await user.click(screen.getByRole('button', { name: 'STOP' }));
     expect(requests.some((r) => r.type === 'stop')).toBe(true);
-    expect(await screen.findByRole('button', { name: 'Zatrzymywanie…' })).toBeTruthy();
+    expect(await screen.findByRole('button', { name: 'Stopping…' })).toBeTruthy();
 
     act(() => {
       vault.emit(
@@ -233,29 +235,29 @@ describe('mode A', () => {
       vault.emit(runEvent('finished'));
     });
     finishBuy();
-    expect(await screen.findByText(/1\/3 potwierdzonych/u)).toBeTruthy();
-    expect(screen.getByText(/0 w trakcie · 2 nieudanych albo pominiętych/u)).toBeTruthy();
-    expect(screen.getByText(/pierwszego potwierdzenia: 1,2 s, do ostatniego: 1,2 s/u)).toBeTruthy();
+    expect(await screen.findByText(/1\/3 confirmed/u)).toBeTruthy();
+    expect(screen.getByText(/0 in progress · 2 failed or skipped/u)).toBeTruthy();
+    expect(screen.getByText(/the first confirmation: 1\.2 s, to the last: 1\.2 s/u)).toBeTruthy();
 
     const ok = within(row('W01'));
-    expect(ok.getByText('Kupiono')).toBeTruthy();
-    expect(ok.getByText('2,101')).toBeTruthy(); // tokens, 6 decimals
-    expect(ok.getByText('0,01')).toBeTruthy(); // SOL spent
-    expect(ok.getByText('0,004759638267')).toBeTruthy(); // SOL per token
-    expect(ok.getByText('potwierdzone')).toBeTruthy();
-    expect(ok.getByRole('link', { name: 'Transakcja' }).getAttribute('href')).toBe(
-      `https://orb.helius.dev/tx/${SIG}`,
+    expect(ok.getByText('Bought')).toBeTruthy();
+    expect(ok.getByText('2.101')).toBeTruthy(); // tokens, 6 decimals
+    expect(ok.getByText('0.01')).toBeTruthy(); // SOL spent
+    expect(ok.getByText('0.004759638267')).toBeTruthy(); // SOL per token
+    expect(ok.getByText('confirmed')).toBeTruthy();
+    expect(ok.getByRole('link', { name: 'Transaction' }).getAttribute('href')).toBe(
+      `https://orbmarkets.io/tx/${SIG}`,
     );
     const failed = within(row('W02'));
-    expect(failed.getByText('Nieudany')).toBeTruthy();
-    expect(failed.getByText('Wyczerpany limit prób.')).toBeTruthy();
+    expect(failed.getByText('Failed')).toBeTruthy();
+    expect(failed.getByText('All attempts are used up.')).toBeTruthy();
     expect(failed.getByText('3')).toBeTruthy();
-    expect(within(row('W03')).getByText('Pominięty')).toBeTruthy();
-    expect(within(row('W03')).getByText(/Za mało SOL/u)).toBeTruthy();
+    expect(within(row('W03')).getByText('Skipped')).toBeTruthy();
+    expect(within(row('W03')).getByText(/Not enough SOL/u)).toBeTruthy();
 
     // after the run: the log can be downloaded, "Kupuj teraz" is back
-    expect(await screen.findByRole('button', { name: 'Kupuj teraz' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Pobierz CSV' })).toHaveProperty('disabled', false);
+    expect(await screen.findByRole('button', { name: 'Buy now' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Download CSV' })).toHaveProperty('disabled', false);
   });
 });
 
@@ -263,7 +265,7 @@ describe('decimals of the bought mint', () => {
   it('results keep the decimals of the bought token when another mint is shown later', async () => {
     const { user, vault } = setup();
     await showMint(user);
-    await user.click(screen.getByRole('button', { name: 'Kupuj teraz' }));
+    await user.click(screen.getByRole('button', { name: 'Buy now' }));
     act(() => {
       vault.emit({ ...runEvent('started'), dryRun: true });
       vault.emit(
@@ -278,32 +280,32 @@ describe('decimals of the bought mint', () => {
       );
       vault.emit(runEvent('finished'));
     });
-    expect(await within(row('W01')).findByText('2,101')).toBeTruthy();
+    expect(await within(row('W01')).findByText('2.101')).toBeTruthy();
     // another token (9 decimals) in the field: the buy still reads with 6
-    const field = screen.getByLabelText('Adres tokenu (mint)');
+    const field = screen.getByLabelText('Token address (mint)');
     await user.clear(field);
     await user.type(field, 'So11111111111111111111111111111111111111112');
-    await user.click(screen.getByRole('button', { name: 'Pokaż saldo tokenu' }));
+    await user.click(screen.getByRole('button', { name: 'Show token balance' }));
     await waitFor(() => {
-      expect(screen.getByLabelText('Przed zakupem').textContent).toContain('So1111');
+      expect(screen.getByLabelText('Before the buy').textContent).toContain('So1111');
     });
-    expect(within(row('W01')).getByText('2,101')).toBeTruthy();
-    expect(within(row('W01')).getByText('0,004759638267')).toBeTruthy();
+    expect(within(row('W01')).getByText('2.101')).toBeTruthy();
+    expect(within(row('W01')).getByText('0.004759638267')).toBeTruthy();
   });
 });
 
 describe('Jupiter limits in the summary', () => {
   it('shows the plan that applies: Keyless without a key, the Settings plan with one', async () => {
     setup();
-    await screen.findByText(/^Salda z /u);
-    expect(screen.getByLabelText('Przed zakupem').textContent).toContain(
-      'Bez klucza (Keyless), 30 /order na minutę',
+    await screen.findByText(/^Balances as of /u);
+    expect(screen.getByLabelText('Before the buy').textContent).toContain(
+      'No key (Keyless), 30 /order per minute',
     );
     cleanup();
     setup({ jupiterKey: true });
-    await screen.findByText(/^Salda z /u);
-    expect(screen.getByLabelText('Przed zakupem').textContent).toContain(
-      'Free, 60 /order na minutę',
+    await screen.findByText(/^Balances as of /u);
+    expect(screen.getByLabelText('Before the buy').textContent).toContain(
+      'Free, 60 /order per minute',
     );
   });
 });
@@ -311,36 +313,57 @@ describe('Jupiter limits in the summary', () => {
 describe('DRY-RUN and live mode', () => {
   it('DRY-RUN is the default for a new fleet and is always labelled', async () => {
     setup();
-    expect(await screen.findByLabelText('Tryb: DRY-RUN')).toBeTruthy();
+    expect(await screen.findByLabelText('Mode: DRY-RUN')).toBeTruthy();
   });
 
   it('live mode needs the confirmation with amount and wallet count; cancel changes nothing', async () => {
     const { user, requests } = setup();
-    await screen.findByText(/^Salda z /u);
-    await user.click(screen.getByRole('button', { name: 'Przełącz na tryb na żywo…' }));
+    await screen.findByText(/^Balances as of /u);
+    await user.click(screen.getByRole('button', { name: 'Switch to live mode…' }));
     const dialog = screen.getByRole('alertdialog');
-    expect(dialog.textContent).toContain('do 0,03 SOL z 3 portfeli');
+    expect(dialog.textContent).toContain('up to 0.03 SOL from 3 wallets');
     expect(requests.some((r) => r.type === 'saveSettings')).toBe(false);
-    await user.click(within(dialog).getByRole('button', { name: 'Anuluj' }));
+    await user.click(within(dialog).getByRole('button', { name: 'Cancel' }));
     expect(requests.some((r) => r.type === 'saveSettings')).toBe(false);
-    expect(screen.getByLabelText('Tryb: DRY-RUN')).toBeTruthy();
+    expect(screen.getByLabelText('Mode: DRY-RUN')).toBeTruthy();
 
-    await user.click(screen.getByRole('button', { name: 'Przełącz na tryb na żywo…' }));
-    await user.click(screen.getByRole('button', { name: 'Tak, przełącz na tryb na żywo' }));
+    await user.click(screen.getByRole('button', { name: 'Switch to live mode…' }));
+    await user.click(screen.getByRole('button', { name: 'Yes, switch to live mode' }));
     await waitFor(() => {
       expect(requests.filter((r) => r.type === 'saveSettings')).toHaveLength(1);
     });
     const saved = requests.find((r) => r.type === 'saveSettings');
     expect(saved?.type === 'saveSettings' && saved.settings.global.dryRun).toBe(false);
-    expect(await screen.findByLabelText('Tryb: na żywo')).toBeTruthy();
-    expect(screen.getByText(/Tryb na żywo jest zapisany w sejfie/u)).toBeTruthy();
+    expect(await screen.findByLabelText('Mode: live')).toBeTruthy();
+    expect(screen.getByText(/Live mode is saved in the vault/u)).toBeTruthy();
 
     // back to DRY-RUN: no confirmation
-    await user.click(screen.getByRole('button', { name: 'Wróć do DRY-RUN' }));
+    await user.click(screen.getByRole('button', { name: 'Back to DRY-RUN' }));
     await waitFor(() => {
       expect(requests.filter((r) => r.type === 'saveSettings')).toHaveLength(2);
     });
-    expect(await screen.findByLabelText('Tryb: DRY-RUN')).toBeTruthy();
+    expect(await screen.findByLabelText('Mode: DRY-RUN')).toBeTruthy();
+  });
+});
+
+describe('transaction links follow the network (BUNNDLY-44)', () => {
+  it.each([
+    ['solscan', `https://solscan.io/tx/${SIG}?cluster=devnet`],
+    ['orb', `https://orbmarkets.io/tx/${SIG}?cluster=devnet`],
+    ['solana-explorer', `https://explorer.solana.com/tx/${SIG}?cluster=devnet`],
+  ] as const)('devnet fleet, %s: the row links to the devnet page', async (explorer, href) => {
+    const { vault } = setup({ global: { network: 'devnet', explorer } });
+    await screen.findByText(/^Balances as of /u);
+    act(() => {
+      vault.emit(runEvent('started'));
+      vault.emit(
+        walletEvent(0, 'CONFIRMED', {
+          result: { signature: SIG, slot: 1n, totalInputAmount: 1n, totalOutputAmount: 1n },
+        }),
+      );
+    });
+    const link = await within(row('W01')).findByRole('link', { name: 'Transaction' });
+    expect(link.getAttribute('href')).toBe(href);
   });
 });
 
@@ -352,20 +375,20 @@ describe('100 wallets', () => {
     };
     const { user, vault } = setup({ count: 100, probe });
     await showMint(user);
-    await user.click(screen.getByRole('button', { name: 'Kupuj teraz' }));
+    await user.click(screen.getByRole('button', { name: 'Buy now' }));
     act(() => {
       vault.emit(runEvent('started', 100));
       for (let i = 0; i < 100; i++) vault.emit(walletEvent(i, 'QUEUED'));
     });
-    await screen.findByText(/0\/100 potwierdzonych/u);
-    expect(screen.getByText(/100 w trakcie/u)).toBeTruthy();
+    await screen.findByText(/0\/100 confirmed/u);
+    expect(screen.getByText(/100 in progress/u)).toBeTruthy();
     renders.clear();
     act(() => {
       vault.emit(walletEvent(5, 'QUOTING'));
       vault.emit(walletEvent(5, 'SIGNING'));
       vault.emit(walletEvent(42, 'QUOTING'));
     });
-    await screen.findByText('Podpis');
+    await screen.findByText('Signing');
     // one frame for the batch: rows 5 and 42 once each, no other row
     expect([...renders.keys()].sort((a, b) => a - b)).toEqual([5, 42]);
     expect(renders.get(5)).toBe(1);

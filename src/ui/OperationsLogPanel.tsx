@@ -41,11 +41,11 @@ export function OperationsLogPanel({
 
   return (
     <section aria-labelledby={titleId}>
-      <h4 id={titleId}>Dziennik operacji</h4>
+      <h4 id={titleId}>Operations log</h4>
       <p className="muted">
         {size === 0
-          ? 'Brak wpisów. Każda zmiana stanu portfela w zakupie trafia tutaj.'
-          : `Wpisów: ${String(size)}. Bez kluczy i podpisanych transakcji; kwoty w lamportach i jednostkach tokena.`}
+          ? 'No entries. Every wallet state change in a buy is recorded here.'
+          : `Entries: ${String(size)}. No keys and no signed transactions; amounts in lamports and token base units.`}
       </p>
       <div className="actions">
         <button
@@ -55,7 +55,7 @@ export function OperationsLogPanel({
             save('csv');
           }}
         >
-          Pobierz CSV
+          Download CSV
         </button>
         <button
           type="button"
@@ -64,7 +64,7 @@ export function OperationsLogPanel({
             save('json');
           }}
         >
-          Pobierz JSON
+          Download JSON
         </button>
       </div>
       {error && (

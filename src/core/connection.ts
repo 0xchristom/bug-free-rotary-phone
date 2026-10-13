@@ -1,27 +1,28 @@
 /**
  * Connection test (SPEC 3.3, BUNNDLY-16): result types shared by the vault worker and the
- * UI, Polish messages and small pure helpers. Results carry only statuses, times and
+ * UI, English messages and small pure helpers. Results carry only statuses, times and
  * public data from the answers, never a key or a URL with a key (D-016, D-024).
  */
+import type { Network } from './network.ts';
 
 /** Why a check failed. The worker sends the code; the UI shows the message. */
 export const CONNECTION_PROBLEMS = {
-  KEY_MISSING: 'Brak klucza API Helius. Dodaj go w ustawieniach i zapisz.',
-  UNAUTHORIZED: 'Usługa odrzuciła klucz API (HTTP 401). Sprawdź, czy klucz jest poprawny.',
+  KEY_MISSING: 'The Helius API key is missing. Add it in Settings and save.',
+  UNAUTHORIZED: 'The service rejected the API key (HTTP 401). Check that the key is correct.',
   FORBIDDEN:
-    'Dostęp zabroniony (HTTP 403). Klucz nie ma dostępu do tej usługi albo blokuje go reguła firewalla.',
-  RATE_LIMITED: 'Przekroczony limit zapytań (HTTP 429). Odczekaj chwilę i spróbuj ponownie.',
-  SERVER_ERROR: 'Błąd po stronie usługi (HTTP 5xx). Spróbuj ponownie za chwilę.',
-  HTTP_ERROR: 'Usługa odpowiedziała nieoczekiwanym kodem HTTP.',
-  TIMEOUT: 'Usługa nie odpowiedziała w wyznaczonym czasie.',
+    'Access forbidden (HTTP 403). The key has no access to this service or a firewall rule blocks it.',
+  RATE_LIMITED: 'Rate limit exceeded (HTTP 429). Wait a moment and try again.',
+  SERVER_ERROR: 'Service error (HTTP 5xx). Try again in a moment.',
+  HTTP_ERROR: 'The service responded with an unexpected HTTP code.',
+  TIMEOUT: 'The service did not respond in time.',
   NETWORK:
-    'Nie udało się połączyć z usługą. Sprawdź połączenie z internetem; w wersji hostowanej przyczyną może być też CSP.',
-  INVALID_RESPONSE: 'Usługa zwróciła odpowiedź w nieoczekiwanym formacie.',
-  RPC_ERROR: 'Węzeł RPC zwrócił błąd zapytania.',
-  UNHEALTHY: 'Węzeł Helius zgłasza, że nie działa poprawnie (getHealth).',
+    'Could not connect to the service. Check your internet connection; in the hosted version the cause may also be CSP.',
+  INVALID_RESPONSE: 'The service returned a response in an unexpected format.',
+  RPC_ERROR: 'The RPC node returned a request error.',
+  UNHEALTHY: 'The Helius node reports that it is not healthy (getHealth).',
   WS_REFUSED:
-    'Nie udało się otworzyć połączenia WebSocket. Przeglądarka nie podaje powodu: sprawdź klucz, adres WSS i limit 5 równoczesnych połączeń w planie Free.',
-  WS_CLOSED: 'Połączenie WebSocket zostało zamknięte przed pierwszym zdarzeniem.',
+    'The WebSocket connection could not be opened. The browser gives no reason: check the key, the WSS address and the limit of 5 concurrent connections on the Free plan.',
+  WS_CLOSED: 'The WebSocket connection was closed before the first event.',
 } as const satisfies Record<string, string>;
 
 export type ConnectionProblem = keyof typeof CONNECTION_PROBLEMS;
@@ -72,9 +73,12 @@ export interface JupiterCheck extends ConnectionCheck {
 }
 
 export interface ConnectionReport {
+  /** The network the Helius checks ran on. */
+  readonly network: Network;
   readonly heliusHttp: HeliusHttpCheck;
   readonly heliusWs: HeliusWsCheck;
-  readonly jupiter: JupiterCheck;
+  /** Null on a network Jupiter does not serve: nothing was sent to it. */
+  readonly jupiter: JupiterCheck | null;
   /** ISO-8601 time of the test. */
   readonly testedAt: string;
 }

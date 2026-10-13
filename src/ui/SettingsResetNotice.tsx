@@ -1,18 +1,19 @@
 import type { SettingsField } from '../core/settings.ts';
 
 const FIELD_LABELS: Record<SettingsField, string> = {
-  minReserveLamports: 'minimalna rezerwa',
-  maxAttempts: 'liczba prób',
-  priceCeilingPercent: 'sufit ceny',
-  noRouteWindowMs: 'okno „no route”',
-  noRouteBackoffMinMs: 'początkowy odstęp ponowień',
-  noRouteBackoffMaxMs: 'maksymalny odstęp ponowień',
-  mode: 'tryb',
+  minReserveLamports: 'minimum reserve',
+  maxAttempts: 'attempts',
+  priceCeilingPercent: 'price ceiling',
+  noRouteWindowMs: '“no route” window',
+  noRouteBackoffMinMs: 'first retry delay',
+  noRouteBackoffMaxMs: 'longest retry delay',
+  mode: 'mode',
   explorer: 'explorer',
-  autoLockMinutes: 'automatyczna blokada',
-  dryRun: 'tryb DRY-RUN',
-  jupiterPlan: 'plan Jupitera',
-  orderRpm: 'limit /order',
+  autoLockMinutes: 'auto-lock',
+  dryRun: 'DRY-RUN mode',
+  jupiterPlan: 'Jupiter plan',
+  orderRpm: '/order limit',
+  network: 'network',
 };
 
 /**
@@ -27,9 +28,9 @@ export function SettingsResetNotice({
   if (!fields || fields.length === 0) return null;
   return (
     <p className="notice warning" role="status">
-      Niektóre ustawienia z pliku floty były poza obecnym zakresem i przyjęły wartości domyślne:{' '}
-      {fields.map((f) => FIELD_LABELS[f]).join(', ')}. Sprawdź je w Ustawieniach i zapisz, aby
-      utrwalić zmianę w pliku.
+      Some settings from the fleet file were outside the current range and took their default
+      values: {fields.map((f) => FIELD_LABELS[f]).join(', ')}. Check them in Settings and save to
+      keep the change in the file.
     </p>
   );
 }

@@ -95,7 +95,9 @@ let main: VaultHandler;
 let created: VaultFileResult;
 
 beforeAll(async () => {
-  main = createVaultHandler({ autoLockMs: AUTO_LOCK_MS });
+  // The shared vault lives for the whole file, so its clock stands still. On the real clock
+  // it locked itself after 60 s and the last tests of a slow run got VAULT_LOCKED.
+  main = createVaultHandler({ now: clock().now, autoLockMs: AUTO_LOCK_MS });
   created = await call<VaultFileResult>(main, {
     type: 'create',
     fleetName: 'Flota',
@@ -337,7 +339,14 @@ describe('lock and auto-lock', () => {
     const buffers = heldBuffers(h);
     expect(buffers.some((b) => b.some((x) => x !== 0))).toBe(true);
     const status = await call<VaultStatus>(h, { type: 'lock' });
-    expect(status).toEqual({ locked: true, armed: false, info: null, buy: null, watch: null });
+    expect(status).toEqual({
+      locked: true,
+      network: 'mainnet',
+      armed: false,
+      info: null,
+      buy: null,
+      watch: null,
+    });
     expect(buffers.every((b) => b.every((x) => x === 0))).toBe(true);
     expect(h.inspect().unlocked).toBeNull();
     await expectCode(

@@ -46,20 +46,20 @@ export type OrderCheckProblem =
   | 'FEE_PAYER_MISMATCH';
 
 export const ORDER_CHECK_MESSAGES: Record<OrderCheckProblem, string> = {
-  NO_TRANSACTION: 'Jupiter nie zwrócił transakcji do podpisania.',
-  TAKER_MISMATCH: 'Transakcja jest dla innego portfela. Nie została podpisana.',
-  INPUT_MINT_MISMATCH: 'Transakcja nie płaci w SOL. Nie została podpisana.',
-  OUTPUT_MINT_MISMATCH: 'Transakcja kupuje inny token niż zlecony. Nie została podpisana.',
-  AMOUNT_MISMATCH: 'Kwota w transakcji różni się od zleconej. Nie została podpisana.',
-  OVER_MAX_SPEND: 'Kwota w transakcji przekracza max spend portfela. Nie została podpisana.',
-  UNDECODABLE: 'Transakcji nie da się odczytać. Nie została podpisana.',
-  NOT_V0: 'Nieobsługiwana wersja transakcji (oczekiwana v0). Nie została podpisana.',
-  TOO_MANY_SIGNERS: 'Transakcja wymaga więcej niż 2 podpisów. Nie została podpisana.',
-  TAKER_NOT_SIGNER: 'Portfel nie jest sygnatariuszem transakcji. Nie została podpisana.',
-  TAKER_ALREADY_SIGNED:
-    'Miejsce na podpis portfela nie jest puste. Transakcja nie została podpisana.',
+  NO_TRANSACTION: 'Jupiter returned no transaction to sign.',
+  TAKER_MISMATCH: 'The transaction is for another wallet. It was not signed.',
+  INPUT_MINT_MISMATCH: 'The transaction does not pay in SOL. It was not signed.',
+  OUTPUT_MINT_MISMATCH: 'The transaction buys a different token than ordered. It was not signed.',
+  AMOUNT_MISMATCH: 'The amount in the transaction differs from the ordered one. It was not signed.',
+  OVER_MAX_SPEND:
+    "The amount in the transaction is above the wallet's max spend. It was not signed.",
+  UNDECODABLE: 'The transaction cannot be decoded. It was not signed.',
+  NOT_V0: 'Unsupported transaction version (v0 expected). It was not signed.',
+  TOO_MANY_SIGNERS: 'The transaction needs more than 2 signatures. It was not signed.',
+  TAKER_NOT_SIGNER: 'The wallet is not a signer of the transaction. It was not signed.',
+  TAKER_ALREADY_SIGNED: "The wallet's signature slot is not empty. The transaction was not signed.",
   FEE_PAYER_MISMATCH:
-    'Płatnik opłaty w transakcji nie zgadza się z odpowiedzią Jupitera. Nie została podpisana.',
+    "The fee payer in the transaction does not match Jupiter's response. It was not signed.",
 };
 
 export const MAX_ORDER_SIGNERS = 2;

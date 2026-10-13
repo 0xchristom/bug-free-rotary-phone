@@ -11,38 +11,38 @@ export function parseSol(text: string): bigint | null {
   return whole * LAMPORTS_PER_SOL + fraction;
 }
 
-/** Lamports → "0,015" (Polish decimal comma, no trailing zeros). */
+/** Lamports → "0.015" (decimal point, no trailing zeros). */
 export function formatSol(lamports: bigint): string {
   const whole = lamports / LAMPORTS_PER_SOL;
   const fraction = (lamports % LAMPORTS_PER_SOL)
     .toString()
     .padStart(SOL_DECIMALS, '0')
     .replace(/0+$/u, '');
-  return fraction === '' ? whole.toString() : `${whole.toString()},${fraction}`;
+  return fraction === '' ? whole.toString() : `${whole.toString()}.${fraction}`;
 }
 
 export type SolInput =
   | { readonly ok: true; readonly lamports: bigint }
   | { readonly ok: false; readonly message: string };
 
-/** Max spend field: Polish message for each kind of mistake (the value is never echoed). */
+/** Max spend field: English message for each kind of mistake (the value is never echoed). */
 export function parseSolAmount(text: string): SolInput {
   const t = text.trim();
-  if (/^-/u.test(t)) return { ok: false, message: 'Kwota nie może być ujemna.' };
+  if (/^-/u.test(t)) return { ok: false, message: 'The amount cannot be negative.' };
   if (/^\d+[.,]\d{10,}$/u.test(t)) {
-    return { ok: false, message: 'Podaj najwyżej 9 miejsc po przecinku (1 lamport).' };
+    return { ok: false, message: 'Use at most 9 decimal places (1 lamport).' };
   }
   const lamports = parseSol(t);
   return lamports === null
-    ? { ok: false, message: 'Podaj kwotę w SOL, np. 0,25.' }
+    ? { ok: false, message: 'Enter an amount in SOL, e.g. 0.25.' }
     : { ok: true, lamports };
 }
 
-/** Token amount (raw u64) with its decimals → "1234,5" style text: decimal comma, no thousands grouping. */
+/** Token amount (raw u64) with its decimals → "1234.5" style text: decimal point, no thousands grouping. */
 export function formatUnits(amount: bigint, decimals: number): string {
   if (decimals === 0) return amount.toString();
   const base = 10n ** BigInt(decimals);
   const whole = amount / base;
   const fraction = (amount % base).toString().padStart(decimals, '0').replace(/0+$/u, '');
-  return fraction === '' ? whole.toString() : `${whole.toString()},${fraction}`;
+  return fraction === '' ? whole.toString() : `${whole.toString()}.${fraction}`;
 }

@@ -218,7 +218,7 @@ export async function openKeystoreFile(env: StorageEnv): Promise<OpenedFile> {
         excludeAcceptAllOption: false,
         types: [
           {
-            description: 'Plik floty Bunndly (.keystore.json)',
+            description: 'Bunndly fleet file (.keystore.json)',
             accept: { 'application/json': ['.json'] },
           },
         ],

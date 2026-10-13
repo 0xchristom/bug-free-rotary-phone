@@ -68,60 +68,57 @@ describe('validateGlobalSettings', () => {
   it.each<[Partial<Record<keyof GlobalSettingsV1, unknown>>, string]>([
     [
       { priceCeilingPercent: 0 },
-      'priceCeilingPercent: Sufit ceny musi być liczbą całkowitą od 1 do 1000%.',
+      'priceCeilingPercent: The price ceiling must be a whole number from 1 to 1000%.',
     ],
     [
       { priceCeilingPercent: 1001 },
-      'priceCeilingPercent: Sufit ceny musi być liczbą całkowitą od 1 do 1000%.',
+      'priceCeilingPercent: The price ceiling must be a whole number from 1 to 1000%.',
     ],
-    [{ maxAttempts: 0 }, 'maxAttempts: Liczba prób musi być liczbą całkowitą od 1 do 10.'],
-    [{ maxAttempts: 11 }, 'maxAttempts: Liczba prób musi być liczbą całkowitą od 1 do 10.'],
-    [{ maxAttempts: 2.5 }, 'maxAttempts: Liczba prób musi być liczbą całkowitą od 1 do 10.'],
+    [{ maxAttempts: 0 }, 'maxAttempts: Attempts must be a whole number from 1 to 10.'],
+    [{ maxAttempts: 11 }, 'maxAttempts: Attempts must be a whole number from 1 to 10.'],
+    [{ maxAttempts: 2.5 }, 'maxAttempts: Attempts must be a whole number from 1 to 10.'],
     [
       { minReserveLamports: 4_999_999n },
-      'minReserveLamports: Minimalna rezerwa musi wynosić od 0,005 do 1 SOL.',
+      'minReserveLamports: The minimum reserve must be between 0.005 and 1 SOL.',
     ],
     [
       { minReserveLamports: 1_000_000_001n },
-      'minReserveLamports: Minimalna rezerwa musi wynosić od 0,005 do 1 SOL.',
+      'minReserveLamports: The minimum reserve must be between 0.005 and 1 SOL.',
     ],
     [
       { minReserveLamports: 15_000_000 },
-      'minReserveLamports: Minimalna rezerwa musi wynosić od 0,005 do 1 SOL.',
+      'minReserveLamports: The minimum reserve must be between 0.005 and 1 SOL.',
     ],
-    [{ noRouteWindowMs: 999 }, 'noRouteWindowMs: Okno „no route” musi wynosić od 1 do 120 s.'],
+    [
+      { noRouteWindowMs: 999 },
+      'noRouteWindowMs: The “no route” window must be between 1 and 120 s.',
+    ],
     [
       { noRouteBackoffMinMs: 50 },
-      'noRouteBackoffMinMs: Początkowy odstęp ponowień musi wynosić od 100 do 10 000 ms.',
+      'noRouteBackoffMinMs: The first retry delay must be between 100 and 10000 ms.',
     ],
     [
       { noRouteBackoffMaxMs: 40_000 },
-      'noRouteBackoffMaxMs: Maksymalny odstęp ponowień musi wynosić od 100 do 30 000 ms.',
+      'noRouteBackoffMaxMs: The longest retry delay must be between 100 and 30000 ms.',
     ],
     [
       { noRouteBackoffMinMs: 3_000, noRouteBackoffMaxMs: 2_000 },
-      'noRouteBackoffMaxMs: Maksymalny odstęp ponowień nie może być krótszy niż początkowy.',
+      'noRouteBackoffMaxMs: The longest retry delay cannot be shorter than the first one.',
     ],
-    [{ mode: 'forever' }, 'mode: Wybierz tryb: jednorazowy albo ciągły.'],
-    [{ explorer: 'etherscan' }, 'explorer: Wybierz explorer z listy.'],
-    [
-      { autoLockMinutes: 0 },
-      'autoLockMinutes: Automatyczna blokada musi wynosić od 1 do 120 minut.',
-    ],
-    [
-      { autoLockMinutes: 121 },
-      'autoLockMinutes: Automatyczna blokada musi wynosić od 1 do 120 minut.',
-    ],
-    [{ jupiterPlan: 'gold' }, 'jupiterPlan: Wybierz plan Jupitera z listy.'],
+    [{ mode: 'forever' }, 'mode: Choose the mode: one-shot or continuous.'],
+    [{ explorer: 'etherscan' }, 'explorer: Choose an explorer from the list.'],
+    [{ autoLockMinutes: 0 }, 'autoLockMinutes: Auto-lock must be between 1 and 120 minutes.'],
+    [{ autoLockMinutes: 121 }, 'autoLockMinutes: Auto-lock must be between 1 and 120 minutes.'],
+    [{ jupiterPlan: 'gold' }, 'jupiterPlan: Choose a Jupiter plan from the list.'],
     [
       { jupiterPlan: 'pro', orderRpm: 60 },
-      'orderRpm: Limit /order nie zgadza się z wybranym planem. Wybierz plan „Własny”.',
+      'orderRpm: The /order limit does not match the chosen plan. Choose the “Custom” plan.',
     ],
     [
       { jupiterPlan: 'custom', orderRpm: 0 },
-      'orderRpm: Limit /order musi być liczbą całkowitą od 1 do 100 000 zapytań na minutę.',
+      'orderRpm: The /order limit must be a whole number from 1 to 100000 requests per minute.',
     ],
-  ])('%o → Polish message', (patch, message) => {
+  ])('%o → English message', (patch, message) => {
     expect(problems(patch)).toEqual([message]);
   });
 
@@ -144,9 +141,11 @@ describe('validateGlobalSettings', () => {
 
 describe('Helius endpoints and API key values', () => {
   it('builds the documented mainnet URLs', () => {
-    expect(heliusRpcUrl('abc-123')).toBe('https://mainnet.helius-rpc.com/?api-key=abc-123');
-    expect(heliusWsUrl('abc-123')).toBe('wss://mainnet.helius-rpc.com/?api-key=abc-123');
-    expect(heliusRpcUrl('a&b')).toBe('https://mainnet.helius-rpc.com/?api-key=a%26b');
+    expect(heliusRpcUrl('mainnet', 'abc-123')).toBe(
+      'https://mainnet.helius-rpc.com/?api-key=abc-123',
+    );
+    expect(heliusWsUrl('mainnet', 'abc-123')).toBe('wss://mainnet.helius-rpc.com/?api-key=abc-123');
+    expect(heliusRpcUrl('mainnet', 'a&b')).toBe('https://mainnet.helius-rpc.com/?api-key=a%26b');
   });
 
   it.each([
@@ -173,21 +172,21 @@ describe('Helius endpoints and API key values', () => {
     [
       'https://rpc.example.com/?api-key=x',
       'https:',
-      'Dozwolone są tylko adresy Helius w domenie helius-rpc.com (np. https://mainnet.helius-rpc.com/?api-key=…).',
+      'Only Helius addresses in the helius-rpc.com domain are allowed (e.g. https://mainnet.helius-rpc.com/?api-key=…).',
     ],
     [
       'wss://helius-rpc.com.evil.example',
       'wss:',
-      'Dozwolone są tylko adresy Helius w domenie helius-rpc.com (np. wss://mainnet.helius-rpc.com/?api-key=…).',
+      'Only Helius addresses in the helius-rpc.com domain are allowed (e.g. wss://mainnet.helius-rpc.com/?api-key=…).',
     ],
-    ['http://mainnet.helius-rpc.com', 'https:', 'Adres musi zaczynać się od https://.'],
-    ['rpc', 'https:', 'To nie jest prawidłowy adres URL. Zacznij od https://.'],
+    ['http://mainnet.helius-rpc.com', 'https:', 'The address must start with https://.'],
+    ['rpc', 'https:', 'This is not a valid URL. Start with https://.'],
     [
       'https://a:b@mainnet.helius-rpc.com',
       'https:',
-      'Adres nie może zawierać nazwy użytkownika ani hasła.',
+      'The address cannot contain a user name or a password.',
     ],
-  ] as const)('endpointUrlProblem(%s, %s) explains in Polish', (url, protocol, message) => {
+  ] as const)('endpointUrlProblem(%s, %s) explains in English', (url, protocol, message) => {
     expect(endpointUrlProblem(url, protocol)).toBe(message);
   });
 
@@ -279,6 +278,36 @@ describe('settings in the keystore secrets', () => {
       global: { dryRun: true },
       resetFields: ['dryRun'],
     });
+  });
+
+  it('a file without network (before BUNNDLY-44) is a mainnet fleet, without a reset notice', () => {
+    const raw = json();
+    const settings = raw.settings as { global: Record<string, unknown> };
+    expect(settings.global.network).toBe('mainnet');
+    delete settings.global.network;
+    const read = parseSecrets(raw).settings;
+    expect(read.global.network).toBe('mainnet');
+    expect(read.resetFields).toBeUndefined();
+  });
+
+  it.each(['testnet', 'Devnet', '', 7, null, ['devnet']])(
+    'network %j in the file reads as mainnet and is reported, the fleet still opens',
+    (value) => {
+      const raw = json();
+      (raw.settings as { global: Record<string, unknown> }).global.network = value;
+      expect(parseSecrets(raw).settings).toMatchObject({
+        global: { network: 'mainnet' },
+        resetFields: ['network'],
+      });
+    },
+  );
+
+  it('devnet in the file is kept', () => {
+    const raw = json();
+    (raw.settings as { global: Record<string, unknown> }).global.network = 'devnet';
+    const read = parseSecrets(raw).settings;
+    expect(read.global.network).toBe('devnet');
+    expect(read.resetFields).toBeUndefined();
   });
 
   it('a partial global object fills the missing fields with defaults', () => {

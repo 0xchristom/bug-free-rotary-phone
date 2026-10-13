@@ -7,6 +7,7 @@
  * CSV cells that a spreadsheet would run as a formula get a leading apostrophe.
  */
 import { ERROR_MESSAGES } from '../core/errors.ts';
+import { parseNetwork, type Network } from '../core/network.ts';
 import type { DetectionProblem, WatchEvent } from '../watcher/watch.ts';
 import { FAIL_MESSAGES, SKIP_MESSAGES, UNKNOWN_MESSAGES } from './states.ts';
 import { VERIFY_MESSAGES } from './verify.ts';
@@ -51,6 +52,8 @@ export interface LogEntry {
   readonly source: string | null;
   readonly path: string | null;
   readonly reactionMs: number | null;
+  /** The network the event happened on (BUNNDLY-44). */
+  readonly network: Network;
 }
 
 export const LOG_COLUMNS = [
@@ -81,6 +84,7 @@ export const LOG_COLUMNS = [
   'source',
   'path',
   'reactionMs',
+  'network',
 ] as const satisfies readonly (keyof LogEntry)[];
 
 const LAMPORTS_DECIMALS = 9n;
@@ -89,7 +93,7 @@ export const PRICE_DIGITS = 12;
 
 /**
  * Effective price in SOL per whole token: `lamports / 10^9` divided by
- * `units / 10^decimals`, rounded down to `digits` places, decimal comma, no trailing
+ * `units / 10^decimals`, rounded down to `digits` places, decimal point, no trailing
  * zeros. Null without tokens.
  */
 export function formatPrice(
@@ -103,7 +107,7 @@ export function formatPrice(
   const scaled = (lamports * 10n ** BigInt(decimals) * scale) / (units * 10n ** LAMPORTS_DECIMALS);
   const whole = scaled / scale;
   const fraction = (scaled % scale).toString().padStart(digits, '0').replace(/0+$/u, '');
-  return fraction === '' ? whole.toString() : `${whole.toString()},${fraction}`;
+  return fraction === '' ? whole.toString() : `${whole.toString()}.${fraction}`;
 }
 
 export interface LogContext {
@@ -111,6 +115,8 @@ export interface LogContext {
   readonly addressOf: (index: number) => string | null;
   /** Decimals of the bought token, when known (for the price). */
   readonly decimals: number | null;
+  /** The network of the event; entries recorded without one count as mainnet */
+  readonly network?: Network | undefined;
 }
 
 const EMPTY = {
@@ -139,10 +145,11 @@ const EMPTY = {
   reactionMs: null,
 } as const;
 
-const DISARMED_MESSAGE = 'Rozbrojono watcher, zanim ten token doczekał się zakupu.';
-const STALE_MESSAGE = 'Transakcja sprzed uzbrojenia: to nie jest nowy token, więc nie ma zakupu.';
+const DISARMED_MESSAGE = 'The watcher was disarmed before this token was bought.';
+const STALE_MESSAGE =
+  'The transaction is from before arming: this is not a new token, so there is no buy.';
 const MISMATCH_MESSAGE =
-  'Transakcja nie tworzy mintu wykrytego z logu. Zakup już ruszył: sprawdź token.';
+  'The transaction does not create the mint detected from the log. The buy has already started: check the token.';
 
 function problemMessage(problem: DetectionProblem): string {
   if (problem === 'DISARMED') return DISARMED_MESSAGE;
@@ -150,7 +157,7 @@ function problemMessage(problem: DetectionProblem): string {
   return ERROR_MESSAGES[problem];
 }
 
-function watchEntry(event: WatchEvent, time: string): LogEntry {
+function watchEntry(event: WatchEvent, time: string): Omit<LogEntry, 'network'> {
   const base = { ...EMPTY, time, runId: null, event: 'watch' as const, state: event.type };
   switch (event.type) {
     case 'armed':
@@ -187,6 +194,10 @@ function watchEntry(event: WatchEvent, time: string): LogEntry {
 }
 
 export function logEntry(event: LoggedEvent, context: LogContext): LogEntry {
+  return { ...entryOf(event, context), network: parseNetwork(context.network) };
+}
+
+function entryOf(event: LoggedEvent, context: LogContext): Omit<LogEntry, 'network'> {
   const time = new Date(event.at).toISOString();
   switch (event.kind) {
     case 'watch':

@@ -27,6 +27,7 @@ describe('ERROR_MESSAGES', () => {
         'KEYSTORE_WRONG_PASSWORD_OR_CORRUPTED',
         'PASSWORD_TOO_SHORT',
         'VAULT_LOCKED',
+        'NO_BUY_ROUTE_ON_NETWORK',
         'INVALID_SETTINGS',
         'RPC_UNAVAILABLE',
         'NOT_A_TOKEN_MINT',
@@ -47,12 +48,13 @@ describe('ERROR_MESSAGES', () => {
     );
   });
 
-  it.each(codes)('%s has a non-empty Polish message', (code) => {
+  it.each(codes)('%s has a non-empty English message', (code) => {
     const message = ERROR_MESSAGES[code];
     expect(message.trim().length).toBeGreaterThan(0);
-    // Polish UI copy, not a bare code or English placeholder.
+    // English UI copy (BUNNDLY-50): a sentence, not a bare code, and no Polish left.
     expect(message).not.toBe(code);
-    expect(message).toMatch(/[ąćęłńóśźżĄĆĘŁŃÓŚŹŻ]|\b(jest|nie|plik|hasło)\b/i);
+    expect(message).toMatch(/^[A-Z].*[a-z]{3}.*\.$/u);
+    expect(message).not.toMatch(/[ąćęłńóśźżĄĆĘŁŃÓŚŹŻ]|\b(jest|nie|plik|albo|lub)\b/iu);
   });
 
   it('has a distinct message per code', () => {

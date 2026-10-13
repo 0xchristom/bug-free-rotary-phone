@@ -7,7 +7,12 @@
  * - Raydium LaunchLab: https://raw.githubusercontent.com/raydium-io/raydium-idl/master/raydium_launchpad/raydium_launchpad.json
  * - SPL Token / Token-2022 `InitializeMint` (0) and `InitializeMint2` (20):
  *   https://github.com/solana-program/token/blob/main/program/src/instruction.rs
+ *
+ * Program ids per network (BUNNDLY-44, D-041): pump.fun and Meteora DBC have the same id on
+ * devnet (read from the devnet RPC, 2026-10-12); Raydium LaunchLab has another one there:
+ * the program address table at docs.raydium.io/reference/program-addresses
  */
+import type { Network } from '../../core/network.ts';
 
 /** Moonshot has no confirmed official IDL: its launches come through `initialize-mint`. */
 export type DetectionSource = 'pump.fun' | 'raydium-launchlab' | 'meteora-dbc' | 'initialize-mint';
@@ -15,6 +20,7 @@ export type DetectionSource = 'pump.fun' | 'raydium-launchlab' | 'meteora-dbc' |
 export const PUMP_FUN_PROGRAM = '6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P';
 export const METEORA_DBC_PROGRAM = 'dbcij3LWUppWqq96dh6gJWwBifmcGfLSB5D4DuSMaqN';
 export const RAYDIUM_LAUNCHLAB_PROGRAM = 'LanMV9sAd7wArD4vJFi2qDdfnVhFxYSUg6eADduJ3uj';
+export const RAYDIUM_LAUNCHLAB_DEVNET_PROGRAM = 'DRay6fNdQ5J82H7xV6uq2aV3mNrUZ1J4PgSKsWgptcm6';
 export const TOKEN_PROGRAM = 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA';
 export const TOKEN_2022_PROGRAM = 'TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb';
 
@@ -89,6 +95,19 @@ export const MINT_INSTRUCTIONS: readonly MintInstruction[] = [
     mintAccount: 6,
   },
 ];
+
+/**
+ * The same instructions with the network's program ids. The discriminators come from the
+ * IDL and were checked on mainnet transactions only; on devnet they are not confirmed yet.
+ */
+export function mintInstructions(network: Network): readonly MintInstruction[] {
+  if (network === 'mainnet') return MINT_INSTRUCTIONS;
+  return MINT_INSTRUCTIONS.map((m) =>
+    m.program === RAYDIUM_LAUNCHLAB_PROGRAM
+      ? { ...m, program: RAYDIUM_LAUNCHLAB_DEVNET_PROGRAM }
+      : m,
+  );
+}
 
 /** SPL Token / Token-2022: `InitializeMint` and `InitializeMint2`, mint is account 0. */
 export const TOKEN_PROGRAMS: ReadonlySet<string> = new Set([TOKEN_PROGRAM, TOKEN_2022_PROGRAM]);

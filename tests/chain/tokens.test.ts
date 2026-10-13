@@ -264,10 +264,10 @@ describe('fetchTokenBalances', () => {
     ['a token account instead of a mint', F.spl.ata, {}],
     ['an account that does not exist', F.missing.ata, {}],
     ['an invalid address', 'not-a-mint', {}],
-  ])('%s → NOT_A_TOKEN_MINT (Polish message), no ATA reads', async (_label, mint, overrides) => {
+  ])('%s → NOT_A_TOKEN_MINT (English message), no ATA reads', async (_label, mint, overrides) => {
     const { rpc, calls } = fixtureTransport(overrides);
     expect(await codeOf(fetchTokenBalances(rpc, mint, [F.spl.owner]))).toBe('NOT_A_TOKEN_MINT');
     expect(calls.length).toBeLessThanOrEqual(1);
-    expect(ERROR_MESSAGES.NOT_A_TOKEN_MINT).toContain('nie jest mintem tokenu');
+    expect(ERROR_MESSAGES.NOT_A_TOKEN_MINT).toContain('is not a token mint');
   });
 });

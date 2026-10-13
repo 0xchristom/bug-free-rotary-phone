@@ -14,6 +14,7 @@ import {
   type WalletEvent,
 } from '../../src/executor/index.ts';
 import { parseExecution } from '../../src/jupiter/client.ts';
+import type { LoggedEvent } from '../../src/executor/oplog.ts';
 import type { WatchEvent } from '../../src/watcher/watch.ts';
 import { T0 } from '../helpers/fake-clock.ts';
 
@@ -64,12 +65,12 @@ describe('log entries', () => {
       signature:
         'k3sza8ZDSPaKeAfH7HTMJv7rMzL2dgDy5D8bWRxo5t7T27eoUqwSVjLdZvBshTFrbdo7tERD99hY7cnW1WzXf8aX',
       // 0.01 SOL for 0.002101 tokens
-      price: '4,759638267491',
+      price: '4.759638267491',
       orderMs: 180,
     });
   });
 
-  it('reasons carry their code, detail and Polish message', () => {
+  it('reasons carry their code, detail and English message', () => {
     const skipped: WalletEvent = {
       ...confirmed(),
       state: 'SKIPPED',
@@ -78,7 +79,7 @@ describe('log entries', () => {
     };
     expect(logEntry(skipped, context)).toMatchObject({
       reason: 'PRICE_CEILING',
-      message: 'Cena powyżej sufitu względem pierwszego zakupu floty.',
+      message: "The price is above the ceiling relative to the fleet's first buy.",
       spent: null,
       price: null,
     });
@@ -117,16 +118,69 @@ describe('log entries', () => {
       state: 'MISMATCH',
       expected: 2_101n,
       observed: 2_000n,
-      message: 'Ostrzeżenie: saldo tokenu wzrosło o inną ilość, niż podał Jupiter.',
+      message: 'Warning: the token balance grew by a different amount than Jupiter reported.',
     });
   });
 });
 
+describe('network (BUNNDLY-44)', () => {
+  it('every entry carries the network of its event, also in CSV and JSON', () => {
+    const devnet = { ...context, network: 'devnet' as const };
+    const run: LoggedEvent = {
+      kind: 'run',
+      runId: 1,
+      at: T0,
+      phase: 'started',
+      mint: 'So11111111111111111111111111111111111111112',
+      dryRun: true,
+      wallets: 1,
+      counts: {
+        IDLE: 0,
+        QUEUED: 1,
+        QUOTING: 0,
+        SIGNING: 0,
+        SUBMITTED: 0,
+        CONFIRMED: 0,
+        FAILED: 0,
+        UNKNOWN: 0,
+        SKIPPED: 0,
+      },
+    };
+    const watch: LoggedEvent = {
+      kind: 'watch',
+      at: T0,
+      type: 'armed',
+      creator: 'Creator1',
+      mode: 'one-shot',
+    };
+    const entries = [run, watch, confirmed()].map((e) => logEntry(e, devnet));
+    expect(entries.map((e) => e.network)).toEqual(['devnet', 'devnet', 'devnet']);
+
+    expect(LOG_COLUMNS.at(-1)).toBe('network');
+    const rows = toCsv(entries).split('\r\n');
+    expect(rows[0]?.endsWith(',network')).toBe(true);
+    expect(rows.slice(1, 4).every((r) => r.endsWith(',devnet'))).toBe(true);
+    const parsed = JSON.parse(toJson(entries)) as Record<string, unknown>[];
+    expect(parsed.map((e) => e.network)).toEqual(['devnet', 'devnet', 'devnet']);
+  });
+
+  it('an entry recorded without a network, or with an unknown one, reads as mainnet', () => {
+    expect(logEntry(confirmed(), context).network).toBe('mainnet');
+    const odd = { ...context, network: 'testnet' } as unknown as typeof context;
+    expect(logEntry(confirmed(), odd).network).toBe('mainnet');
+    expect(
+      toCsv([logEntry(confirmed(), context)])
+        .split('\r\n')[1]
+        ?.endsWith(',mainnet'),
+    ).toBe(true);
+  });
+});
+
 describe('effective price', () => {
-  it('SOL per whole token, rounded down, decimal comma, no trailing zeros', () => {
+  it('SOL per whole token, rounded down, decimal point, no trailing zeros', () => {
     expect(formatPrice(1_000_000_000n, 1_000_000n, 6)).toBe('1');
-    expect(formatPrice(10_000_000n, 1_180_000n, 6)).toBe('0,008474576271');
-    expect(formatPrice(5n, 3n, 0)).toBe('0,000000001666');
+    expect(formatPrice(10_000_000n, 1_180_000n, 6)).toBe('0.008474576271');
+    expect(formatPrice(5n, 3n, 0)).toBe('0.000000001666');
     expect(formatPrice(1n, 0n, 6)).toBeNull();
     // u64 amounts do not overflow
     expect(formatPrice(2n ** 64n - 1n, 2n ** 64n - 1n, 9)).toBe('1');
@@ -161,7 +215,7 @@ describe('CSV', () => {
     expect(end).toBe('');
     expect(row).toContain(",'=1+1,");
     expect(row).toContain(',18446744073709551615,');
-    expect(row?.split(',')).toHaveLength(LOG_COLUMNS.length + 1); // the price has a comma
+    expect(row?.split(',')).toHaveLength(LOG_COLUMNS.length);
   });
 });
 
@@ -228,9 +282,9 @@ describe('mode B entries (BUNNDLY-34)', () => {
       reason: null,
     });
     expect(entries[2]?.detail).toBe('mismatch');
-    expect(entries[2]?.message).toMatch(/nie tworzy mintu/u);
+    expect(entries[2]?.message).toMatch(/does not create the mint/u);
     expect(entries[3]).toMatchObject({ reason: 'DISARMED', reactionMs: null });
-    expect(entries[3]?.message).toMatch(/Rozbrojono/u);
+    expect(entries[3]?.message).toMatch(/was disarmed/u);
     const csv = toCsv(entries).split('\r\n');
     expect(csv[0]).toBe(LOG_COLUMNS.join(','));
     expect(csv[2]).toContain(',4'); // reactionMs is the last column

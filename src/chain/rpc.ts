@@ -1,6 +1,6 @@
 /**
  * RPC transport for reads (SPEC 2.2): Helius first, with backoff on 429 / 5xx / network
- * errors, then the public mainnet RPC as a read-only fallback (DECISIONS D-020).
+ * errors, then the network's public RPC as a read-only fallback (DECISIONS D-020).
  *
  * The Helius URL contains the API key, so no error leaving this module carries the URL,
  * the request or the original error: callers get AppError('RPC_UNAVAILABLE') only.
@@ -13,9 +13,6 @@ import {
   type RpcTransport,
 } from '@solana/kit';
 import { AppError } from '../core/errors.ts';
-
-/** Public mainnet RPC, used only for reads and only after Helius failed. */
-export const PUBLIC_RPC_URL = 'https://api.mainnet.solana.com';
 
 export type RpcSource = 'helius' | 'fallback';
 
@@ -97,6 +94,6 @@ export function redactUrl(url: string): string {
     const u = new URL(url);
     return `${u.protocol}//${u.host}${u.pathname}${u.search ? '?…' : ''}`;
   } catch {
-    return '[nieprawidłowy URL]';
+    return '[invalid URL]';
   }
 }

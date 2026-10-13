@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 /**
- * Mode B in the UI (BUNNDLY-35, D-039): creator address, arming conditions, UZBRÓJ /
- * ROZBRÓJ, live mode only after a confirmation, connection states, the alarm (mock
+ * Mode B in the UI (BUNNDLY-35, D-039): creator address, arming conditions, ARM /
+ * DISARM, live mode only after a confirmation, connection states, the alarm (mock
  * AudioContext), Wake Lock (mock navigator.wakeLock), detections and the progress from
  * a detection. Events and status from a mock worker.
  */
@@ -127,6 +127,7 @@ function setup(o: Setup = {}) {
   let watch: WatchStatus | null = null;
   const status = (): VaultStatus => ({
     locked: false,
+    network: 'mainnet',
     armed: watch?.armed ?? false,
     info,
     buy: null,
@@ -143,6 +144,7 @@ function setup(o: Setup = {}) {
       case 'refreshBalances':
         return Promise.resolve({
           balances: info.wallets.map((w) => ({ index: w.index, lamports: 1_000_000_000n })),
+          network: 'mainnet',
           source: 'helius',
           fetchedAt: '2026-10-03T12:00:00.000Z',
         });
@@ -206,34 +208,34 @@ function setup(o: Setup = {}) {
 }
 
 async function openTabB(user: ReturnType<typeof userEvent.setup>): Promise<void> {
-  await screen.findByText(/^Salda z /u);
-  await user.click(screen.getByRole('button', { name: 'Tryb B: obserwacja twórcy' }));
+  await screen.findByText(/^Balances as of /u);
+  await user.click(screen.getByRole('button', { name: 'Mode B: watch a creator' }));
 }
 
-const armButton = () => screen.getByRole('button', { name: 'UZBRÓJ' });
+const armButton = () => screen.getByRole('button', { name: 'ARM' });
 
 async function arm(user: ReturnType<typeof userEvent.setup>): Promise<void> {
   await openTabB(user);
-  await user.type(screen.getByLabelText('Adres twórcy'), CREATOR);
+  await user.type(screen.getByLabelText('Creator address'), CREATOR);
   await user.click(armButton());
-  await screen.findByRole('button', { name: 'ROZBRÓJ' });
+  await screen.findByRole('button', { name: 'DISARM' });
 }
 
 describe('creator address and arming conditions', () => {
   it('validates the address and warns about a fleet address', async () => {
     const { user } = setup();
     await openTabB(user);
-    const input = screen.getByLabelText('Adres twórcy');
+    const input = screen.getByLabelText('Creator address');
     await user.type(input, 'not-an-address');
-    expect(screen.getByRole('alert').textContent).toMatch(/prawidłowy adres portfela/u);
+    expect(screen.getByRole('alert').textContent).toMatch(/not a valid wallet address/u);
     expect(armButton()).toHaveProperty('disabled', true);
-    expect(screen.getByText('Podaj poprawny adres twórcy.')).toBeTruthy();
+    expect(screen.getByText('Enter a valid creator address.')).toBeTruthy();
     await user.clear(input);
     await user.type(input, 'So11111111111111111111111111111111111111112');
     expect(input.getAttribute('aria-invalid')).toBe('true');
     await user.clear(input);
     await user.type(input, FLEET_ADDRESS);
-    expect(screen.getByText(/To adres portfela z tej floty/u)).toBeTruthy();
+    expect(screen.getByText(/This is a wallet from this fleet/u)).toBeTruthy();
     await user.clear(input);
     await user.type(input, CREATOR);
     expect(input.getAttribute('aria-invalid')).toBe('false');
@@ -243,53 +245,55 @@ describe('creator address and arming conditions', () => {
   it('without a Helius key or a ready wallet the button says what is missing', async () => {
     const a = setup({ helius: false });
     await openTabB(a.user);
-    await a.user.type(screen.getByLabelText('Adres twórcy'), CREATOR);
+    await a.user.type(screen.getByLabelText('Creator address'), CREATOR);
     expect(armButton()).toHaveProperty('disabled', true);
-    expect(screen.getByText('Obserwacja wymaga klucza Helius (Ustawienia).')).toBeTruthy();
+    expect(screen.getByText('The watcher needs a Helius key (Settings).')).toBeTruthy();
     cleanup();
     const b = setup({ maxSpend: false });
     await openTabB(b.user);
-    await b.user.type(screen.getByLabelText('Adres twórcy'), CREATOR);
+    await b.user.type(screen.getByLabelText('Creator address'), CREATOR);
     expect(armButton()).toHaveProperty('disabled', true);
-    expect(screen.getByText(/Brak gotowych portfeli/u)).toBeTruthy();
+    expect(screen.getByText(/No ready wallets/u)).toBeTruthy();
   });
 });
 
-describe('UZBRÓJ / ROZBRÓJ', () => {
-  it('DRY-RUN: UZBRÓJ sends arm at once, ROZBRÓJ sends disarm', async () => {
+describe('ARM / DISARM', () => {
+  it('DRY-RUN: ARM sends arm at once, DISARM sends disarm', async () => {
     const { user, requests } = setup();
     await arm(user);
     expect(requests.filter((r) => r.type === 'arm')).toEqual([{ type: 'arm', creator: CREATOR }]);
-    expect(screen.getByText(/Watcher jest uzbrojony. Nie zamykaj/u)).toBeTruthy();
-    await user.click(screen.getByRole('button', { name: 'ROZBRÓJ' }));
+    expect(screen.getByText(/The watcher is armed. Do not close/u)).toBeTruthy();
+    await user.click(screen.getByRole('button', { name: 'DISARM' }));
     expect(requests.some((r) => r.type === 'disarm')).toBe(true);
-    await screen.findByRole('button', { name: 'UZBRÓJ' });
+    await screen.findByRole('button', { name: 'ARM' });
   });
 
-  it('live mode: only after the confirmation; "Anuluj" sends nothing', async () => {
+  it('live mode: only after the confirmation; "Cancel" sends nothing', async () => {
     const { user, requests } = setup({ global: { dryRun: false } });
     await openTabB(user);
-    await user.type(screen.getByLabelText('Adres twórcy'), CREATOR);
+    await user.type(screen.getByLabelText('Creator address'), CREATOR);
     await user.click(armButton());
     const dialog = screen.getByRole('alertdialog');
-    expect(dialog.textContent).toMatch(/flota kupi automatycznie: do 0,03 SOL z 3 portfeli/u);
+    expect(dialog.textContent).toMatch(
+      /the fleet buys automatically: up to 0\.03 SOL\s+from 3 wallets/u,
+    );
     expect(requests.some((r) => r.type === 'arm')).toBe(false);
-    await user.click(within(dialog).getByRole('button', { name: 'Anuluj' }));
+    await user.click(within(dialog).getByRole('button', { name: 'Cancel' }));
     expect(screen.queryByRole('alertdialog')).toBeNull();
     expect(requests.some((r) => r.type === 'arm')).toBe(false);
     await user.click(armButton());
-    await user.click(screen.getByRole('button', { name: 'Tak, uzbrój' }));
-    await screen.findByRole('button', { name: 'ROZBRÓJ' });
+    await user.click(screen.getByRole('button', { name: 'Yes, arm' }));
+    await screen.findByRole('button', { name: 'DISARM' });
     expect(requests.filter((r) => r.type === 'arm')).toHaveLength(1);
   });
 
   it('continuous mode needs a confirmation and is saved as a setting', async () => {
     const { user, requests } = setup();
     await openTabB(user);
-    await user.click(screen.getByRole('radio', { name: 'ciągły' }));
-    expect(screen.getByRole('alertdialog').textContent).toMatch(/Włączyć tryb ciągły/u);
+    await user.click(screen.getByRole('radio', { name: 'continuous' }));
+    expect(screen.getByRole('alertdialog').textContent).toMatch(/Turn on continuous mode/u);
     expect(requests.some((r) => r.type === 'saveSettings')).toBe(false);
-    await user.click(screen.getByRole('button', { name: 'Tak, tryb ciągły' }));
+    await user.click(screen.getByRole('button', { name: 'Yes, continuous mode' }));
     await waitFor(() => {
       expect(requests.find((r) => r.type === 'saveSettings')).toMatchObject({
         settings: { global: { mode: 'continuous' } },
@@ -299,31 +303,33 @@ describe('UZBRÓJ / ROZBRÓJ', () => {
 });
 
 describe('an armed watcher freezes the settings', () => {
-  it('no mode switch, no table, wallet or settings save until ROZBRÓJ', async () => {
+  it('no mode switch, no table, wallet or settings save until DISARM', async () => {
     const { user } = setup();
     await arm(user);
-    expect(screen.queryByRole('button', { name: 'Przełącz na tryb na żywo…' })).toBeNull();
-    expect(screen.getAllByText(/Rozbrój watcher, żeby zmienić tryb lub ustawienia/u).length).toBe(
+    expect(screen.queryByRole('button', { name: 'Switch to live mode…' })).toBeNull();
+    expect(
+      screen.getAllByText(/Disarm the watcher to change the mode or the settings/u).length,
+    ).toBe(
       3, // mode, table, wallets
     );
-    expect(screen.getByRole('button', { name: 'Zapisz zmiany w tabeli' })).toHaveProperty(
+    expect(screen.getByRole('button', { name: 'Save table changes' })).toHaveProperty(
       'disabled',
       true,
     );
-    expect(screen.getByRole('button', { name: 'Dodaj portfele' })).toHaveProperty('disabled', true);
+    expect(screen.getByRole('button', { name: 'Add wallets' })).toHaveProperty('disabled', true);
     await user.click(
-      within(screen.getByRole('navigation')).getByRole('button', { name: 'Ustawienia' }),
+      within(screen.getByRole('navigation')).getByRole('button', { name: 'Settings' }),
     );
-    expect(await screen.findByRole('button', { name: 'Zapisz ustawienia' })).toHaveProperty(
+    expect(await screen.findByRole('button', { name: 'Save settings' })).toHaveProperty(
       'disabled',
       true,
     );
-    expect(screen.getByText(/Rozbrój watcher, żeby zmienić/u)).toBeTruthy();
-    await user.click(within(screen.getByRole('navigation')).getByRole('button', { name: 'Flota' }));
-    await user.click(screen.getByRole('button', { name: 'Tryb B: obserwacja twórcy' }));
-    await user.click(screen.getByRole('button', { name: 'ROZBRÓJ' }));
-    expect(await screen.findByRole('button', { name: 'Przełącz na tryb na żywo…' })).toBeTruthy();
-    expect(screen.queryByText(/Rozbrój watcher, żeby zmienić/u)).toBeNull();
+    expect(screen.getByText(/Disarm the watcher to change/u)).toBeTruthy();
+    await user.click(within(screen.getByRole('navigation')).getByRole('button', { name: 'Fleet' }));
+    await user.click(screen.getByRole('button', { name: 'Mode B: watch a creator' }));
+    await user.click(screen.getByRole('button', { name: 'DISARM' }));
+    expect(await screen.findByRole('button', { name: 'Switch to live mode…' })).toBeTruthy();
+    expect(screen.queryByText(/Disarm the watcher to change/u)).toBeNull();
   });
 });
 
@@ -331,43 +337,43 @@ describe('connection, alarm and Wake Lock', () => {
   it('connection states as text; losing it while armed: banner and tone until it is back', async () => {
     const { user, update, audio } = setup();
     await arm(user);
-    expect(audio.created()).toBe(1); // made by the click on UZBRÓJ
-    expect(await screen.findByText('Łączenie…')).toBeTruthy();
+    expect(audio.created()).toBe(1); // made by the click on ARM
+    expect(await screen.findByText('Connecting…')).toBeTruthy();
     update({ connection: 'connected', lastMessageAt: Date.now() });
-    expect(await screen.findByText('Połączono')).toBeTruthy();
-    expect(screen.getByText(/ostatnia wiadomość \d+ s temu/u)).toBeTruthy();
+    expect(await screen.findByText('Connected')).toBeTruthy();
+    expect(screen.getByText(/last message \d+ s ago/u)).toBeTruthy();
     expect(audio.tones).toHaveLength(0);
 
     update({ connection: 'reconnecting', attempt: 2 });
-    const banner = await screen.findByText(/Utracono połączenie z Helius/u);
+    const banner = await screen.findByText(/The connection to Helius was lost/u);
     expect(banner.closest('[role="alert"]')).toBeTruthy();
-    expect(screen.getAllByText(/Ponowne łączenie \(próba 2\)/u).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Reconnecting \(attempt 2\)/u).length).toBeGreaterThan(0);
     await waitFor(() => {
       expect(audio.tones.length).toBeGreaterThanOrEqual(1);
     });
 
     update({ connection: 'connected' });
     await waitFor(() => {
-      expect(screen.queryByText(/Utracono połączenie/u)).toBeNull();
+      expect(screen.queryByText(/The connection to Helius was lost/u)).toBeNull();
     });
     const after = audio.tones.length;
     await new Promise((r) => setTimeout(r, 50));
     expect(audio.tones).toHaveLength(after);
   });
 
-  it('the tone repeats until "Wycisz"; the banner stays', async () => {
+  it('the tone repeats until "Mute"; the banner stays', async () => {
     const { user, update, audio } = setup({ alarmRepeatMs: 20 });
     await arm(user);
     update({ connection: 'disconnected' });
-    await screen.findByText(/Utracono połączenie z Helius/u);
+    await screen.findByText(/The connection to Helius was lost/u);
     await waitFor(() => {
       expect(audio.tones.length).toBeGreaterThanOrEqual(3);
     });
-    await user.click(screen.getByRole('button', { name: 'Wycisz' }));
+    await user.click(screen.getByRole('button', { name: 'Mute' }));
     const muted = audio.tones.length;
     await new Promise((r) => setTimeout(r, 150));
     expect(audio.tones).toHaveLength(muted);
-    expect(screen.getByText(/Utracono połączenie z Helius/u)).toBeTruthy();
+    expect(screen.getByText(/The connection to Helius was lost/u)).toBeTruthy();
   });
 
   it('the default repeat is every 3 s', () => {
@@ -391,7 +397,7 @@ describe('connection, alarm and Wake Lock', () => {
     await waitFor(() => {
       expect(wake.request).toHaveBeenCalledTimes(2);
     });
-    await user.click(screen.getByRole('button', { name: 'ROZBRÓJ' }));
+    await user.click(screen.getByRole('button', { name: 'DISARM' }));
     await waitFor(() => {
       expect(wake.releases).toHaveBeenCalledWith(1);
     });
@@ -400,14 +406,14 @@ describe('connection, alarm and Wake Lock', () => {
   it('no Wake Lock API: a note in the panel, no error', async () => {
     const { user } = setup({ browser: { wakeLock: null } });
     await arm(user);
-    expect(await screen.findByText(/Ekran może zgasnąć/u)).toBeTruthy();
+    expect(await screen.findByText(/The screen may turn off/u)).toBeTruthy();
     expect(screen.queryByRole('alert')).toBeNull();
   });
 
   it('Wake Lock refused: the same note', async () => {
     const { user } = setup({ browser: { wakeLock: mockWakeLock(true).api } });
     await arm(user);
-    expect(await screen.findByText(/Ekran może zgasnąć/u)).toBeTruthy();
+    expect(await screen.findByText(/The screen may turn off/u)).toBeTruthy();
   });
 });
 
@@ -439,21 +445,21 @@ describe('detections and progress', () => {
       ],
       queued: ['Cv3DkGpXCiMeacQSWrshtrZjWkzVKpPUxfYz5RMQpump'],
     });
-    const table = await screen.findByRole('table', { name: 'Wykrycia' });
+    const table = await screen.findByRole('table', { name: 'Detections' });
     const rows = within(table).getAllByRole('row').slice(1);
     expect(rows.map((r) => r.textContent)).toEqual([
-      expect.stringMatching(/HEhu…pump.*pump\.fun.*log.*4 ms.*zweryfikowane.*zakup #1/u),
-      expect.stringMatching(/Cv3D…pump.*LaunchLab.*transakcja.*–.*w kolejce/u),
-      expect.stringMatching(/5vxZ…pump.*InitializeMint.*nadrabianie.*sprzed uzbrojenia/u),
+      expect.stringMatching(/HEhu…pump.*pump\.fun.*log.*4 ms.*verified.*buy #1/u),
+      expect.stringMatching(/Cv3D…pump.*LaunchLab.*transaction.*–.*queued/u),
+      expect.stringMatching(/5vxZ…pump.*InitializeMint.*catch-up.*from before arming/u),
     ]);
-    expect(within(table).getByRole('button', { name: `Kopiuj mint ${MINT}` })).toBeTruthy();
+    expect(within(table).getByRole('button', { name: `Copy mint ${MINT}` })).toBeTruthy();
   });
 
   it('a buy started by a detection: the shared progress view counts from the detection', async () => {
     const { user, update, vault } = setup();
     await arm(user);
     update({ connection: 'connected', detections: [detection()] });
-    await screen.findByRole('table', { name: 'Wykrycia' });
+    await screen.findByRole('table', { name: 'Detections' });
     const started: RunEvent = {
       kind: 'run',
       runId: 1,
@@ -477,7 +483,7 @@ describe('detections and progress', () => {
     act(() => {
       vault.emit(started);
     });
-    expect(await screen.findByText(/0\/3 potwierdzonych/u)).toBeTruthy();
-    expect(screen.getByText(/Od wykrycia do pierwszego potwierdzenia/u)).toBeTruthy();
+    expect(await screen.findByText(/0\/3 confirmed/u)).toBeTruthy();
+    expect(screen.getByText(/From detection to the first confirmation/u)).toBeTruthy();
   });
 });

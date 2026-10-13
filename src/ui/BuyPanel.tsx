@@ -1,5 +1,6 @@
 import { useEffect, useId, useState, type ReactNode } from 'react';
 import { toUserMessage } from '../core/errors.ts';
+import { DEFAULT_NETWORK, NETWORK_LABELS } from '../core/network.ts';
 import type { BuyMode, JupiterPlan } from '../core/settings.ts';
 import type { ApiKeyFlags } from '../worker/protocol.ts';
 import { PLAN_LABELS } from './plan-labels.ts';
@@ -33,12 +34,12 @@ export interface BuyPanelProps {
 }
 
 function seconds(ms: number | null): string {
-  return ms === null ? '–' : `${(ms / 1000).toFixed(1).replace('.', ',')} s`;
+  return ms === null ? '–' : `${(ms / 1000).toFixed(1)} s`;
 }
 
 /**
- * Buy panel (SPEC 3.4, 3.6): mode A (BUNNDLY-27: mint, "Kupuj teraz") and mode B
- * (BUNNDLY-35: creator watch, UZBRÓJ / ROZBRÓJ) share the DRY-RUN / live label, switching
+ * Buy panel (SPEC 3.4, 3.6): mode A (BUNNDLY-27: mint, "Buy now") and mode B
+ * (BUNNDLY-35: creator watch, ARM / DISARM) share the DRY-RUN / live label, switching
  * to live only through a confirmation with the amount and wallet count, STOP and the
  * progress bar.
  */
@@ -131,19 +132,19 @@ export function BuyPanel({
   return (
     <section className="buy-panel" aria-labelledby={`${ids}-title`}>
       <div className="buy-head">
-        <h3 id={`${ids}-title`}>Zakup</h3>
+        <h3 id={`${ids}-title`}>Buy</h3>
         <span
           className={`mode-label ${dryRun ? 'dry' : 'live'}`}
-          aria-label={dryRun ? 'Tryb: DRY-RUN' : 'Tryb: na żywo'}
+          aria-label={dryRun ? 'Mode: DRY-RUN' : 'Mode: live'}
         >
-          {dryRun ? 'DRY-RUN' : 'NA ŻYWO'}
+          {dryRun ? 'DRY-RUN' : 'LIVE'}
         </span>
       </div>
-      <div className="mode-tabs" role="group" aria-label="Sposób zakupu">
+      <div className="mode-tabs" role="group" aria-label="Buy mode">
         {(
           [
-            ['A', 'Tryb A: mint'],
-            ['B', 'Tryb B: obserwacja twórcy'],
+            ['A', 'Mode A: mint'],
+            ['B', 'Mode B: watch a creator'],
           ] as const
         ).map(([t, label]) => (
           <button
@@ -160,8 +161,8 @@ export function BuyPanel({
       </div>
       <p className="muted">
         {dryRun
-          ? 'DRY-RUN: prawdziwe zapytania o cenę i podpisy, ale żadna transakcja nie zostanie wysłana.'
-          : 'Tryb na żywo: zakup wysyła prawdziwe transakcje i wydaje SOL z portfeli.'}
+          ? 'DRY-RUN: real price requests and signatures, but no transaction will be sent.'
+          : 'Live mode: a buy sends real transactions and spends SOL from the wallets.'}
       </p>
 
       {watchArmed && !running && <p className="muted">{WATCH_FROZEN}</p>}
@@ -176,12 +177,12 @@ export function BuyPanel({
               aria-describedby={`${ids}-live-text`}
             >
               <p id={`${ids}-live-title`}>
-                <strong>Przełączyć na tryb na żywo?</strong>
+                <strong>Switch to live mode?</strong>
               </p>
               <p id={`${ids}-live-text`}>
-                Następny zakup wyda prawdziwe SOL: do {formatSol(toSpend)} SOL z {readyCount}{' '}
-                {readyCount === 1 ? 'portfela' : 'portfeli'}. Transakcji na łańcuchu nie da się
-                cofnąć.
+                Network: {NETWORK_LABELS[status?.network ?? DEFAULT_NETWORK]}. The next buy will
+                spend real SOL: up to {formatSol(toSpend)} SOL from {readyCount}{' '}
+                {readyCount === 1 ? 'wallet' : 'wallets'}. On-chain transactions cannot be undone.
               </p>
               <div className="actions">
                 <button
@@ -191,7 +192,7 @@ export function BuyPanel({
                     setMode(false);
                   }}
                 >
-                  Tak, przełącz na tryb na żywo
+                  Yes, switch to live mode
                 </button>
                 <button
                   type="button"
@@ -199,7 +200,7 @@ export function BuyPanel({
                     setConfirmLive(false);
                   }}
                 >
-                  Anuluj
+                  Cancel
                 </button>
               </div>
             </div>
@@ -212,7 +213,7 @@ export function BuyPanel({
                   setConfirmLive(true);
                 }}
               >
-                Przełącz na tryb na żywo…
+                Switch to live mode…
               </button>
             </div>
           )
@@ -225,18 +226,18 @@ export function BuyPanel({
                 setMode(true);
               }}
             >
-              Wróć do DRY-RUN
+              Back to DRY-RUN
             </button>
           </div>
         ))}
 
-      <dl className="summary" aria-label="Przed zakupem">
+      <dl className="summary" aria-label="Before the buy">
         {tab === 'A' && (
           <div>
             <dt>Token</dt>
             <dd>
               {mint === null ? (
-                'podaj mint i kliknij „Pokaż saldo tokenu”'
+                'enter the mint and click “Show token balance”'
               ) : (
                 <code className="address">{mint}</code>
               )}
@@ -244,21 +245,21 @@ export function BuyPanel({
           </div>
         )}
         <div>
-          <dt>Gotowe portfele</dt>
+          <dt>Ready wallets</dt>
           <dd>{readyCount}</dd>
         </div>
         <div>
-          <dt>Łącznie do wydania</dt>
+          <dt>Total to spend</dt>
           <dd>{formatSol(toSpend)} SOL</dd>
         </div>
         <div>
-          <dt>Tryb</dt>
-          <dd>{dryRun ? 'DRY-RUN' : 'na żywo'}</dd>
+          <dt>Mode</dt>
+          <dd>{dryRun ? 'DRY-RUN' : 'live'}</dd>
         </div>
         <div>
-          <dt>Limity Jupitera</dt>
+          <dt>Jupiter limits</dt>
           <dd>
-            {PLAN_LABELS[plan.plan]}, {plan.orderRpm} /order na minutę
+            {PLAN_LABELS[plan.plan]}, {plan.orderRpm} /order per minute
           </dd>
         </div>
       </dl>
@@ -285,14 +286,14 @@ export function BuyPanel({
             disabled={stopping || busy !== null}
             onClick={stop}
           >
-            {stopping ? 'Zatrzymywanie…' : 'STOP'}
+            {stopping ? 'Stopping…' : 'STOP'}
           </button>
         </div>
       ) : (
         tab === 'A' && (
           <div className="actions">
             <button type="button" className="primary buy" disabled={!canStart} onClick={start}>
-              {busy === 'start' ? 'Start…' : 'Kupuj teraz'}
+              {busy === 'start' ? 'Starting…' : 'Buy now'}
             </button>
             {blocked && <span className="muted">{blocked}</span>}
           </div>
@@ -300,8 +301,8 @@ export function BuyPanel({
       )}
       {running && (
         <p className="notice warning" role="status">
-          Zakup trwa. Nie zamykaj ani nie przeładowuj tej karty, dopóki się nie skończy: klucze i
-          zakup działają tylko w niej.
+          A buy is running. Do not close or reload this tab until it ends: the keys and the buy live
+          only in it.
         </p>
       )}
       {error && (
@@ -312,20 +313,20 @@ export function BuyPanel({
 
       {run && (
         <div className="progress-bar" role="status" aria-live="polite">
-          <progress max={run.wallets} value={counts.confirmed} aria-label="Potwierdzone zakupy" />
+          <progress max={run.wallets} value={counts.confirmed} aria-label="Confirmed buys" />
           <p>
             <strong>
-              {counts.confirmed}/{run.wallets} potwierdzonych
+              {counts.confirmed}/{run.wallets} confirmed
             </strong>
             {' · '}
-            {counts.inProgress} w trakcie{' · '}
-            {counts.failedOrSkipped} nieudanych albo pominiętych
+            {counts.inProgress} in progress{' · '}
+            {counts.failedOrSkipped} failed or skipped
             {run.dryRun && ' · DRY-RUN'}
-            {run.phase === 'finished' && ' · zakończony'}
+            {run.phase === 'finished' && ' · finished'}
           </p>
           <p className="muted">
-            {fromDetection ? 'Od wykrycia' : 'Od startu'} do pierwszego potwierdzenia:{' '}
-            {seconds(run.firstConfirmMs)}, do ostatniego: {seconds(run.lastConfirmMs)}
+            {fromDetection ? 'From detection' : 'From start'} to the first confirmation:{' '}
+            {seconds(run.firstConfirmMs)}, to the last: {seconds(run.lastConfirmMs)}
           </p>
         </div>
       )}

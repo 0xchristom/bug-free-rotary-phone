@@ -8,7 +8,7 @@ export interface ExportDialogProps {
   readonly onClose: () => void;
 }
 
-const CONFIRM_LABEL = 'Rozumiem, że ten plik daje pełny dostęp do środków';
+const CONFIRM_LABEL = 'I understand that this file gives full access to the funds';
 
 /**
  * Plain export of the mnemonic and private keys (SPEC 3.1, D-023): only after the warning
@@ -47,20 +47,20 @@ export function ExportDialog({ storage, onClose }: ExportDialogProps) {
 
   return (
     <section className="dialog notice error" role="dialog" aria-labelledby={`${ids}-title`}>
-      <h3 id={`${ids}-title`}>Eksport jawny: mnemonik i klucze prywatne</h3>
+      <h3 id={`${ids}-title`}>Plain export: recovery phrase and private keys</h3>
       <p>
-        Plik będzie zawierał mnemonik i klucze prywatne wszystkich portfeli w czystym tekście.
-        Każdy, kto go zobaczy, może zabrać wszystkie środki z floty. Zapisz go offline (np. na
-        pendrive w sejfie), nie wysyłaj nikomu i nie trzymaj w chmurze.
+        The file will contain the recovery phrase and the private keys of all wallets in plain text.
+        Anyone who sees it can take all funds from the fleet. Keep it offline (e.g. on a USB drive
+        in a safe), never send it to anyone and do not keep it in the cloud.
       </p>
       {doneFile ? (
         <>
           <p role="status">
-            Pobrano plik {doneFile}. Sprawdź folder „Pobrane” i przenieś go w bezpieczne miejsce.
+            Downloaded {doneFile}. Check the “Downloads” folder and move it to a safe place.
           </p>
           <div className="actions">
             <button type="button" onClick={onClose}>
-              Zamknij
+              Close
             </button>
           </div>
         </>
@@ -76,7 +76,7 @@ export function ExportDialog({ storage, onClose }: ExportDialogProps) {
             />
             {CONFIRM_LABEL}
           </label>
-          <label htmlFor={`${ids}-pw`}>Hasło floty (wpisz ponownie)</label>
+          <label htmlFor={`${ids}-pw`}>Fleet password (type it again)</label>
           <input
             id={`${ids}-pw`}
             type="password"
@@ -99,11 +99,11 @@ export function ExportDialog({ storage, onClose }: ExportDialogProps) {
                     setFormat(f);
                   }}
                 />
-                {f === 'txt' ? 'Tekst (.txt)' : 'JSON (.json)'}
+                {f === 'txt' ? 'Text (.txt)' : 'JSON (.json)'}
               </label>
             ))}
           </div>
-          {busy && <p className="muted">Sprawdzam hasło…</p>}
+          {busy && <p className="muted">Checking the password…</p>}
           {error && (
             <p className="field-error" role="alert">
               {error}
@@ -115,10 +115,10 @@ export function ExportDialog({ storage, onClose }: ExportDialogProps) {
               className="danger"
               disabled={!confirmed || password === '' || busy}
             >
-              Pobierz eksport jawny
+              Download the plain export
             </button>
             <button type="button" onClick={onClose} disabled={busy}>
-              Anuluj
+              Cancel
             </button>
           </div>
         </form>

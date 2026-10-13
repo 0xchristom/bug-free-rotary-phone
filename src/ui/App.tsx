@@ -3,7 +3,10 @@ import { toUserMessage } from '../core/errors.ts';
 import { DEFAULT_AUTO_LOCK_MS, type VaultStatus } from '../worker/protocol.ts';
 import type { StorageEnv } from '../storage/keystore-file.ts';
 import type { VaultClient } from '../worker/vault-client.ts';
+import { DEFAULT_NETWORK } from '../core/network.ts';
 import { AppHeader } from './AppHeader.tsx';
+import { NetworkNotice, NetworkSwitch } from './NetworkSwitch.tsx';
+import { useNetworkSwitch } from './use-network-switch.ts';
 import { createOperationsLog } from './operations-log.ts';
 import { useBuyView } from './use-buy.ts';
 import { FleetScreen } from './screens/FleetScreen.tsx';
@@ -45,7 +48,7 @@ const DEFAULT_STATUS_POLL_MS = 5_000;
 const DEFAULT_ACTIVITY_THROTTLE_MS = 30_000;
 const ACTIVITY_EVENTS = ['pointerdown', 'keydown'] as const;
 const UNSAVED_CONFIRM =
-  'Plik floty nie został zapisany. Bez niego nie otworzysz floty w obecnym stanie. Kontynuować bez zapisu?';
+  'The fleet file is not saved. Without it you cannot open the fleet in its current state. Continue without saving?';
 
 /**
  * App shell: screen switching in React state (no router, nothing in the URL), the vault
@@ -82,6 +85,10 @@ export function App({
   useEffect(() => {
     if (wallets) operationsLog.setWallets(wallets);
   }, [operationsLog, wallets]);
+  const network = status?.network ?? DEFAULT_NETWORK;
+  useEffect(() => {
+    operationsLog.setNetwork(network);
+  }, [operationsLog, network]);
 
   const applyStatus = useCallback((next: VaultStatus, reason: 'auto' | 'user') => {
     setStatus(next);
@@ -91,8 +98,8 @@ export function App({
         setScreen((s) => (UNLOCKED_SCREENS.has(s) ? 'start' : s));
         setNotice(
           reason === 'user'
-            ? 'Flota została zablokowana.'
-            : 'Flota została zablokowana automatycznie. Otwórz plik floty ponownie, aby kontynuować.',
+            ? 'The fleet was locked.'
+            : 'The fleet was locked automatically. Open the fleet file again to continue.',
         );
       }
       wasUnlocked.current = false;
@@ -147,18 +154,36 @@ export function App({
     };
   }, [vault, activityThrottleMs]);
 
+  const switching = useNetworkSwitch(vault, status, unsavedFile, storage, refresh);
+  const networkUnsaved = switching.unsaved;
+  const dropNetworkFile = switching.drop;
+  // A screen with an unsaved fleet file holds a newer one, which has the network too.
+  const onScreenUnsaved = useCallback(
+    (unsaved: boolean) => {
+      setUnsavedFile(unsaved);
+      if (unsaved) dropNetworkFile();
+    },
+    [dropNetworkFile],
+  );
+
   const lock = useCallback(async () => {
     // The wizard survives a lock with its file; added wallets on the fleet screen do not.
-    if (unsavedFile && screen !== 'wizard' && !window.confirm(UNSAVED_CONFIRM)) return;
+    if (
+      ((unsavedFile && screen !== 'wizard') || networkUnsaved) &&
+      !window.confirm(UNSAVED_CONFIRM)
+    ) {
+      return;
+    }
     try {
       applyStatus(await vault.request({ type: 'lock' }), 'user');
+      dropNetworkFile();
       // Drop the unsaved-file guard together with the status, not one render later when
       // the screen unmounts. The wizard keeps its encrypted file, so it stays guarded.
       if (screen !== 'wizard') setUnsavedFile(false);
     } catch (e) {
       setNotice(toUserMessage(e));
     }
-  }, [vault, applyStatus, unsavedFile, screen]);
+  }, [vault, applyStatus, unsavedFile, screen, networkUnsaved, dropNetworkFile]);
 
   const navigate = useCallback(
     (next: Screen) => {
@@ -174,7 +199,7 @@ export function App({
 
   // Closing the tab with an unsaved fleet file asks the browser to confirm.
   useEffect(() => {
-    if (!unsavedFile) return;
+    if (!unsavedFile && !networkUnsaved) return;
     const onBeforeUnload = (event: BeforeUnloadEvent): void => {
       event.preventDefault();
     };
@@ -182,7 +207,7 @@ export function App({
     return () => {
       window.removeEventListener('beforeunload', onBeforeUnload);
     };
-  }, [unsavedFile]);
+  }, [unsavedFile, networkUnsaved]);
 
   const context = useMemo<VaultState>(
     () => ({ client: vault, status, refresh }),
@@ -206,6 +231,13 @@ export function App({
           <header className="app-header">
             <h1>Bunndly</h1>
             {status && (
+              <NetworkSwitch
+                network={network}
+                locked={status.locked || status.info === null}
+                onChoose={switching.choose}
+              />
+            )}
+            {status && (
               <AppHeader
                 status={status}
                 screen={visible}
@@ -219,13 +251,14 @@ export function App({
           </header>
           <main>
             {unlocked && <WatchGuard />}
+            {unlocked && <NetworkNotice switching={switching} storage={storage} />}
             {notice && (
               <p className="notice" role="alert">
                 {notice}
               </p>
             )}
             {status === null ? (
-              <p className="muted">Łączenie z sejfem…</p>
+              <p className="muted">Connecting to the vault…</p>
             ) : (
               <>
                 {visible === 'start' && (
@@ -247,7 +280,7 @@ export function App({
                     onDone={() => {
                       navigate('fleet');
                     }}
-                    onUnsavedChange={setUnsavedFile}
+                    onUnsavedChange={onScreenUnsaved}
                   />
                 )}
                 {visible === 'open' && (
@@ -265,7 +298,7 @@ export function App({
                   <FleetScreen
                     info={status.info}
                     storage={storage}
-                    onUnsavedChange={setUnsavedFile}
+                    onUnsavedChange={onScreenUnsaved}
                     operationsLog={operationsLog}
                     buyView={buyView}
                     mintDecimals={mintDecimals}
@@ -278,7 +311,7 @@ export function App({
                   <SettingsScreen
                     info={status.info}
                     storage={storage}
-                    onUnsavedChange={setUnsavedFile}
+                    onUnsavedChange={onScreenUnsaved}
                   />
                 )}
               </>

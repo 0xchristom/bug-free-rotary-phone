@@ -1,60 +1,59 @@
 /**
- * Typed application errors (SPEC 5) with user-facing messages in Polish.
+ * Typed application errors (SPEC 5) with user-facing messages in English.
  *
  * Project rule (docs/DECISIONS.md, D-008): an error's message and fields never contain
  * input data that may be secret (mnemonic, password, private keys, plaintext). The
  * message always comes from ERROR_MESSAGES, never from the caller.
  */
 
-/** Code → user-facing message (Polish). The keys define the ErrorCode union. */
+import { NO_BUY_ROUTE_MESSAGE } from './network.ts';
+
+/** Code → user-facing message (English). The keys define the ErrorCode union. */
 export const ERROR_MESSAGES = {
-  INVALID_MNEMONIC: 'Nieprawidłowa fraza odzyskiwania (mnemonik). Sprawdź słowa i ich kolejność.',
+  INVALID_MNEMONIC: 'Invalid recovery phrase. Check the words and their order.',
   INVALID_DERIVATION_INDEX:
-    'Nieprawidłowy zakres portfeli. Flota może mieć od 1 do 100 portfeli (indeksy od 0 do 99).',
+    'Invalid wallet range. A fleet can have 1 to 100 wallets (indexes 0 to 99).',
   INVALID_FLEET_NAME:
-    'Nieprawidłowa nazwa floty. Użyj od 1 do 64 znaków: liter, cyfr, spacji, kropki, myślnika lub podkreślenia.',
-  PASSWORD_TOO_SHORT: 'Hasło jest za krótkie. Użyj co najmniej 12 znaków.',
+    'Invalid fleet name. Use 1 to 64 characters: letters, digits, spaces, dots, hyphens or underscores.',
+  PASSWORD_TOO_SHORT: 'The password is too short. Use at least 12 characters.',
   KEYSTORE_WRONG_PASSWORD_OR_CORRUPTED:
-    'Nie udało się odszyfrować pliku. Hasło jest błędne albo plik jest uszkodzony.',
-  KEYSTORE_INVALID_FORMAT: 'To nie jest prawidłowy plik keystore Bunndly.',
-  KEYSTORE_UNSUPPORTED_VERSION:
-    'Ta wersja pliku keystore nie jest obsługiwana. Zaktualizuj aplikację.',
-  KEYSTORE_UNSUPPORTED_KDF: 'Plik keystore używa nieobsługiwanej metody zabezpieczenia hasła.',
+    'The file could not be decrypted. The password is wrong or the file is damaged.',
+  KEYSTORE_INVALID_FORMAT: 'This is not a valid Bunndly fleet file.',
+  KEYSTORE_UNSUPPORTED_VERSION: 'This fleet file version is not supported. Update the app.',
+  KEYSTORE_UNSUPPORTED_KDF: 'The fleet file uses an unsupported password protection method.',
   KEYSTORE_TAMPERED:
-    'Jawna część pliku keystore nie zgadza się z zaszyfrowaną. Plik mógł zostać zmodyfikowany.',
+    'The unencrypted part of the fleet file does not match the encrypted part. The file may have been modified.',
   INVALID_SETTINGS:
-    'Ustawienia są nieprawidłowe. Popraw zaznaczone pola i spróbuj ponownie. Nic nie zostało zapisane.',
+    'The settings are invalid. Fix the marked fields and try again. Nothing was saved.',
   RPC_UNAVAILABLE:
-    'Nie udało się odczytać danych z sieci Solana (ani przez Helius, ani przez publiczny RPC). Spróbuj ponownie za chwilę.',
+    'Could not read data from the Solana network (neither through Helius nor through the public RPC). Try again in a moment.',
   NOT_A_TOKEN_MINT:
-    'Podany adres nie jest mintem tokenu (SPL Token ani Token-2022). Sprawdź adres tokenu.',
+    'This address is not a token mint (neither SPL Token nor Token-2022). Check the token address.',
   HELIUS_KEY_MISSING:
-    'Brak klucza API Helius. Dodaj go w Ustawieniach: jest potrzebny do sald, zakupu na żywo i obserwacji twórcy.',
-  VAULT_LOCKED: 'Plik floty jest zablokowany. Odblokuj go hasłem, aby kontynuować.',
-  BUY_RUNNING:
-    'Trwa zakup. Zatrzymaj go przyciskiem STOP i poczekaj, aż wysłane transakcje się zakończą.',
-  NO_WALLETS_TO_BUY:
-    'Żaden portfel nie może kupować: zaznacz aktywne portfele i ustaw im max spend.',
-  INVALID_MINT_ADDRESS: 'To nie jest prawidłowy adres mintu tokenu (base58, 32–44 znaki).',
+    'The Helius API key is missing. Add it in Settings: balances, live buys and the watcher need it.',
+  VAULT_LOCKED: 'The fleet is locked. Unlock it with the password to continue.',
+  BUY_RUNNING: 'A buy is running. Stop it with STOP and wait until the sent transactions finish.',
+  NO_WALLETS_TO_BUY: 'No wallet can buy: mark wallets as active and set their max spend.',
+  INVALID_MINT_ADDRESS: 'This is not a valid token mint address (base58, 32–44 characters).',
   INVALID_CREATOR_ADDRESS:
-    'To nie jest prawidłowy adres portfela twórcy (base58, 32 bajty, inny niż mint SOL).',
+    'This is not a valid creator wallet address (base58, 32 bytes, not the SOL mint).',
   WATCH_ARMED:
-    'Watcher jest uzbrojony. Najpierw go rozbrój przyciskiem ROZBRÓJ, potem zablokuj flotę, zmień ustawienia albo flotę.',
-  VAULT_TIMEOUT: 'Sejf z kluczami nie odpowiedział w wyznaczonym czasie. Spróbuj ponownie.',
-  INTERNAL_ERROR: 'Wystąpił wewnętrzny błąd aplikacji. Spróbuj ponownie.',
-  STORAGE_CANCELLED: 'Anulowano wybór pliku lub folderu. Plik nie został zapisany ani wczytany.',
+    'The watcher is armed. Disarm it with DISARM first, then lock the fleet or change the settings or the fleet.',
+  NO_BUY_ROUTE_ON_NETWORK: NO_BUY_ROUTE_MESSAGE,
+  VAULT_TIMEOUT: 'The key vault did not respond in time. Try again.',
+  INTERNAL_ERROR: 'An internal application error occurred. Try again.',
+  STORAGE_CANCELLED: 'The file or folder choice was cancelled. No file was saved or loaded.',
   STORAGE_PERMISSION_DENIED:
-    'Przeglądarka nie dała dostępu do wybranego folderu lub pliku. Zezwól na dostęp i spróbuj ponownie.',
-  STORAGE_WRITE_FAILED:
-    'Nie udało się zapisać pliku floty. Spróbuj ponownie lub wybierz inny folder.',
-  STORAGE_READ_FAILED: 'Nie udało się odczytać pliku. Spróbuj ponownie.',
-  STORAGE_FILE_TOO_LARGE: 'Plik jest za duży (ponad 1 MB). To nie jest plik floty Bunndly.',
+    'The browser did not give access to the chosen folder or file. Allow access and try again.',
+  STORAGE_WRITE_FAILED: 'The fleet file could not be saved. Try again or choose another folder.',
+  STORAGE_READ_FAILED: 'The file could not be read. Try again.',
+  STORAGE_FILE_TOO_LARGE: 'The file is too large (over 1 MB). This is not a Bunndly fleet file.',
 } as const satisfies Record<string, string>;
 
 export type ErrorCode = keyof typeof ERROR_MESSAGES;
 
 /** Shown for any error that is not an AppError. Never derived from the error itself. */
-export const UNKNOWN_ERROR_MESSAGE = 'Wystąpił nieoczekiwany błąd. Spróbuj ponownie.';
+export const UNKNOWN_ERROR_MESSAGE = 'An unexpected error occurred. Try again.';
 
 export interface AppErrorOptions {
   /**

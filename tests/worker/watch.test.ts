@@ -280,7 +280,7 @@ describe('a transaction from before arming (second layer, review of PR #26)', ()
     expect(stale.map((e) => e.detection.mint)).toEqual([MINT]);
     const entry = logEntry(stale[0] as WatchEvent, { addressOf: () => null, decimals: null });
     expect(entry).toMatchObject({ event: 'watch', state: 'stale', reason: 'STALE', mint: MINT });
-    expect(entry.message).toMatch(/sprzed uzbrojenia/u);
+    expect(entry.message).toMatch(/from before arming/u);
     expect(t.runs()).toHaveLength(0);
     expect(t.orders).toHaveLength(0);
     expect((await t.status()).watch?.armed).toBe(true);
@@ -382,7 +382,9 @@ describe('auto-lock and lock', () => {
     const live = { ...settings, global: { ...settings.global, dryRun: false } };
     await rejectsWith(t.h.handle({ type: 'saveSettings', settings: live }), 'WATCH_ARMED');
     await rejectsWith(t.h.handle({ type: 'addWallets', count: 1 }), 'WATCH_ARMED');
+    await rejectsWith(t.h.handle({ type: 'setNetwork', network: 'devnet' }), 'WATCH_ARMED');
     expect((await t.status()).info?.settings.global.dryRun).toBe(true);
+    expect((await t.status()).network).toBe('mainnet');
     await t.h.handle({ type: 'disarm' });
     await t.h.handle({ type: 'saveSettings', settings: live });
     expect((await t.status()).info?.settings.global.dryRun).toBe(false);

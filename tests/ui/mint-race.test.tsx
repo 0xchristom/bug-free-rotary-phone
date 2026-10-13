@@ -30,6 +30,7 @@ function balancesFor(mint: string | undefined, decimals: number, perWallet: bigi
           },
         }
       : {}),
+    network: 'mainnet' as const,
     source: 'helius' as const,
     fetchedAt: '2026-10-02T12:00:00.000Z',
   };
@@ -37,7 +38,14 @@ function balancesFor(mint: string | undefined, decimals: number, perWallet: bigi
 
 function setup() {
   const info = fleetInfo(2);
-  const status = (): VaultStatus => ({ locked: false, armed: false, info, buy: null, watch: null });
+  const status = (): VaultStatus => ({
+    locked: false,
+    network: 'mainnet',
+    armed: false,
+    info,
+    buy: null,
+    watch: null,
+  });
   const vault = mockVault(status());
   const pending = new Map<string, Deferred>();
   vault.request.mockImplementation((req: VaultRequest) => {
@@ -63,10 +71,10 @@ function setup() {
 }
 
 async function submitMint(user: ReturnType<typeof userEvent.setup>, text: string) {
-  const field = screen.getByLabelText('Adres tokenu (mint)');
+  const field = screen.getByLabelText('Token address (mint)');
   await user.clear(field);
   if (text !== '') await user.type(field, text);
-  await user.click(screen.getByRole('button', { name: 'Pokaż saldo tokenu' }));
+  await user.click(screen.getByRole('button', { name: 'Show token balance' }));
 }
 
 async function settle(): Promise<void> {
@@ -93,7 +101,7 @@ afterEach(cleanup);
 describe('stale mint answers', () => {
   it('a late NOT_A_TOKEN_MINT for the old mint does not drop the new, valid mint', async () => {
     const { pending, user } = setup();
-    await screen.findByText(/^Salda z /u);
+    await screen.findByText(/^Balances as of /u);
     await submitMint(user, 'WrongMint');
     await waitFor(() => {
       expect(pending.has('WrongMint')).toBe(true);
@@ -111,13 +119,13 @@ describe('stale mint answers', () => {
       pending.get('GoodMint')?.resolve(balancesFor('GoodMint', 6, 2_500_000n));
     });
     await settle();
-    expect(alerts()).not.toContain('nie jest mintem tokenu');
-    expect(tokenCell('W01')).toBe('2,5');
+    expect(alerts()).not.toContain('is not a token mint');
+    expect(tokenCell('W01')).toBe('2.5');
   });
 
   it('a late answer for the old mint is not shown under the new mint', async () => {
     const { pending, user } = setup();
-    await screen.findByText(/^Salda z /u);
+    await screen.findByText(/^Balances as of /u);
     await submitMint(user, 'MintA');
     await waitFor(() => {
       expect(pending.has('MintA')).toBe(true);
@@ -140,7 +148,7 @@ describe('stale mint answers', () => {
 
   it('after clearing the field, late answers for the old mint (success or error) are ignored', async () => {
     const { pending, user, vault } = setup();
-    await screen.findByText(/^Salda z /u);
+    await screen.findByText(/^Balances as of /u);
     await submitMint(user, 'MintC');
     await waitFor(() => {
       expect(pending.has('MintC')).toBe(true);
@@ -169,12 +177,12 @@ describe('stale mint answers', () => {
       pending.get('MintD')?.reject(new AppError('NOT_A_TOKEN_MINT'));
     });
     await settle();
-    expect(alerts()).not.toContain('nie jest mintem tokenu');
+    expect(alerts()).not.toContain('is not a token mint');
   });
 
   it('a NOT_A_TOKEN_MINT for the current mint is still shown at the field', async () => {
     const { pending, user } = setup();
-    await screen.findByText(/^Salda z /u);
+    await screen.findByText(/^Balances as of /u);
     await submitMint(user, 'Bad');
     await waitFor(() => {
       expect(pending.has('Bad')).toBe(true);
@@ -183,6 +191,6 @@ describe('stale mint answers', () => {
       pending.get('Bad')?.reject(new AppError('NOT_A_TOKEN_MINT'));
     });
     await settle();
-    expect(alerts()).toContain('nie jest mintem tokenu');
+    expect(alerts()).toContain('is not a token mint');
   });
 });
