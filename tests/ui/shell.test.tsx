@@ -386,16 +386,17 @@ describe('keyboard', () => {
     expect(screen.queryByRole('dialog')).toBeNull();
   });
 
-  it('the QR code: Escape closes it from anywhere on the page and focuses its button', async () => {
+  it('the QR code: focus moves into its popover, Escape closes it and focuses its button', async () => {
     const user = await fleetWithUser();
     const opener = screen.getByRole('button', { name: 'QR code W01' });
     opener.focus();
     await user.keyboard('{Enter}');
-    expect(screen.getByRole('img', { name: 'QR code of the address Address0' })).toBeTruthy();
+    const popover = screen.getByRole('dialog', { name: 'QR code of W01' });
+    expect(
+      within(popover).getByRole('img', { name: 'QR code of the address Address0' }),
+    ).toBeTruthy();
     expect(opener.getAttribute('aria-expanded')).toBe('true');
-    // The focus wanders off to another control of the table.
-    await user.tab();
-    expect(document.activeElement).not.toBe(opener);
+    expect(document.activeElement).toBe(popover);
 
     await user.keyboard('{Escape}');
     expect(screen.queryByRole('img', { name: /QR code of the address/u })).toBeNull();
@@ -403,18 +404,16 @@ describe('keyboard', () => {
     expect(document.activeElement).toBe(opener);
   });
 
-  it('Escape closes one thing at a time: the dialog with the focus first, then the QR code', async () => {
+  it('a press outside closes the QR code; Escape then closes only the dialog with the focus', async () => {
     const user = await fleetWithUser();
     await user.click(screen.getByRole('button', { name: 'QR code W02' }));
+    expect(screen.getByRole('img', { name: 'QR code of the address Address1' })).toBeTruthy();
     await user.click(screen.getByRole('button', { name: EXPORT_OPENER }));
-    expect(screen.getByRole('dialog')).toBeTruthy();
+    expect(screen.queryByRole('img', { name: /QR code of the address/u })).toBeNull();
+    expect(screen.getAllByRole('dialog')).toHaveLength(1);
 
     await user.keyboard('{Escape}');
     expect(screen.queryByRole('dialog')).toBeNull();
-    expect(screen.getByRole('img', { name: 'QR code of the address Address1' })).toBeTruthy();
-
-    await user.keyboard('{Escape}');
-    expect(screen.queryByRole('img', { name: /QR code of the address/u })).toBeNull();
-    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'QR code W02' }));
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: EXPORT_OPENER }));
   });
 });

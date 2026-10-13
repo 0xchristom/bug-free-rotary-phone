@@ -1,29 +1,48 @@
 // @vitest-environment jsdom
-import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AppError } from '../../src/core/errors.ts';
 import type { FleetSettingsV1 } from '../../src/core/index.ts';
 import { App } from '../../src/ui/App.tsx';
 import type { VaultInfo, VaultRequest, VaultStatus } from '../../src/worker/protocol.ts';
 import { fleetInfo, mockStorage, mockVault } from './fakes.ts';
+import { setupUser } from './user.ts';
 
 const SOL = 1_000_000_000n;
+
+/** Column positions of the wallet table. */
+const BALANCE = 2;
+const TOKEN = 3;
 
 interface Setup {
   readonly count?: number;
   readonly settings?: Partial<FleetSettingsV1>;
   readonly lamports?: (index: number) => bigint;
   readonly probe?: (index: number) => void;
+  /** Replaces the wallets of the fake fleet (real-looking addresses, other labels). */
+  readonly wallets?: VaultInfo['wallets'];
+  /** No balance answer until the test lets it through. */
+  readonly holdBalances?: boolean;
 }
 
-function setup({ count = 3, settings = {}, lamports = () => SOL, probe }: Setup = {}) {
+function setup({
+  count = 3,
+  settings = {},
+  lamports = () => SOL,
+  probe,
+  wallets,
+  holdBalances = false,
+}: Setup = {}) {
   const base = fleetInfo(count);
-  let info: VaultInfo = { ...base, settings: { ...base.settings, ...settings } };
+  let info: VaultInfo = {
+    ...base,
+    ...(wallets ? { wallets } : {}),
+    settings: { ...base.settings, ...settings },
+  };
   let balanceOf = lamports;
   const status = (): VaultStatus => ({
     locked: false,
-    network: 'mainnet',
+    network: info.settings.global.network,
     armed: false,
     info,
     buy: null,
@@ -31,12 +50,14 @@ function setup({ count = 3, settings = {}, lamports = () => SOL, probe }: Setup 
   });
   const vault = mockVault(status());
   const saved: FleetSettingsV1[] = [];
+  const added: number[] = [];
   vault.request.mockImplementation((req: VaultRequest) => {
     switch (req.type) {
       case 'status':
       case 'activity':
         return Promise.resolve(status());
       case 'refreshBalances':
+        if (holdBalances) return new Promise(() => undefined);
         if (req.mint === 'NotAMint') return Promise.reject(new AppError('NOT_A_TOKEN_MINT'));
         return Promise.resolve({
           balances: info.wallets.map((w) => ({ index: w.index, lamports: balanceOf(w.index) })),
@@ -53,7 +74,7 @@ function setup({ count = 3, settings = {}, lamports = () => SOL, probe }: Setup 
                 },
               }
             : {}),
-          network: 'mainnet',
+          network: info.settings.global.network,
           source: 'helius',
           fetchedAt: '2026-10-02T12:00:00.000Z',
         });
@@ -61,6 +82,20 @@ function setup({ count = 3, settings = {}, lamports = () => SOL, probe }: Setup 
         saved.push(req.settings);
         info = { ...info, settings: req.settings };
         return Promise.resolve({ fileText: '{"saved":true}', info });
+      }
+      case 'addWallets': {
+        added.push(req.count);
+        const more = Array.from({ length: req.count }, (_, i) => {
+          const index = info.wallets.length + i;
+          return {
+            index,
+            address: `Address${String(index)}`,
+            derivationPath: `m/44'/501'/${String(index)}'/0'`,
+            label: `Wallet ${String(index)}`,
+          };
+        });
+        info = { ...info, wallets: [...info.wallets, ...more] };
+        return Promise.resolve({ fileText: '{"added":true}', info });
       }
       default:
         return Promise.reject(new AppError('INTERNAL_ERROR'));
@@ -79,24 +114,28 @@ function setup({ count = 3, settings = {}, lamports = () => SOL, probe }: Setup 
   return {
     vault,
     saved,
+    added,
     storage,
-    user: userEvent.setup(),
+    user: setupUser(),
     setBalances: (f: (index: number) => bigint) => {
       balanceOf = f;
     },
   };
 }
 
+/** The wallet's row, found by its selection checkbox. */
 function row(label: string): HTMLElement {
-  const cell = screen.getByRole('cell', { name: label });
-  const tr = cell.closest('tr');
+  const tr = screen.getByRole('checkbox', { name: `Select ${label}` }).closest('tr');
   if (!tr) throw new Error('row');
   return tr;
 }
 
-/** Waits until the first balance read is on screen. */
+/**
+ * Waits until the first balance read is on screen. A hundred rows take jsdom over a second
+ * to build, so the wait is longer than the default one.
+ */
 async function ready(): Promise<void> {
-  await screen.findByText(/^Balances as of /u);
+  await screen.findByText(/^Balances as of /u, {}, { timeout: 10_000 });
 }
 
 function cells(label: string): string[] {
@@ -105,13 +144,46 @@ function cells(label: string): string[] {
     .map((c) => c.textContent);
 }
 
+/** Opens the details row of the wallet (if closed) and returns its list. */
+function details(label: string): HTMLElement {
+  const button = within(row(label)).getByRole('button', { name: `Details ${label}` });
+  if (button.getAttribute('aria-expanded') !== 'true') fireEvent.click(button);
+  return screen.getByLabelText(`Details of ${label}`);
+}
+
+function detail(label: string, term: string): string {
+  return within(details(label)).getByText(term).nextElementSibling?.textContent ?? '';
+}
+
+function selectBox(label: string): HTMLInputElement {
+  return screen.getByRole<HTMLInputElement>('checkbox', { name: `Select ${label}` });
+}
+
+function headerBox(): HTMLInputElement {
+  return screen.getByRole<HTMLInputElement>('checkbox', { name: 'Select all wallets' });
+}
+
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
 });
 
 describe('fleet table', () => {
-  it('shows balance, max spend, reserve and readiness; a too small reserve is red', async () => {
+  it('has the columns of the compact table and no "Actions" column', async () => {
+    setup();
+    await ready();
+    const table = screen.getByRole('table');
+    expect(
+      within(table)
+        .getAllByRole('columnheader')
+        .map((th) => th.textContent),
+    ).toEqual(['', 'Wallet', 'Balance', 'Token', 'Amount', 'Status', 'Wallet tools']);
+    expect(within(table).queryByText('Actions')).toBeNull();
+    // one row per wallet under the header row
+    expect(within(table).getAllByRole('row')).toHaveLength(4);
+  });
+
+  it('shows balance, max spend and readiness; a too small reserve is said under the field', async () => {
     const { user } = setup({
       settings: {
         maxSpend: [
@@ -125,18 +197,44 @@ describe('fleet table', () => {
       '0.985',
     );
     expect(row('W01').dataset.ready).toBe('true');
-    expect(within(row('W01')).getByText('0.015')).toBeTruthy();
+    expect(within(row('W01')).getByText('Ready')).toBeTruthy();
+    expect(within(row('W01')).queryByText(/minimum reserve/u)).toBeNull();
+    // 1 SOL − 0.985 SOL
+    expect(detail('W01', 'Reserve (SOL)')).toBe('0.015');
+
     expect(row('W02').className).toBe('row-error');
     expect(row('W02').dataset.ready).toBe('false');
-    expect(within(row('W02')).getByText('too low')).toBeTruthy();
+    expect(within(row('W02')).getByText('Low reserve')).toBeTruthy();
+    // 1 000 000 000 − 985 000 001 = 14 999 999 lamports
+    expect(
+      within(row('W02')).getByText('Leaves 0.014999999 SOL; the minimum reserve is 0.015 SOL.'),
+    ).toBeTruthy();
+
     // no max spend: neither ready nor red
     expect(row('W03').dataset.ready).toBe('false');
     expect(row('W03').className).toBe('');
+    expect(within(row('W03')).getByText('No amount')).toBeTruthy();
 
     await user.clear(within(row('W03')).getByLabelText('Max spend W03'));
     await user.type(within(row('W03')).getByLabelText('Max spend W03'), '2');
     expect(within(row('W03')).getByText('More than the wallet balance.')).toBeTruthy();
     expect(row('W03').className).toBe('row-error');
+  });
+
+  it('the balance is a dash before the first read, never a zero', async () => {
+    setup({ holdBalances: true });
+    expect(await screen.findByText('Balances: loading…')).toBeTruthy();
+    for (const label of ['W01', 'W02', 'W03']) expect(cells(label)[BALANCE]).toBe('—');
+    expect(within(row('W01')).getByText('No amount')).toBeTruthy();
+  });
+
+  it('an empty wallet shows 0 with the SOL mark once it is read', async () => {
+    setup({ lamports: (i) => (i === 1 ? 0n : 2_500_000_000n) });
+    await ready();
+    expect(cells('W02')[BALANCE]).toBe('0');
+    expect(cells('W01')[BALANCE]).toBe('2.5');
+    const cell = within(row('W01')).getAllByRole('cell')[BALANCE];
+    expect(cell?.querySelector('svg.k-i-sol')).toBeTruthy();
   });
 
   it('invalid amounts show English messages and block saving', async () => {
@@ -157,13 +255,15 @@ describe('fleet table', () => {
     }
   });
 
-  it('saves max spend and active flags through the vault, then the file on click', async () => {
+  it('saves max spend and the selection through the vault, then the file on click', async () => {
     const { user, saved, storage } = setup();
     await ready();
     await user.type(within(row('W01')).getByLabelText('Max spend W01'), '0.5');
     await user.type(within(row('W03')).getByLabelText('Max spend W03'), '0,25');
-    await user.click(within(row('W02')).getByLabelText('Active W02'));
+    await user.click(selectBox('W02'));
     expect(screen.getByText('You have unsaved table changes.')).toBeTruthy();
+    expect(row('W02').className).toBe('unsel');
+    expect(within(row('W02')).getByText('Not selected')).toBeTruthy();
 
     // unsaved edits are protected like an unsaved file
     const event = new Event('beforeunload', { cancelable: true });
@@ -192,11 +292,12 @@ describe('fleet table', () => {
   it('a token mint shows balances with decimals; a wrong mint shows an English error', async () => {
     const { user } = setup();
     await ready();
+    expect(cells('W02')[TOKEN]).toBe('—');
     await user.type(screen.getByLabelText('Token address (mint)'), 'SomeMint111');
     await user.click(screen.getByRole('button', { name: 'Show token balance' }));
     expect(await screen.findByRole('columnheader', { name: 'Token (Token-2022)' })).toBeTruthy();
-    expect(cells('W02')[6]).toBe('1.5');
-    expect(cells('W03')[6]).toBe('3');
+    expect(cells('W02')[TOKEN]).toBe('1.5');
+    expect(cells('W03')[TOKEN]).toBe('3');
 
     await user.clear(screen.getByLabelText('Token address (mint)'));
     await user.type(screen.getByLabelText('Token address (mint)'), 'NotAMint');
@@ -226,7 +327,7 @@ describe('fleet table', () => {
     setBalances(() => 3n * SOL);
     await user.click(screen.getByRole('button', { name: 'Refresh balances' }));
     await waitFor(() => {
-      expect(cells('W01')[3]).toBe('3');
+      expect(cells('W01')[BALANCE]).toBe('3');
     });
     expect(refreshes().at(-1)?.mint).toBeUndefined();
     expect(screen.getByRole('alert').textContent).toContain('is not a token mint');
@@ -246,6 +347,180 @@ describe('fleet table', () => {
   });
 });
 
+describe('wallet cell', () => {
+  // Two public program addresses, typed here by hand.
+  const FIRST = 'So11111111111111111111111111111111111111112';
+  const SECOND = 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA';
+  const wallets: VaultInfo['wallets'] = [
+    { index: 0, address: FIRST, derivationPath: "m/44'/501'/0'/0'", label: 'Wallet 0' },
+    { index: 1, address: SECOND, derivationPath: "m/44'/501'/1'/0'", label: 'Wallet 1' },
+  ];
+
+  function explorerLink(label: string): HTMLAnchorElement {
+    return within(row(label)).getByRole<HTMLAnchorElement>('link', {
+      name: `Open ${label} in the explorer`,
+    });
+  }
+
+  it('shows the first 4 and the last 4 characters of the address', async () => {
+    setup({ wallets });
+    await ready();
+    expect(within(row('Wallet 0')).getByText('So11…1112')).toBeTruthy();
+    expect(within(row('Wallet 1')).getByText('Toke…Q5DA')).toBeTruthy();
+    // the full address is one hover away and in the details
+    expect(within(row('Wallet 1')).getByText('Toke…Q5DA').getAttribute('title')).toBe(SECOND);
+    expect(within(row('Wallet 1')).queryByText(SECOND)).toBeNull();
+    expect(detail('Wallet 1', 'Deposit address')).toBe(SECOND);
+  });
+
+  it('copy puts the full address of that wallet on the clipboard and says so', async () => {
+    const { user } = setup({ wallets });
+    await ready();
+    await user.click(screen.getByRole('button', { name: 'Copy address Wallet 1' }));
+    expect(await navigator.clipboard.readText()).toBe(SECOND);
+    expect(await screen.findByText('Address copied')).toBeTruthy();
+    await user.click(screen.getByRole('button', { name: 'Copy address Wallet 0' }));
+    expect(await navigator.clipboard.readText()).toBe(FIRST);
+  });
+
+  it('a refused clipboard is an error on the screen, not a toast', async () => {
+    const { user } = setup({ wallets });
+    await ready();
+    vi.spyOn(navigator.clipboard, 'writeText').mockRejectedValueOnce(new Error('denied'));
+    await user.click(screen.getByRole('button', { name: 'Copy address Wallet 0' }));
+    expect((await screen.findByRole('alert')).textContent).toContain(
+      'The address could not be copied.',
+    );
+    expect(screen.queryByText('Address copied')).toBeNull();
+  });
+
+  it('the explorer link of a mainnet fleet is the account page', async () => {
+    const global = { ...fleetInfo().settings.global, network: 'mainnet', explorer: 'orb' };
+    setup({ wallets, settings: { global: global as FleetSettingsV1['global'] } });
+    await ready();
+    expect(explorerLink('Wallet 0').getAttribute('href')).toBe(
+      'https://orbmarkets.io/address/So11111111111111111111111111111111111111112',
+    );
+    expect(explorerLink('Wallet 1').getAttribute('href')).toBe(
+      'https://orbmarkets.io/address/TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA',
+    );
+    expect(explorerLink('Wallet 0').getAttribute('rel')).toBe('noopener noreferrer');
+  });
+
+  it('the explorer link of a devnet fleet leads to the devnet page', async () => {
+    const global = { ...fleetInfo().settings.global, network: 'devnet', explorer: 'solscan' };
+    setup({ wallets, settings: { global: global as FleetSettingsV1['global'] } });
+    await ready();
+    expect(explorerLink('Wallet 0').getAttribute('href')).toBe(
+      'https://solscan.io/account/So11111111111111111111111111111111111111112?cluster=devnet',
+    );
+  });
+
+  it('something that is not an address gets no explorer link', async () => {
+    setup(); // Address0, Address1, …
+    await ready();
+    expect(within(row('W01')).queryByRole('link')).toBeNull();
+  });
+
+  it('every tool of a row is a button named after its wallet', async () => {
+    setup({ wallets });
+    await ready();
+    const names = within(row('Wallet 1'))
+      .getAllByRole('button')
+      .map((b) => b.getAttribute('aria-label'));
+    expect(names).toEqual(['Copy address Wallet 1', 'QR code Wallet 1', 'Details Wallet 1']);
+  });
+
+  it('the QR code opens in a popover with the address of its wallet; Esc gives the focus back', async () => {
+    const { user } = setup({ wallets });
+    await ready();
+    const opener = screen.getByRole('button', { name: 'QR code Wallet 1' });
+    await user.click(opener);
+    const popover = screen.getByRole('dialog', { name: 'QR code of Wallet 1' });
+    expect(
+      within(popover).getByRole('img', { name: `QR code of the address ${SECOND}` }),
+    ).toBeTruthy();
+    expect(opener.getAttribute('aria-expanded')).toBe('true');
+    await user.keyboard('{Escape}');
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(document.activeElement).toBe(opener);
+
+    // one at a time: opening another row closes the first
+    await user.click(opener);
+    await user.click(screen.getByRole('button', { name: 'QR code Wallet 0' }));
+    expect(screen.getAllByRole('img', { name: /^QR code of the address/u })).toHaveLength(1);
+    expect(screen.getByRole('img', { name: `QR code of the address ${FIRST}` })).toBeTruthy();
+  });
+});
+
+describe('selection', () => {
+  it('the header checkbox goes none → all → none and shows the mixed state', async () => {
+    const { user } = setup({ settings: { active: [{ index: 1, active: false }] } });
+    await ready();
+    // saved: wallet 1 is off
+    expect(selectBox('W01').checked).toBe(true);
+    expect(selectBox('W02').checked).toBe(false);
+    expect(headerBox().indeterminate).toBe(true);
+    expect(headerBox().checked).toBe(false);
+    expect(screen.getByText('2 of 3 selected')).toBeTruthy();
+
+    // mixed → all
+    await user.click(headerBox());
+    expect(['W01', 'W02', 'W03'].map((l) => selectBox(l).checked)).toEqual([true, true, true]);
+    expect(headerBox().indeterminate).toBe(false);
+    expect(headerBox().checked).toBe(true);
+    expect(screen.getByText('3 of 3 selected')).toBeTruthy();
+
+    // all → none
+    await user.click(headerBox());
+    expect(['W01', 'W02', 'W03'].map((l) => selectBox(l).checked)).toEqual([false, false, false]);
+    expect(headerBox().indeterminate).toBe(false);
+    expect(headerBox().checked).toBe(false);
+    expect(screen.getByText('0 of 3 selected')).toBeTruthy();
+
+    // none → all
+    await user.click(headerBox());
+    expect(screen.getByText('3 of 3 selected')).toBeTruthy();
+
+    // one row off: mixed again
+    await user.click(selectBox('W03'));
+    expect(headerBox().indeterminate).toBe(true);
+    expect(screen.getByText('2 of 3 selected')).toBeTruthy();
+  });
+
+  it('the saved active flags equal the selection', async () => {
+    const { user, saved } = setup({ settings: { active: [{ index: 1, active: false }] } });
+    await ready();
+    await user.click(headerBox()); // all
+    await user.click(headerBox()); // none
+    await user.click(selectBox('W02')); // only wallet 1
+    await user.click(screen.getByRole('button', { name: 'Save table changes' }));
+    await screen.findByText(/The table changes .* are saved in the vault/u);
+    // wallets without an entry are active (D-019): 0 and 2 are stored as off, 1 is on
+    expect(saved[0]?.active).toEqual([
+      { index: 0, active: false },
+      { index: 2, active: false },
+    ]);
+  });
+
+  it('a wallet that is not selected is not ready and not counted in the planned buy', async () => {
+    const { user } = setup({
+      settings: {
+        maxSpend: [
+          { index: 0, lamports: 100_000_000n },
+          { index: 1, lamports: 200_000_000n },
+        ],
+      },
+    });
+    await ready();
+    expect(summaryValue('Planned buy')).toBe('0.3 SOL');
+    await user.click(selectBox('W02'));
+    expect(row('W02').dataset.ready).toBe('false');
+    expect(summaryValue('Planned buy')).toBe('0.1 SOL');
+    expect(summaryValue('Selected')).toBe('2 / 3');
+  });
+});
+
 describe('100 wallets', () => {
   it('a balance refresh re-renders only the rows whose balance changed', async () => {
     const renders = new Map<number, number>();
@@ -255,7 +530,7 @@ describe('100 wallets', () => {
     const { user, setBalances } = setup({ count: 100, probe });
     await ready();
     await waitFor(() => {
-      expect(cells('W100')[3]).toBe('1');
+      expect(cells('W100')[BALANCE]).toBe('1');
     });
     expect(renders.size).toBe(100);
     const before = new Map(renders);
@@ -265,24 +540,140 @@ describe('100 wallets', () => {
     await act(() => Promise.resolve());
     expect(renders).toEqual(before);
 
-    // one wallet changed: only that row renders
+    // one wallet changed: only that row renders, once
     setBalances((i) => (i === 42 ? 2n * SOL : SOL));
     await user.click(screen.getByRole('button', { name: 'Refresh balances' }));
     await waitFor(() => {
-      expect(cells('W43')[3]).toBe('2');
+      expect(cells('W43')[BALANCE]).toBe('2');
     });
     const changed = [...renders].filter(([i, n]) => n !== before.get(i)).map(([i]) => i);
     expect(changed).toEqual([42]);
+    expect(renders.get(42)).toBe((before.get(42) ?? 0) + 1);
+  }, 30_000);
+
+  it('opening the details of one wallet renders only its row', async () => {
+    const renders = new Map<number, number>();
+    const probe = (index: number): void => {
+      renders.set(index, (renders.get(index) ?? 0) + 1);
+    };
+    setup({ count: 100, probe });
+    await ready();
+    await waitFor(() => {
+      expect(cells('W100')[BALANCE]).toBe('1');
+    });
+    renders.clear();
+    details('W08');
+    expect([...renders.keys()]).toEqual([7]);
+    expect(screen.getAllByRole('row')).toHaveLength(102); // header + 100 + one details row
+  }, 30_000);
+});
+
+function summaryValue(term: string): string {
+  const dl = screen.getByLabelText('Fleet summary');
+  const dt = within(dl).getByText(term);
+  return dt.nextElementSibling?.textContent ?? '';
+}
+
+describe('create wallets', () => {
+  async function openCreate(user: ReturnType<typeof setupUser>): Promise<HTMLElement> {
+    await user.click(screen.getByRole('button', { name: 'Create wallets' }));
+    return screen.getByRole('dialog', { name: 'Create wallets' });
+  }
+
+  it('a count of 5 sends addWallets with 5 and the new wallets join the table', async () => {
+    const { user, added, vault } = setup();
+    await ready();
+    const popover = await openCreate(user);
+    // nothing typed yet: nothing to create
+    expect(within(popover).getByRole('button', { name: 'Create' })).toHaveProperty(
+      'disabled',
+      true,
+    );
+    await user.type(within(popover).getByLabelText('How many'), '5');
+    await user.click(within(popover).getByRole('button', { name: 'Create' }));
+
+    await screen.findByText(/New wallets: 5\./u);
+    expect(added).toEqual([5]);
+    expect(vault.request.mock.calls.map(([r]) => r).filter((r) => r.type === 'addWallets')).toEqual(
+      [{ type: 'addWallets', count: 5 }],
+    );
+    expect(screen.queryByRole('dialog', { name: 'Create wallets' })).toBeNull();
+    expect(screen.getByText('8 of 8 selected')).toBeTruthy();
+    expect(selectBox('Wallet 7').checked).toBe(true);
+    // the old wallets keep their labels
+    expect(selectBox('W01')).toBeTruthy();
+  });
+
+  it('a count outside 1…room blocks the button and says why at the field', async () => {
+    const { user, added } = setup({ count: 98 });
+    await ready();
+    const popover = await openCreate(user);
+    const field = within(popover).getByLabelText('How many');
+    const create = within(popover).getByRole<HTMLButtonElement>('button', { name: 'Create' });
+    const reason = 'You can create 1 to 2 wallets (at most 100 in total).';
+    const help = (): HTMLElement => within(popover).getByText(reason);
+    expect(field.getAttribute('aria-describedby')).toBe(help().id);
+
+    for (const text of ['0', '3', '101', '1.5', '-1', 'two']) {
+      await user.clear(field);
+      await user.type(field, text);
+      expect(create.disabled).toBe(true);
+      expect(help().className).toBe('field-error');
+      expect(field.getAttribute('aria-invalid')).toBe('true');
+    }
+    // Enter does not get around the disabled button
+    await user.type(field, '{Enter}');
+    expect(added).toEqual([]);
+
+    for (const text of ['1', '2']) {
+      await user.clear(field);
+      await user.type(field, text);
+      expect(create.disabled).toBe(false);
+      expect(help().className).toBe('hint');
+      expect(field.getAttribute('aria-invalid')).toBeNull();
+    }
+    await user.type(field, '{Enter}');
+    await screen.findByText(/New wallets: 2\./u);
+    expect(added).toEqual([2]);
+  }, 30_000);
+
+  it('a full fleet and unsaved table changes turn the button off with the reason next to it', async () => {
+    const { user } = setup({ count: 3 });
+    await ready();
+    expect(screen.getByRole('button', { name: 'Create wallets' })).toHaveProperty(
+      'disabled',
+      false,
+    );
+    await user.type(within(row('W01')).getByLabelText('Max spend W01'), '0.5');
+    expect(screen.getByRole('button', { name: 'Create wallets' })).toHaveProperty('disabled', true);
+    expect(
+      screen.getByText(
+        'Save the table changes and the updated fleet file first, then create wallets.',
+      ),
+    ).toBeTruthy();
+    cleanup();
+
+    setup({ count: 100 });
+    await ready();
+    expect(screen.getByRole('button', { name: 'Create wallets' })).toHaveProperty('disabled', true);
+    expect(screen.getByText('The fleet already has the maximum of 100 wallets.')).toBeTruthy();
+  }, 30_000);
+
+  it('Cancel closes the popover, sends nothing and forgets the typed count', async () => {
+    const { user, added } = setup();
+    await ready();
+    const popover = await openCreate(user);
+    await user.type(within(popover).getByLabelText('How many'), '7');
+    await user.click(within(popover).getByRole('button', { name: 'Cancel' }));
+    expect(screen.queryByRole('dialog', { name: 'Create wallets' })).toBeNull();
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Create wallets' }));
+    expect(added).toEqual([]);
+    const again = await openCreate(user);
+    expect(within(again).getByLabelText<HTMLInputElement>('How many').value).toBe('');
   });
 });
 
 describe('bulk actions and summary', () => {
-  function summaryValue(term: string): string {
-    const dl = screen.getByLabelText('Fleet summary');
-    const dt = within(dl).getByText(term);
-    return dt.nextElementSibling?.textContent ?? '';
-  }
-
   it('sets the same max spend on all wallets (drafts only, saved on click)', async () => {
     const { user, saved } = setup();
     await ready();
@@ -295,8 +686,9 @@ describe('bulk actions and summary', () => {
     }
     expect(saved).toHaveLength(0);
     expect(summaryValue('Ready wallets')).toBe('3 / 3');
-    expect(summaryValue('Total to spend')).toBe('1.5 SOL');
-    expect(summaryValue('Total SOL')).toBe('3 SOL');
+    expect(summaryValue('Selected')).toBe('3 / 3');
+    expect(summaryValue('Planned buy')).toBe('1.5 SOL');
+    expect(summaryValue('Fleet balance')).toBe('3 SOL');
   });
 
   it('a wrong amount or percent gives an English message and changes nothing', async () => {
@@ -325,26 +717,13 @@ describe('bulk actions and summary', () => {
     expect(summaryValue('Ready wallets')).toBe('3 / 3');
   });
 
-  it('select and deselect all', async () => {
-    const { user } = setup();
-    await ready();
-    await user.click(screen.getByRole('button', { name: 'Deselect all' }));
-    for (const label of ['W01', 'W02', 'W03']) {
-      expect(within(row(label)).getByLabelText<HTMLInputElement>(`Active ${label}`).checked).toBe(
-        false,
-      );
-    }
-    await user.click(screen.getByRole('button', { name: 'Select all' }));
-    expect(within(row('W02')).getByLabelText<HTMLInputElement>('Active W02').checked).toBe(true);
-  });
-
   it('the summary sums token balances with decimals', async () => {
     const { user } = setup();
     await ready();
-    expect(summaryValue('Total tokens')).toBe('–');
+    expect(summaryValue('Tokens held')).toBe('—');
     await user.type(screen.getByLabelText('Token address (mint)'), 'SomeMint111');
     await user.click(screen.getByRole('button', { name: 'Show token balance' }));
     await screen.findByRole('columnheader', { name: 'Token (Token-2022)' });
-    expect(summaryValue('Total tokens')).toBe('4.5'); // 0 + 1.5 + 3
+    expect(summaryValue('Tokens held')).toBe('4.5'); // 0 + 1.5 + 3
   });
 });

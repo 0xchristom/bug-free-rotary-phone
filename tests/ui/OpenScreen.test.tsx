@@ -27,7 +27,10 @@ const PASSWORD = 'zielony Kot, 7 krzeseł; drabina';
 const MNEMONIC = `${'abandon '.repeat(11)}about`;
 const FILE_NAME = 'Flota testowa.keystore.json';
 
-/** 3 wallets, custom labels for 0 and 1, max spend for wallet 1. */
+/**
+ * 3 wallets, custom labels for 0 and 1, max spend for wallet 1. Wallet 2 carries the label
+ * a file written before BUNNDLY-55 holds for it (W03): saved labels are never renamed.
+ */
 let fixture: KeystoreFileV1;
 let fixtureText: string;
 
@@ -48,6 +51,7 @@ beforeAll(async () => {
       labels: new Map([
         [0, 'Alfa'],
         [1, 'Beta'],
+        [2, 'W03'],
       ]),
     },
     PASSWORD,
@@ -232,9 +236,22 @@ describe('unlock', () => {
 
     const first = fixture.public.wallets[0];
     if (!first) throw new Error('fixture');
+    // the labels saved in the file, the old default one included
+    expect(
+      ['Alfa', 'Beta', 'W03'].map((label) =>
+        screen.getByRole('checkbox', { name: `Select ${label}` }),
+      ),
+    ).toHaveLength(3);
+    // first 4 + … + last 4 characters of the address the vault verified
+    const short = `${first.address.slice(0, 4)}…${first.address.slice(-4)}`;
+    expect(short).toHaveLength(9);
+    const row = screen.getByRole('checkbox', { name: 'Select Alfa' }).closest('tr');
+    if (!row) throw new Error('row');
+    expect(within(row).getByText(short).getAttribute('title')).toBe(first.address);
+
     await user.click(screen.getByRole('button', { name: 'Copy address Alfa' }));
     expect(await navigator.clipboard.readText()).toBe(first.address);
-    expect(screen.getByRole('button', { name: 'Copy address Alfa' }).textContent).toBe('Copied');
+    expect(await screen.findByText('Address copied')).toBeTruthy();
 
     await user.click(screen.getByRole('button', { name: 'QR code Alfa' }));
     expect(
@@ -262,6 +279,17 @@ describe('unlock', () => {
 });
 
 describe('add wallets', () => {
+  async function createPopover(user: UserEvent): Promise<HTMLElement> {
+    await user.click(screen.getByRole('button', { name: 'Create wallets' }));
+    return screen.getByRole('dialog', { name: 'Create wallets' });
+  }
+
+  async function createWallets(user: UserEvent, count: string): Promise<void> {
+    const popover = await createPopover(user);
+    await user.type(within(popover).getByLabelText('How many'), count);
+    await user.click(within(popover).getByRole('button', { name: 'Create' }));
+  }
+
   async function unlocked() {
     const ctx = setup();
     await openPreview(ctx.user);
@@ -272,10 +300,7 @@ describe('add wallets', () => {
 
   it('keeps addresses, labels and settings; the saved file opens with the same password', async () => {
     const { storage, user } = await unlocked();
-    const count = screen.getByLabelText<HTMLInputElement>('Number of new wallets');
-    await user.clear(count);
-    await user.type(count, '2');
-    await user.click(screen.getByRole('button', { name: 'Add wallets' }));
+    await createWallets(user, '2');
 
     await waitFor(() => {
       expect(rows()).toHaveLength(5);
@@ -290,7 +315,8 @@ describe('add wallets', () => {
     const wallets = reopened.file.public.wallets;
     expect(wallets).toHaveLength(5);
     expect(wallets.slice(0, 3)).toEqual(fixture.public.wallets);
-    expect(wallets.map((w) => w.label)).toEqual(['Alfa', 'Beta', 'W03', 'W04', 'W05']);
+    // saved labels stay; new wallets are named after their index (SPEC 11.1)
+    expect(wallets.map((w) => w.label)).toEqual(['Alfa', 'Beta', 'W03', 'Wallet 3', 'Wallet 4']);
     expect(wallets.map((w) => w.index)).toEqual([0, 1, 2, 3, 4]);
     expect(reopened.secrets.settings.maxSpend).toEqual([{ index: 1, lamports: 5_000_000n }]);
     expect(reopened.secrets.mnemonic).toBe(MNEMONIC);
@@ -298,23 +324,22 @@ describe('add wallets', () => {
 
   it('limits the count to 100 wallets in total', async () => {
     const { user } = await unlocked();
-    const count = screen.getByLabelText<HTMLInputElement>('Number of new wallets');
-    await user.clear(count);
+    const popover = await createPopover(user);
+    const count = within(popover).getByLabelText<HTMLInputElement>('How many');
+    const create = within(popover).getByRole<HTMLButtonElement>('button', { name: 'Create' });
     await user.type(count, '98');
-    expect(screen.getByText('You can add 1 to 97 wallets (at most 100 in total).')).toBeTruthy();
-    expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Add wallets' }).disabled).toBe(
-      true,
-    );
+    expect(
+      within(popover).getByText('You can create 1 to 97 wallets (at most 100 in total).').className,
+    ).toBe('field-error');
+    expect(create.disabled).toBe(true);
     await user.clear(count);
     await user.type(count, '97');
-    expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Add wallets' }).disabled).toBe(
-      false,
-    );
+    expect(create.disabled).toBe(false);
   });
 
   it('locking with unsaved new wallets asks first', async () => {
     const { handler, user } = await unlocked();
-    await user.click(screen.getByRole('button', { name: 'Add wallets' }));
+    await createWallets(user, '1');
     await screen.findByText(/is not saved yet/u);
 
     const confirm = vi.spyOn(window, 'confirm').mockReturnValueOnce(false);

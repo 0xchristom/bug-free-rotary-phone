@@ -316,7 +316,7 @@ describe('an armed watcher freezes the settings', () => {
       'disabled',
       true,
     );
-    expect(screen.getByRole('button', { name: 'Add wallets' })).toHaveProperty('disabled', true);
+    expect(screen.getByRole('button', { name: 'Create wallets' })).toHaveProperty('disabled', true);
     await user.click(
       within(screen.getByRole('navigation')).getByRole('button', { name: 'Settings' }),
     );

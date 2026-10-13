@@ -48,7 +48,7 @@ describe('navigation', () => {
     renderApp(mockVault(unlocked()));
     expect(await screen.findByRole('heading', { name: 'Fleet' })).toBeTruthy();
     expect(screen.getByText('Flota testowa')).toBeTruthy();
-    expect(screen.getByText(/Wallets in the fleet/u).textContent).toBe('Wallets in the fleet: 3');
+    expect(screen.getByText('3 of 3 selected')).toBeTruthy();
 
     const nav = screen.getByRole('navigation', { name: 'Navigation' });
     await user.click(within(nav).getByRole('button', { name: 'Settings' }));
@@ -59,12 +59,15 @@ describe('navigation', () => {
 
     await user.click(within(nav).getByRole('button', { name: 'Fleet' }));
     expect(screen.getByRole('heading', { name: 'Fleet' })).toBeTruthy();
-    expect(screen.getByRole('status').textContent).toContain('15 min');
+    expect(within(screen.getByRole('contentinfo')).getByRole('status').textContent).toContain(
+      '15 min',
+    );
   });
 
   it('shows that auto-lock is suspended while armed', async () => {
     renderApp(mockVault(unlocked(true)));
-    expect((await screen.findByRole('status')).textContent).toContain('paused');
+    const rail = await screen.findByRole('contentinfo');
+    expect(within(rail).getByRole('status').textContent).toContain('paused');
   });
 });
 

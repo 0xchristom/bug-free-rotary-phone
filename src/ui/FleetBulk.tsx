@@ -1,20 +1,19 @@
 import { useId, useState, type SyntheticEvent } from 'react';
 import { parsePercent, type FleetSummary } from './fleet-math.ts';
 import { formatSol, formatUnits, parseSolAmount } from './sol.ts';
-import { Button, Input } from './kit/index.ts';
+import { Button, Input, SolIcon } from './kit/index.ts';
 
 export interface FleetBulkProps {
   /** Sets the same max spend on every wallet. */
   readonly onAmount: (lamports: bigint) => void;
   /** Sets max spend to a share of each wallet's balance (basis points). */
   readonly onPercent: (basisPoints: number) => void;
-  readonly onAllActive: (active: boolean) => void;
   /** Wallets whose balance is not known yet (the % action skips them). */
   readonly unknownBalances: number;
 }
 
 /** Bulk actions over the whole table (SPEC 3.2). They only change the drafts. */
-export function FleetBulk({ onAmount, onPercent, onAllActive, unknownBalances }: FleetBulkProps) {
+export function FleetBulk({ onAmount, onPercent, unknownBalances }: FleetBulkProps) {
   const ids = useId();
   const [amount, setAmount] = useState('');
   const [percent, setPercent] = useState('');
@@ -75,22 +74,6 @@ export function FleetBulk({ onAmount, onPercent, onAllActive, unknownBalances }:
         />
         <Button type="submit">Set percent</Button>
       </form>
-      <div className="inline">
-        <Button
-          onClick={() => {
-            onAllActive(true);
-          }}
-        >
-          Select all
-        </Button>
-        <Button
-          onClick={() => {
-            onAllActive(false);
-          }}
-        >
-          Deselect all
-        </Button>
-      </div>
       {message && (
         <p className="field-error" role="status">
           {message}
@@ -104,21 +87,42 @@ export function FleetBulk({ onAmount, onPercent, onAllActive, unknownBalances }:
 export interface FleetSummaryBarProps {
   readonly summary: FleetSummary;
   readonly walletCount: number;
+  /** Wallets that take part in commands. */
+  readonly selectedCount: number;
   /** Decimals of the shown token, or null when no token is shown. */
   readonly tokenDecimals: number | null;
 }
 
-/** Totals over the fleet (SPEC 3.2). The average entry price comes with purchases. */
-export function FleetSummaryBar({ summary, walletCount, tokenDecimals }: FleetSummaryBarProps) {
+/** Totals over the fleet (SPEC 11.2). The average entry price comes with purchases. */
+export function FleetSummaryBar({
+  summary,
+  walletCount,
+  selectedCount,
+  tokenDecimals,
+}: FleetSummaryBarProps) {
   return (
     <dl className="summary" aria-label="Fleet summary">
       <div>
-        <dt>Total SOL</dt>
-        <dd>{formatSol(summary.totalLamports)} SOL</dd>
+        <dt>Selected</dt>
+        <dd>
+          {selectedCount} / {walletCount}
+        </dd>
       </div>
       <div>
-        <dt>Total to spend</dt>
-        <dd>{formatSol(summary.toSpendLamports)} SOL</dd>
+        <dt>Fleet balance</dt>
+        <dd>
+          <SolIcon />
+          {formatSol(summary.totalLamports)}
+          <span className="sr-only"> SOL</span>
+        </dd>
+      </div>
+      <div>
+        <dt>Planned buy</dt>
+        <dd>
+          <SolIcon />
+          {formatSol(summary.toSpendLamports)}
+          <span className="sr-only"> SOL</span>
+        </dd>
       </div>
       <div>
         <dt>Ready wallets</dt>
@@ -127,10 +131,10 @@ export function FleetSummaryBar({ summary, walletCount, tokenDecimals }: FleetSu
         </dd>
       </div>
       <div>
-        <dt>Total tokens</dt>
+        <dt>Tokens held</dt>
         <dd>
           {summary.totalToken === null || tokenDecimals === null
-            ? '–'
+            ? '—'
             : formatUnits(summary.totalToken, tokenDecimals)}
         </dd>
       </div>

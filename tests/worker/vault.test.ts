@@ -206,7 +206,16 @@ describe('addWallets', () => {
     const res = await call<VaultFileResult>(main, { type: 'addWallets', count: 3 });
     collectSecrets(main);
     expect(res.info.wallets.map((w) => w.index)).toEqual([0, 1, 2, 3, 4, 5, 6, 7]);
-    expect(res.info.wallets[7]?.label).toBe('W08');
+    expect(res.info.wallets.map((w) => w.label)).toEqual([
+      'Wallet 0',
+      'Wallet 1',
+      'Wallet 2',
+      'Wallet 3',
+      'Wallet 4',
+      'Wallet 5',
+      'Wallet 6',
+      'Wallet 7',
+    ]);
     expect(ivOf(res.fileText)).not.toBe(ivOf(prev.fileText));
     const opened = await reopen(res.fileText);
     expect(opened.file.public.wallets.map((w) => w.address)).toEqual(

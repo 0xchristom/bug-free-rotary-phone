@@ -1,5 +1,5 @@
-import { memo } from 'react';
-import { transactionUrl, type Explorer, type Network } from '../core/network.ts';
+import { memo, useId, useState, type ReactNode } from 'react';
+import { addressUrl, transactionUrl, type Explorer, type Network } from '../core/network.ts';
 import { formatPrice } from '../executor/oplog.ts';
 import {
   FAIL_MESSAGES,
@@ -10,10 +10,25 @@ import {
 } from '../executor/states.ts';
 import { VERIFY_MESSAGES, type VerifyStatus } from '../executor/verify.ts';
 import { AddressQr } from './AddressQr.tsx';
-import { rowState } from './fleet-math.ts';
+import { rowState, type RowState } from './fleet-math.ts';
+import { shortAddress } from './short-address.ts';
 import { formatSol, formatUnits, parseSolAmount } from './sol.ts';
 import type { BuyRow } from './use-buy.ts';
-import { Button, Checkbox, Chip, Input, type Tone } from './kit/index.ts';
+import {
+  Avatar,
+  Checkbox,
+  Chip,
+  CopyIcon,
+  ExternalIcon,
+  IconButton,
+  InfoIcon,
+  NumberInput,
+  Popover,
+  QrIcon,
+  SolIcon,
+  cx,
+  type Tone,
+} from './kit/index.ts';
 
 export interface FleetRowData {
   readonly index: number;
@@ -27,24 +42,24 @@ interface RowProps extends FleetRowData {
   /** Token balance already formatted with its decimals, or null. */
   readonly token: string | null;
   readonly maxSpendText: string;
-  readonly active: boolean;
+  /** Selected wallets take part in commands; saved as the `active` flag. */
+  readonly selected: boolean;
   readonly minReserve: bigint;
-  readonly qrOpen: boolean;
-  readonly copied: boolean;
   readonly onMaxSpend: (index: number, text: string) => void;
-  readonly onActive: (index: number, active: boolean) => void;
+  readonly onSelect: (index: number, selected: boolean) => void;
   readonly onCopy: (index: number, address: string) => void;
-  readonly onQr: (index: number) => void;
   /** Test hook: called on every render of the row. */
   readonly probe?: ((index: number) => void) | undefined;
-  /** Purchase columns are shown once a buy started (BUNNDLY-27). */
-  readonly showBuy: boolean;
   /** This wallet's progress; the same object until its next event (memo). */
   readonly buy: BuyRow | null;
   readonly decimals: number | null;
   readonly explorer: Explorer;
   readonly network: Network;
 }
+
+/** Shown where there is no value yet. */
+const NONE = '—';
+const COLUMNS = 7;
 
 const STATE_LABELS: Record<WalletState, string> = {
   IDLE: 'Waiting',
@@ -103,88 +118,112 @@ function tokens(amount: bigint, decimals: number | null): string {
   return decimals === null ? amount.toString() : formatUnits(amount, decimals);
 }
 
-function BuyCells({
+/** What the wallet would do on a buy, before any buy started. */
+function idleStatus(
+  state: RowState,
+  selected: boolean,
+  balance: bigint | null,
+  maxSpend: bigint | null,
+): { readonly text: string; readonly tone: Tone } {
+  if (!selected) return { text: 'Not selected', tone: 'muted' };
+  if (maxSpend === null || maxSpend === 0n) return { text: 'No amount', tone: 'muted' };
+  if (balance === null) return { text: 'No balance yet', tone: 'muted' };
+  if (state.reserveTooLow) return { text: 'Low reserve', tone: 'danger' };
+  return { text: 'Ready', tone: 'ok' };
+}
+
+/** DRY-RUN says it in the chip already; other reasons explain the state. */
+function whyOf(buy: BuyRow | null): string | null {
+  if (buy === null || buy.reason?.code === 'DRY_RUN') return null;
+  return reasonText(buy.reason);
+}
+
+function Detail({ term, children }: { readonly term: string; readonly children: ReactNode }) {
+  return (
+    <div>
+      <dt>{term}</dt>
+      <dd>{children}</dd>
+    </div>
+  );
+}
+
+/** The expanded row: the full address, the reserve and everything known about the buy. */
+function Details({
+  label,
+  address,
+  reserve,
   buy,
   decimals,
   explorer,
   network,
 }: {
+  readonly label: string;
+  readonly address: string;
+  readonly reserve: bigint | null;
   readonly buy: BuyRow | null;
   readonly decimals: number | null;
   readonly explorer: Explorer;
   readonly network: Network;
 }) {
-  if (buy === null) {
-    return (
-      <>
-        <td>–</td>
-        <td className="amount">–</td>
-        <td className="amount">–</td>
-        <td className="amount">–</td>
-        <td className="amount">–</td>
-        <td className="amount">–</td>
-        <td>–</td>
-        <td>–</td>
-      </>
-    );
-  }
-  const { result, quote } = buy;
+  const result = buy?.result ?? null;
+  const quote = buy?.quote ?? null;
   const received = result?.totalOutputAmount ?? null;
   const spent = result?.totalInputAmount ?? null;
   const price =
     received !== null && spent !== null && decimals !== null
       ? formatPrice(spent, received, decimals)
       : null;
-  // DRY-RUN says it in the badge already; other reasons explain the state.
-  const why = buy.reason?.code === 'DRY_RUN' ? null : reasonText(buy.reason);
+  const why = whyOf(buy);
   const url = result?.signature ? transactionUrl(explorer, network, result.signature) : null;
-  const warn = buy.verify === 'MISMATCH' || buy.verify === 'NO_INCREASE';
+  const verify = buy?.verify ?? null;
+  const warn = verify === 'MISMATCH' || verify === 'NO_INCREASE';
   return (
-    <>
-      <td>
-        <Chip tone={stateTone(buy)} dot={stateTone(buy) === 'run'}>
-          {stateLabel(buy)}
-        </Chip>
-        {why && <p className="reason">{why}</p>}
-      </td>
-      <td className="amount">{seconds(buy.sinceStartMs)}</td>
-      <td className="amount">{buy.attempt}</td>
-      <td className="amount">
+    <dl className="details" aria-label={`Details of ${label}`}>
+      <Detail term="Deposit address">
+        <code className="address">{address}</code>
+      </Detail>
+      <Detail term="Reserve (SOL)">
+        {reserve === null ? NONE : formatSol(reserve < 0n ? 0n : reserve)}
+      </Detail>
+      <Detail term="Time">{buy === null ? NONE : seconds(buy.sinceStartMs)}</Detail>
+      <Detail term="Attempts">{buy === null ? NONE : buy.attempt}</Detail>
+      <Detail term="Bought">
         {received !== null ? (
           tokens(received, decimals)
-        ) : quote && buy.reason?.code === 'DRY_RUN' ? (
+        ) : quote && buy?.reason?.code === 'DRY_RUN' ? (
           <span className="muted" title="Quote from /order in DRY-RUN mode">
             ≈ {tokens(quote.outAmount, decimals)}
           </span>
         ) : (
-          '–'
+          NONE
         )}
-      </td>
-      <td className="amount">{spent === null ? '–' : formatSol(spent)}</td>
-      <td className="amount">{price ?? '–'}</td>
-      <td>
-        {buy.verify === null ? (
-          '–'
+      </Detail>
+      <Detail term="Spent (SOL)">{spent === null ? NONE : formatSol(spent)}</Detail>
+      <Detail term="Price (SOL/token)">{price ?? NONE}</Detail>
+      <Detail term="Chain">
+        {verify === null ? (
+          NONE
         ) : (
           <Chip
             size="sm"
-            tone={warn ? 'danger' : buy.verify === 'UNVERIFIABLE' ? 'warn' : 'ok'}
-            title={VERIFY_MESSAGES[buy.verify]}
+            tone={warn ? 'danger' : verify === 'UNVERIFIABLE' ? 'warn' : 'ok'}
+            title={VERIFY_MESSAGES[verify]}
           >
-            {VERIFY_LABELS[buy.verify]}
+            {VERIFY_LABELS[verify]}
           </Chip>
         )}
-      </td>
-      <td>
+      </Detail>
+      <Detail term="Transaction">
         {url ? (
           <a href={url} target="_blank" rel="noopener noreferrer">
             Transaction
           </a>
         ) : (
-          '–'
+          NONE
         )}
-      </td>
-    </>
+      </Detail>
+      {why && <Detail term="Reason">{why}</Detail>}
+    </dl>
   );
 }
 
@@ -194,86 +233,166 @@ function BuyCells({
  */
 const FleetRow = memo(function FleetRow(p: RowProps) {
   p.probe?.(p.index);
+  const detailsId = useId();
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const [qrOpen, setQrOpen] = useState(false);
   const input = p.maxSpendText.trim() === '' ? null : parseSolAmount(p.maxSpendText);
   const maxSpend = input?.ok ? input.lamports : null;
   const state = rowState({
     balance: p.balance,
     maxSpend,
     minReserve: p.minReserve,
-    active: p.active,
+    active: p.selected,
   });
-  const rowClass = state.reserveTooLow ? 'row-error' : state.ready ? 'row-ready' : undefined;
+  const rowClass = state.reserveTooLow ? 'row-error' : state.ready ? 'row-ready' : null;
+  const explorerUrl = addressUrl(p.explorer, p.network, p.address);
+  const idle = idleStatus(state, p.selected, p.balance, maxSpend);
+  const why = whyOf(p.buy);
+  const amountError =
+    input !== null && !input.ok
+      ? input.message
+      : state.overBalance
+        ? 'More than the wallet balance.'
+        : state.reserveTooLow && state.reserve !== null
+          ? `Leaves ${formatSol(state.reserve)} SOL; the minimum reserve is ${formatSol(p.minReserve)} SOL.`
+          : null;
   return (
-    <tr className={rowClass} data-ready={state.ready}>
-      <td>{p.index + 1}</td>
-      <td>{p.label}</td>
-      <td>
-        <code className="address">{p.address}</code>
-        {p.qrOpen && (
-          <div className="qr-box">
-            <AddressQr address={p.address} />
+    <>
+      <tr className={cx(rowClass, !p.selected && 'unsel')} data-ready={state.ready}>
+        <td className="c-check">
+          <Checkbox
+            aria-label={`Select ${p.label}`}
+            checked={p.selected}
+            onChange={(checked) => {
+              p.onSelect(p.index, checked);
+            }}
+          />
+        </td>
+        <td>
+          <div className="w">
+            <Avatar seed={p.address} />
+            <div>
+              <b className="w-name">{p.label}</b>
+              <span className="addr">
+                <span className="mono" title={p.address}>
+                  {shortAddress(p.address)}
+                </span>
+                <IconButton
+                  size="tiny"
+                  label={`Copy address ${p.label}`}
+                  icon={<CopyIcon />}
+                  onClick={() => {
+                    p.onCopy(p.index, p.address);
+                  }}
+                />
+                {explorerUrl && (
+                  <a
+                    className="k-iconbtn k-iconbtn-neutral k-iconbtn-tiny"
+                    href={explorerUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    aria-label={`Open ${p.label} in the explorer`}
+                    title={`Open ${p.label} in the explorer`}
+                  >
+                    <ExternalIcon />
+                  </a>
+                )}
+              </span>
+            </div>
           </div>
-        )}
-      </td>
-      <td className="amount">{p.balance === null ? '–' : formatSol(p.balance)}</td>
-      <td>
-        <Input
-          className="amount-input"
-          inputMode="decimal"
-          aria-label={`Max spend ${p.label}`}
-          value={p.maxSpendText}
-          aria-invalid={input !== null && !input.ok}
-          onChange={(e) => {
-            p.onMaxSpend(p.index, e.target.value);
-          }}
-        />
-        {input !== null && !input.ok && <p className="field-error">{input.message}</p>}
-        {state.overBalance && <p className="field-error">More than the wallet balance.</p>}
-      </td>
-      <td className="amount">
-        {state.reserve === null ? '–' : formatSol(state.reserve < 0n ? 0n : state.reserve)}
-        {state.reserveTooLow && (
-          <>
-            {' '}
-            <Chip size="sm" tone="danger" title="Reserve below MIN_RESERVE_SOL">
-              too low
+        </td>
+        <td>
+          {p.balance === null ? (
+            NONE
+          ) : (
+            <span className="bal">
+              <SolIcon />
+              {formatSol(p.balance)}
+            </span>
+          )}
+        </td>
+        <td className="num">{p.token ?? NONE}</td>
+        <td>
+          <NumberInput
+            unit="SOL"
+            className="amount-input"
+            aria-label={`Max spend ${p.label}`}
+            value={p.maxSpendText}
+            invalid={input !== null && !input.ok}
+            onChange={(e) => {
+              p.onMaxSpend(p.index, e.target.value);
+            }}
+          />
+          {amountError && <p className="field-error">{amountError}</p>}
+        </td>
+        <td>
+          {p.buy === null ? (
+            <Chip tone={idle.tone}>{idle.text}</Chip>
+          ) : (
+            <Chip tone={stateTone(p.buy)} dot={stateTone(p.buy) === 'run'}>
+              {stateLabel(p.buy)}
             </Chip>
-          </>
-        )}
-      </td>
-      <td className="amount">{p.token ?? '–'}</td>
-      <td>
-        <Checkbox
-          aria-label={`Active ${p.label}`}
-          checked={p.active}
-          onChange={(checked) => {
-            p.onActive(p.index, checked);
-          }}
-        />
-      </td>
-      {p.showBuy && (
-        <BuyCells buy={p.buy} decimals={p.decimals} explorer={p.explorer} network={p.network} />
+          )}
+          {why && (
+            <p className="cap" title={why}>
+              {why}
+            </p>
+          )}
+        </td>
+        <td className="c-acts">
+          <div className="acts">
+            <Popover
+              open={qrOpen}
+              onClose={() => {
+                setQrOpen(false);
+              }}
+              label={`QR code of ${p.label}`}
+              className="qr-pop"
+              trigger={
+                <IconButton
+                  size="sm"
+                  label={`QR code ${p.label}`}
+                  icon={<QrIcon />}
+                  aria-expanded={qrOpen}
+                  onClick={() => {
+                    setQrOpen((open) => !open);
+                  }}
+                />
+              }
+            >
+              <AddressQr address={p.address} />
+              <b>{p.label}</b>
+              <code className="address">{p.address}</code>
+            </Popover>
+            <IconButton
+              size="sm"
+              label={`Details ${p.label}`}
+              icon={<InfoIcon />}
+              aria-expanded={detailsOpen}
+              aria-controls={detailsOpen ? detailsId : undefined}
+              onClick={() => {
+                setDetailsOpen((open) => !open);
+              }}
+            />
+          </div>
+        </td>
+      </tr>
+      {detailsOpen && (
+        <tr className="detail" id={detailsId}>
+          <td colSpan={COLUMNS}>
+            <Details
+              label={p.label}
+              address={p.address}
+              reserve={state.reserve}
+              buy={p.buy}
+              decimals={p.decimals}
+              explorer={p.explorer}
+              network={p.network}
+            />
+          </td>
+        </tr>
       )}
-      <td>
-        <Button
-          aria-label={`Copy address ${p.label}`}
-          onClick={() => {
-            p.onCopy(p.index, p.address);
-          }}
-        >
-          {p.copied ? 'Copied' : 'Copy'}
-        </Button>{' '}
-        <Button
-          aria-label={`QR code ${p.label}`}
-          aria-expanded={p.qrOpen}
-          onClick={() => {
-            p.onQr(p.index);
-          }}
-        >
-          QR
-        </Button>
-      </td>
-    </tr>
+    </>
   );
 });
 
@@ -283,90 +402,99 @@ export interface FleetTableProps {
   readonly tokenAmounts: ReadonlyMap<number, string> | null;
   readonly tokenLabel: string | null;
   readonly maxSpendText: Readonly<Record<number, string>>;
-  readonly active: Readonly<Record<number, boolean>>;
+  /** Wallets without an entry are selected (D-019). */
+  readonly selected: Readonly<Record<number, boolean>>;
   readonly minReserve: bigint;
-  readonly qrFor: number | null;
-  readonly copied: number | null;
   readonly onMaxSpend: RowProps['onMaxSpend'];
-  readonly onActive: RowProps['onActive'];
+  readonly onSelect: RowProps['onSelect'];
+  readonly onSelectAll: (selected: boolean) => void;
   readonly onCopy: RowProps['onCopy'];
-  readonly onQr: RowProps['onQr'];
   readonly probe?: RowProps['probe'];
   /** Progress of the current buy, or null before the first one (BUNNDLY-27). */
   readonly buy?: ReadonlyMap<number, BuyRow> | null;
   /** Decimals of the bought token. */
   readonly buyDecimals?: number | null;
   readonly explorer?: Explorer;
-  /** Transaction links lead to this network's explorer pages. */
+  /** Explorer links lead to this network's pages. */
   readonly network?: Network;
+  /** Controls on the right of the bar above the table. */
+  readonly tools?: ReactNode;
 }
 
-/** Fleet table (SPEC 3.2), with the purchase columns once a buy started (SPEC 3.6). */
+/**
+ * Wallet table (SPEC 11.2): one 56 px row per wallet; the buy details of a wallet open in a
+ * row under it (SPEC 3.6).
+ */
 export function FleetTable(t: FleetTableProps) {
-  const showBuy = t.buy !== undefined && t.buy !== null;
   const decimals = t.buyDecimals ?? null;
   const explorer = t.explorer ?? 'solscan';
   const network = t.network ?? 'mainnet';
+  const selectedCount = t.wallets.filter((w) => t.selected[w.index] ?? true).length;
+  const all = selectedCount === t.wallets.length;
   return (
-    <div className="table-wrap">
-      <table className="wallets">
-        <caption>
-          Wallets (addresses verified; reserve = balance − max spend, minimum{' '}
-          {formatSol(t.minReserve)} SOL)
-        </caption>
-        <thead>
-          <tr>
-            <th scope="col">#</th>
-            <th scope="col">Label</th>
-            <th scope="col">Deposit address</th>
-            <th scope="col">SOL balance</th>
-            <th scope="col">Max spend (SOL)</th>
-            <th scope="col">Reserve (SOL)</th>
-            <th scope="col">{t.tokenLabel ?? 'Token'}</th>
-            <th scope="col">Active</th>
-            {showBuy && (
-              <>
-                <th scope="col">Buy status</th>
-                <th scope="col">Time</th>
-                <th scope="col">Attempts</th>
-                <th scope="col">Bought</th>
-                <th scope="col">Spent (SOL)</th>
-                <th scope="col">Price (SOL/token)</th>
-                <th scope="col">Chain</th>
-                <th scope="col">Transaction</th>
-              </>
-            )}
-            <th scope="col">Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          {t.wallets.map((w) => (
-            <FleetRow
-              key={w.index}
-              index={w.index}
-              label={w.label}
-              address={w.address}
-              balance={t.lamports?.get(w.index) ?? null}
-              token={t.tokenAmounts?.get(w.index) ?? null}
-              maxSpendText={t.maxSpendText[w.index] ?? ''}
-              active={t.active[w.index] ?? true}
-              minReserve={t.minReserve}
-              qrOpen={t.qrFor === w.index}
-              copied={t.copied === w.index}
-              onMaxSpend={t.onMaxSpend}
-              onActive={t.onActive}
-              onCopy={t.onCopy}
-              onQr={t.onQr}
-              probe={t.probe}
-              showBuy={showBuy}
-              buy={t.buy?.get(w.index) ?? null}
-              decimals={decimals}
-              explorer={explorer}
-              network={network}
-            />
-          ))}
-        </tbody>
-      </table>
+    <div className="wallets-block">
+      <div className="table-bar">
+        <span className="sel-count" aria-live="polite">
+          {selectedCount} of {t.wallets.length} selected
+        </span>
+        <span className="spacer" />
+        {t.tools}
+      </div>
+      <div className="wallets-wrap">
+        <table className="wallets">
+          <caption className="sr-only">
+            Wallets (addresses verified; reserve = balance − max spend, minimum{' '}
+            {formatSol(t.minReserve)} SOL)
+          </caption>
+          <thead>
+            <tr>
+              <th scope="col" className="c-check">
+                <Checkbox
+                  aria-label="Select all wallets"
+                  checked={selectedCount === 0 ? false : all ? true : 'mixed'}
+                  disabled={t.wallets.length === 0}
+                  onChange={t.onSelectAll}
+                />
+              </th>
+              <th scope="col">Wallet</th>
+              <th scope="col" aria-label="Balance (SOL)">
+                Balance
+              </th>
+              <th scope="col">{t.tokenLabel ?? 'Token'}</th>
+              <th scope="col" aria-label="Amount (max spend, SOL)">
+                Amount
+              </th>
+              <th scope="col">Status</th>
+              <th scope="col" className="c-acts">
+                <span className="sr-only">Wallet tools</span>
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {t.wallets.map((w) => (
+              <FleetRow
+                key={w.index}
+                index={w.index}
+                label={w.label}
+                address={w.address}
+                balance={t.lamports?.get(w.index) ?? null}
+                token={t.tokenAmounts?.get(w.index) ?? null}
+                maxSpendText={t.maxSpendText[w.index] ?? ''}
+                selected={t.selected[w.index] ?? true}
+                minReserve={t.minReserve}
+                onMaxSpend={t.onMaxSpend}
+                onSelect={t.onSelect}
+                onCopy={t.onCopy}
+                probe={t.probe}
+                buy={t.buy?.get(w.index) ?? null}
+                decimals={decimals}
+                explorer={explorer}
+                network={network}
+              />
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }

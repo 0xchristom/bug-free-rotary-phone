@@ -21,9 +21,8 @@ export function Avatar({ seed, size = 'md', className }: AvatarProps) {
       focusable="false"
       style={style}
     >
-      {cells.map(([x, y]) => (
-        <rect key={`${String(x)}-${String(y)}`} x={x} y={y} width="1" height="1" />
-      ))}
+      {/* One path, a unit square per filled cell: a fleet table draws a hundred of these. */}
+      <path d={cells.map(([x, y]) => `M${String(x)} ${String(y)}h1v1h-1z`).join('')} />
     </svg>
   );
 }

@@ -68,6 +68,8 @@
 
   /* Type: one sans face for everything; figures use tabular numerals. */
   --font-ui: 'Geist', 'Segoe UI', system-ui, -apple-system, sans-serif;
+  /* Addresses: every character the same width, so two of them compare at a glance. */
+  --font-mono: ui-monospace, 'Cascadia Mono', Consolas, monospace;
   --fs-kbd: 10.5px;
   --fs-caption: 11.5px;
   --fs-small: 12px;
@@ -96,7 +98,7 @@
   --h-chip: 26px;
   --h-chip-sm: 19px;
   --h-bar: 8px;
-  --h-row: 68px;
+  --h-row: 56px;
   --h-head: 42px;
 
   /* Radii. */

@@ -310,7 +310,19 @@ describe('Avatar', () => {
     const { container } = render(<Avatar seed="fleet-alpha" />);
     const svg = container.querySelector('svg');
     expect(svg?.getAttribute('aria-hidden')).toBe('true');
-    expect(svg?.querySelectorAll('rect')).toHaveLength(14);
+    // '.###.|#.#.#|.###.|.....|#####' (see above), row by row as "x,y"
+    const squares = [
+      ...(svg?.querySelector('path')?.getAttribute('d') ?? '').matchAll(/M(\d) (\d)h1v1h-1z/gu),
+    ].map(([, x, y]) => `${String(x)},${String(y)}`);
+    expect(squares.sort()).toEqual(
+      [
+        ...['1,0', '2,0', '3,0'],
+        ...['0,1', '2,1', '4,1'],
+        ...['1,2', '2,2', '3,2'],
+        ...['0,4', '1,4', '2,4', '3,4', '4,4'],
+      ].sort(),
+    );
+    expect(svg?.children).toHaveLength(1);
     expect(svg?.style.getPropertyValue('--ava-hue')).toBe('343');
   });
 });
