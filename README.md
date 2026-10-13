@@ -114,10 +114,11 @@ Otwórz `https://<project>.pages.dev` w oknie prywatnym. Powinna się pokazać s
 3. **Kopia zapasowa mnemonika** (w aplikacji „recovery phrase”)**:** **Back up the recovery phrase**, wpisz hasło, potwierdź ostrzeżenie i zapisz plik offline. To jedyny sposób na odzyskanie floty bez pliku lub bez hasła.
 4. **Klucze API:** **Settings** > wpisz klucz Helius (i ewentualnie Jupiter; bez niego aplikacja używa planu Keyless) > **Save settings** > **Save the updated fleet file**.
 5. **Test połączeń:** w **Settings** kliknij **Test connections**. Zobaczysz wynik i czas dla Helius HTTP, Helius WebSocket i Jupitera oraz nagłówki limitów Jupitera.
-6. **Zasil portfele:** na ekranie **Fleet** każdy portfel ma adres depozytu z przyciskami **Copy** i **QR**. Wyślij SOL z własnego portfela na wybrane adresy. Salda odświeżają się co ok. 12 s.
-7. **Tabela floty:** ustaw max spend dla portfeli (ręcznie albo akcjami zbiorczymi: kwota dla wszystkich lub % salda), zaznacz aktywne portfele. Rezerwa (saldo − max spend) musi wynosić co najmniej `MIN_RESERVE_SOL` (domyślnie 0,015 SOL); za mała rezerwa podświetla wiersz na czerwono. Zapisz: **Save table changes**, potem **Save the updated fleet file**.
-8. **Saldo tokenu:** wpisz adres mintu w polu **Token address (mint)** i kliknij **Show token balance**.
-9. **Później:** **Open a fleet file** > wybierz plik > sprawdź podgląd adresów > wpisz hasło. Po 15 minutach bezczynności flota blokuje się sama.
+6. **Zasil portfele:** na ekranie **Fleet** każdy portfel ma w wierszu skrócony adres (4 pierwsze i 4 ostatnie znaki), ikonę kopiowania pełnego adresu, ikonę eksploratora i ikonę kodu QR. Pełny adres jest też w szczegółach wiersza (ikona **Details**). Wyślij SOL z własnego portfela na wybrane adresy. Salda odświeżają się co ok. 12 s.
+7. **Tabela floty:** ustaw kwotę (max spend) dla portfeli w kolumnie **Amount** (ręcznie albo akcjami zbiorczymi: kwota dla wszystkich lub % salda) i zaznacz portfele, które mają brać udział w zakupie (pole wyboru w wierszu; pole w nagłówku zaznacza albo odznacza wszystkie). Rezerwa (saldo − max spend) musi wynosić co najmniej `MIN_RESERVE_SOL` (domyślnie 0,015 SOL); za małą rezerwę aplikacja opisuje pod polem kwoty. Zapisz: **Save table changes**, potem **Save the updated fleet file**.
+8. **Kolejne portfele:** **Create wallets** nad tabelą, wpisz liczbę, **Create**, potem **Save the updated fleet file**. Nowe portfele nazywają się **Wallet N** (numer od 0); portfele z wcześniej zapisanych plików zachowują swoje nazwy (np. W01).
+9. **Saldo tokenu:** wpisz adres mintu w polu **Token address (mint)** i kliknij **Show token balance**.
+10. **Później:** **Open a fleet file** > wybierz plik > sprawdź podgląd adresów > wpisz hasło. Po 15 minutach bezczynności flota blokuje się sama.
 
 ## Sieć: Mainnet i Devnet
 
@@ -134,7 +135,7 @@ Sieć jest też w dzienniku operacji (kolumna `network` w CSV i JSON) i w dialog
 
 ## Zakup: tryb A
 
-Tryb A kupuje token od razu wszystkimi gotowymi portfelami (aktywny, max spend > 0, rezerwa co najmniej `MIN_RESERVE_SOL`). Każdy portfel kupuje za swój max spend, najwyżej raz.
+Tryb A kupuje token od razu wszystkimi gotowymi portfelami (zaznaczony, max spend > 0, rezerwa co najmniej `MIN_RESERVE_SOL`). Każdy portfel kupuje za swój max spend, najwyżej raz.
 
 1. **Mint:** na ekranie **Fleet** wpisz adres tokenu w polu **Token address (mint)** i kliknij **Show token balance**. Aplikacja sprawdza, że to mint SPL albo Token-2022. Dopiero wtedy **Buy now** staje się aktywny.
 2. **Podsumowanie:** panel **Buy**, zakładka **Mode A: mint**, pokazuje mint, liczbę gotowych portfeli, łączną kwotę do wydania i tryb. Zakup używa ustawień zapisanych w sejfie, więc najpierw zapisz zmiany w tabeli.
@@ -149,7 +150,7 @@ Tryb A kupuje token od razu wszystkimi gotowymi portfelami (aktywny, max spend >
 5. **Buy now:** start. **Nie zamykaj ani nie przeładowuj karty** do końca zakupu: klucze i zakup działają tylko w niej, a przeglądarka zapyta przed zamknięciem.
 6. **Postęp:**
    - pasek pokazuje potwierdzone, w trakcie oraz nieudane albo pominięte, a także czas od startu do pierwszego i do ostatniego potwierdzenia;
-   - w tabeli floty dochodzą kolumny zakupu: status (kolor i tekst z powodem), czas, próby, kupione tokeny, wydany SOL, cena (SOL za token), wynik sprawdzenia saldem tokenu („confirmed” albo ostrzeżenie) i link **Transaction** do eksploratora z **Settings**;
+   - w tabeli floty kolumna **Status** pokazuje stan zakupu portfela (kolor i tekst z powodem), a szczegóły wiersza (ikona **Details**): czas, próby, kupione tokeny, wydany SOL, cenę (SOL za token), wynik sprawdzenia saldem tokenu („confirmed” albo ostrzeżenie) i link **Transaction** do eksploratora z **Settings**;
    - „Checking the chain” znaczy, że wynik wysłanej transakcji nie jest jeszcze znany. Portfel nie spróbuje ponownie, dopóki łańcuch nie pokaże, że transakcja nie wylądowała.
 7. **STOP:** duży czerwony przycisk widoczny przez cały zakup. Zatrzymuje nowe zapytania; transakcje już wysłane są śledzone do końca, a reszta portfeli kończy jako „Skipped”.
 8. **Dziennik operacji:** panel **Operations log**, przyciski **Download CSV** i **Download JSON**:

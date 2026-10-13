@@ -621,8 +621,12 @@ describe('create wallets', () => {
       expect(help().className).toBe('field-error');
       expect(field.getAttribute('aria-invalid')).toBe('true');
     }
-    // Enter does not get around the disabled button
+    // Enter does not get around the disabled button, and neither does a submit of the form
     await user.type(field, '{Enter}');
+    const form = field.closest('form');
+    if (!form) throw new Error('form');
+    fireEvent.submit(form);
+    await act(() => Promise.resolve());
     expect(added).toEqual([]);
 
     for (const text of ['1', '2']) {

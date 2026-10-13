@@ -923,3 +923,27 @@ Rejestr decyzji i rozbieżności z dokumentacją zewnętrzną. Nowe wpisy dopisu
   - Odrzucone: `@fontsource-variable/geist` jako zależność (nowa paczka w lockfile dla jednego pliku), Google Fonts (zewnętrzny host, wbrew CSP i SPEC 6.4), biblioteka komponentów albo ikon (rozmiar, style wstrzykiwane w czasie działania kłócą się z `style-src 'self'`).
   - Układ ekranu floty z makiety v2 (pasek celu, zakładki filtrów, pasek poleceń, kolumny tabeli) to BUNNDLY-55; tu ekrany dostały tylko nowe komponenty i tokeny.
   - Nagłówek tabeli portfeli nie jest jeszcze przyklejony przy przewijaniu strony (tabela przewija się w poziomie we własnym kontenerze); do rozwiązania razem z układem w BUNNDLY-55.
+
+## D-044: Tabela portfeli: etykiety „Wallet N”, zaznaczenie zamiast „Active”, szczegóły w rozwijanym wierszu
+
+- Data: 2026-10-13
+- Zadanie: BUNNDLY-55
+- Kontekst: SPEC 11.1 i 11.2 oraz makieta v2 wymagają zwartej tabeli (jeden wiersz 56 px na portfel) i nazw „Wallet 0, Wallet 1, …”. Dotychczasowa tabela miała do 17 kolumn tekstowych, pełny adres w komórce i etykiety `W01`, `W02`, ….
+- Decyzja:
+  - **Etykiety:** `defaultWalletLabel(index)` zwraca `Wallet <index>` (od 0). Etykieta jest zapisana w części jawnej pliku floty (`public.wallets[].label`), więc pliki sprzed zmiany pokazują swoje `W01`, …; aplikacja niczego nie przemianowuje. Flota, do której dodano portfele po zmianie, ma obok siebie stare i nowe nazwy (np. `W03`, `Wallet 3`). Format pliku, protokół workera i format ustawień bez zmian.
+  - **Zaznaczenie = `active`:** pole wyboru w wierszu zastępuje kolumnę „Active” i zapisuje się tą samą drogą co dotąd (`saveSettings` po „Save table changes”, D-019: zapisywane są tylko portfele wyłączone). Pole w nagłówku ma trzy stany; kliknięcie w stanie pośrednim zaznacza wszystkie. Przyciski „Select all” / „Deselect all” z akcji zbiorczych zniknęły.
+  - **Kolumny:** zaznaczenie, Wallet (avatar, nazwa, adres 4…4, kopiowanie, eksplorator), Balance (znak SOL i kwota; „—” przed pierwszym odczytem), Token, Amount (max spend), Status, narzędzia wiersza (kod QR, szczegóły). Kolumny rezerwy nie ma: za mała rezerwa jest opisana pod polem kwoty („Leaves X SOL; the minimum reserve is Y SOL.”), a wartość rezerwy jest w szczegółach.
+  - **Status bez zakupu** mówi, czego brakuje: „Not selected”, „No amount”, „No balance yet”, „Low reserve”, „Ready”. W trakcie i po zakupie kolumna pokazuje stan zakupu jak dotąd, z powodem pod spodem.
+  - **Szczegóły zakupu** (czas, próby, kupione tokeny, wydany SOL, cena, kontrola łańcucha, link do transakcji, powód) są w wierszu rozwijanym pod portfelem, razem z pełnym adresem i rezerwą. Te same wartości i te same teksty liczb co w dawnych kolumnach.
+  - **Kod QR** otwiera się w `Popover` (fokus wchodzi do środka, Escape zamyka i oddaje fokus przyciskowi, naciśnięcie poza nim zamyka). Zastępuje to obsługę Escape na poziomie dokumentu z D-043.
+  - **Kopiowanie** potwierdza Toast „Address copied”; odmowa schowka zostaje błędem na ekranie (Toast znika sam, więc nie niesie błędów).
+  - **Odnośnik do eksploratora** jest elementem `<a href>` (otwiera kartę), a nie przyciskiem; pozostałe narzędzia wiersza są przyciskami. Każde ma w nazwie dostępnej nazwę portfela.
+  - **„Create wallets”:** Popover nad tabelą z liczbą od 1 do wolnego miejsca (limit 100), pole puste na starcie. Poza zakresem przycisk „Create” jest wyłączony, a powód stoi przy polu. Gdy tworzyć nie wolno (uzbrojony watcher, niezapisane zmiany, pełna flota), wyłączony jest przycisk otwierający, a powód stoi obok niego.
+  - **Przyklejony nagłówek bez własnego przewijania tabeli:** przy oknie od 1280 px tabela nie ma własnego kontenera przewijania; nagłówek przykleja się do przewijanej treści aplikacji, a Popover ostatniego wiersza nie jest przycinany. Poniżej 1280 px (poza zakresem, aplikacja jest tylko na PC) tabela przewija się w poziomie we własnym kontenerze.
+  - **Krój o stałej szerokości dla adresów:** `--font-mono` to systemowy stos (`ui-monospace`, Cascadia Mono, Consolas), bez pliku czcionki. Zmienia to zdanie z D-043 „kroju mono nie ma”; Geist zostaje jedynym krojem ładowanym z domeny.
+  - **Avatar** rysuje jedną ścieżkę zamiast kwadratu na komórkę: tabela 100 portfeli ma o ok. 1 200 węzłów DOM mniej.
+- Konsekwencje / alternatywy:
+  - Pasek podsumowania stoi nad tabelą (tak mówi zadanie); makieta v2 ma go pod tabelą. Pozycje: Selected, Fleet balance, Planned buy, Ready wallets, Tokens held.
+  - Wiersz jest cięższy niż dotąd (ok. 40 węzłów DOM zamiast ok. 15). W przeglądarce bez znaczenia; w jsdom zapytania po roli na stronie ze 100 portfelami trwają ok. 0,7 s, więc testy „100 wallets” mają dłuższe limity czekania.
+  - Odrzucone: własny kontener przewijania tabeli jak w makiecie (przycinałby Popover kodu QR w krótkiej tabeli albo wymagał pozycjonowania `fixed` liczonego w skrypcie), przemianowanie etykiet w istniejących plikach (zadanie tego zabrania), keystore jako plik fixture w repo (zasada „żadnych keystore w repo”; test buduje plik z etykietą `W03` zapisaną jawnie).
+  - Poza zakresem, zgodnie z zadaniem: kolumny Slippage i Priority fee (BUNNDLY-58), Progress i Tokens (BUNNDLY-56), zakładki filtrów i pasek poleceń z makiety.
