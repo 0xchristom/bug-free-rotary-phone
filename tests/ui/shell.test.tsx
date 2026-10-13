@@ -418,3 +418,37 @@ describe('keyboard', () => {
     expect(document.activeElement).toBe(screen.getByRole('button', { name: 'QR code W02' }));
   });
 });
+
+describe('top bar: the mode chip', () => {
+  // The sentences of the buy panel, typed here by hand. DRY-RUN does sign (SPEC 7): it only
+  // never sends.
+  const DRY_RUN = 'DRY-RUN: real price requests and signatures, but no transaction will be sent.';
+  const LIVE = 'Live mode: a buy sends real transactions and spends SOL from the wallets.';
+
+  async function chipOf(dryRun: boolean): Promise<HTMLElement> {
+    const base = unlocked();
+    if (!base.info) throw new Error('fixture');
+    const { settings } = base.info;
+    const info = {
+      ...base.info,
+      settings: { ...settings, global: { ...settings.global, dryRun } },
+    };
+    render(<App vault={mockVault({ ...base, info }).client} storage={mockStorage().env} />);
+    await screen.findByRole('heading', { name: 'Fleet' });
+    return screen.getByText(dryRun ? 'Mode: DRY-RUN' : 'Mode: LIVE');
+  }
+
+  it('in DRY-RUN its hint says what the buy panel says: signed, never sent', async () => {
+    const chip = await chipOf(true);
+    expect(chip.getAttribute('title')).toBe(DRY_RUN);
+    expect(chip.getAttribute('title')).not.toMatch(/signs nothing/iu);
+    // the same sentence is on the screen in the buy panel
+    expect(screen.getByText(DRY_RUN).closest('.buy-panel')).toBeTruthy();
+  });
+
+  it('in live mode its hint says what the buy panel says: real transactions, real SOL', async () => {
+    const chip = await chipOf(false);
+    expect(chip.getAttribute('title')).toBe(LIVE);
+    expect(screen.getByText(LIVE).closest('.buy-panel')).toBeTruthy();
+  });
+});
