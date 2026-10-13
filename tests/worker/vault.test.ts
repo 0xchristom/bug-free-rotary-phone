@@ -95,7 +95,9 @@ let main: VaultHandler;
 let created: VaultFileResult;
 
 beforeAll(async () => {
-  main = createVaultHandler({ autoLockMs: AUTO_LOCK_MS });
+  // The shared vault lives for the whole file, so its clock stands still. On the real clock
+  // it locked itself after 60 s and the last tests of a slow run got VAULT_LOCKED.
+  main = createVaultHandler({ now: clock().now, autoLockMs: AUTO_LOCK_MS });
   created = await call<VaultFileResult>(main, {
     type: 'create',
     fleetName: 'Flota',
