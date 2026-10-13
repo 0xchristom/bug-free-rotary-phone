@@ -137,9 +137,10 @@ describe('colour literals', () => {
     });
   }
 
-  it('the component kit and the font sheet hold none: colours live in tokens.css', () => {
-    const files = [...sourceFiles('src/ui/kit'), 'src/ui/fonts.css'];
-    expect(files.length).toBeGreaterThan(10);
+  it('nothing in src/ui holds one except tokens.css', () => {
+    const files = sourceFiles('src/ui').filter((file) => !file.endsWith('tokens.css'));
+    expect(files.length).toBeGreaterThan(40);
+    expect(files.some((file) => file.endsWith('base.css'))).toBe(true);
     const hits = files.flatMap((file) =>
       readFileSync(file, 'utf8')
         .split('\n')

@@ -9,6 +9,7 @@ import type { BuyView } from './use-buy.ts';
 import { useVault } from './vault-state.ts';
 import { WatchPanel } from './WatchPanel.tsx';
 import { WATCH_FROZEN } from './watch-labels.ts';
+import { Button, Chip, Modal, ProgressBar } from './kit/index.ts';
 
 export interface BuyPanelProps {
   readonly view: BuyView;
@@ -133,14 +134,11 @@ export function BuyPanel({
     <section className="buy-panel" aria-labelledby={`${ids}-title`}>
       <div className="buy-head">
         <h3 id={`${ids}-title`}>Buy</h3>
-        <span
-          className={`mode-label ${dryRun ? 'dry' : 'live'}`}
-          aria-label={dryRun ? 'Mode: DRY-RUN' : 'Mode: live'}
-        >
+        <Chip tone={dryRun ? 'sim' : 'danger'} aria-label={dryRun ? 'Mode: DRY-RUN' : 'Mode: live'}>
           {dryRun ? 'DRY-RUN' : 'LIVE'}
-        </span>
+        </Chip>
       </div>
-      <div className="mode-tabs" role="group" aria-label="Buy mode">
+      <div className="k-seg mode-tabs" role="group" aria-label="Buy mode">
         {(
           [
             ['A', 'Mode A: mint'],
@@ -169,65 +167,64 @@ export function BuyPanel({
       {!running &&
         !watchArmed &&
         (dryRun ? (
-          confirmLive ? (
-            <div
-              className="notice warning"
-              role="alertdialog"
-              aria-labelledby={`${ids}-live-title`}
-              aria-describedby={`${ids}-live-text`}
+          <div className="actions">
+            <Button
+              disabled={busy !== null}
+              onClick={() => {
+                setConfirmLive(true);
+              }}
             >
-              <p id={`${ids}-live-title`}>
-                <strong>Switch to live mode?</strong>
-              </p>
-              <p id={`${ids}-live-text`}>
-                Network: {NETWORK_LABELS[status?.network ?? DEFAULT_NETWORK]}. The next buy will
-                spend real SOL: up to {formatSol(toSpend)} SOL from {readyCount}{' '}
-                {readyCount === 1 ? 'wallet' : 'wallets'}. On-chain transactions cannot be undone.
-              </p>
-              <div className="actions">
-                <button
-                  type="button"
-                  className="danger"
-                  onClick={() => {
-                    setMode(false);
-                  }}
-                >
-                  Yes, switch to live mode
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setConfirmLive(false);
-                  }}
-                >
-                  Cancel
-                </button>
-              </div>
-            </div>
-          ) : (
-            <div className="actions">
-              <button
-                type="button"
-                disabled={busy !== null}
-                onClick={() => {
-                  setConfirmLive(true);
+              Switch to live mode…
+            </Button>
+            {/* The opener stays mounted: the dialog gives the focus back to it. */}
+            {confirmLive && (
+              <Modal
+                open
+                role="alertdialog"
+                tone="danger"
+                title="Switch to live mode?"
+                onClose={() => {
+                  setConfirmLive(false);
                 }}
+                footer={
+                  <>
+                    <Button
+                      variant="ghost"
+                      onClick={() => {
+                        setConfirmLive(false);
+                      }}
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      variant="danger"
+                      onClick={() => {
+                        setMode(false);
+                      }}
+                    >
+                      Yes, switch to live mode
+                    </Button>
+                  </>
+                }
               >
-                Switch to live mode…
-              </button>
-            </div>
-          )
+                <p>
+                  Network: {NETWORK_LABELS[status?.network ?? DEFAULT_NETWORK]}. The next buy will
+                  spend real SOL: up to {formatSol(toSpend)} SOL from {readyCount}{' '}
+                  {readyCount === 1 ? 'wallet' : 'wallets'}. On-chain transactions cannot be undone.
+                </p>
+              </Modal>
+            )}
+          </div>
         ) : (
           <div className="actions">
-            <button
-              type="button"
+            <Button
               disabled={busy !== null}
               onClick={() => {
                 setMode(true);
               }}
             >
               Back to DRY-RUN
-            </button>
+            </Button>
           </div>
         ))}
 
@@ -280,21 +277,21 @@ export function BuyPanel({
 
       {running ? (
         <div className="actions">
-          <button
-            type="button"
+          <Button
+            variant="warn"
             className="stop"
             disabled={stopping || busy !== null}
             onClick={stop}
           >
             {stopping ? 'Stopping…' : 'STOP'}
-          </button>
+          </Button>
         </div>
       ) : (
         tab === 'A' && (
           <div className="actions">
-            <button type="button" className="primary buy" disabled={!canStart} onClick={start}>
+            <Button variant="success" disabled={!canStart} onClick={start}>
               {busy === 'start' ? 'Starting…' : 'Buy now'}
-            </button>
+            </Button>
             {blocked && <span className="muted">{blocked}</span>}
           </div>
         )
@@ -313,7 +310,12 @@ export function BuyPanel({
 
       {run && (
         <div className="progress-bar" role="status" aria-live="polite">
-          <progress max={run.wallets} value={counts.confirmed} aria-label="Confirmed buys" />
+          <ProgressBar
+            label="Confirmed buys"
+            value={counts.confirmed}
+            max={run.wallets}
+            tone={run.phase === 'finished' ? 'ok' : 'run'}
+          />
           <p>
             <strong>
               {counts.confirmed}/{run.wallets} confirmed

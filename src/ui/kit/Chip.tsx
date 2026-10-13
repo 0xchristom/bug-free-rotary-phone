@@ -10,6 +10,8 @@ export interface ChipProps {
   /** A blinking dot: the thing is in flight right now. */
   readonly dot?: boolean;
   readonly title?: string;
+  /** Replaces the text for screen readers when the text alone is too short to be clear. */
+  readonly 'aria-label'?: string;
   readonly className?: string;
   readonly children: ReactNode;
 }
@@ -21,6 +23,7 @@ export function Chip({
   icon,
   dot = false,
   title,
+  'aria-label': ariaLabel,
   className,
   children,
 }: ChipProps) {
@@ -29,6 +32,7 @@ export function Chip({
       className={cx('k-chip', size === 'sm' && 'k-chip-sm', className)}
       data-tone={tone}
       title={title}
+      aria-label={ariaLabel}
     >
       {dot && <span className="k-dot" aria-hidden="true" />}
       {icon}

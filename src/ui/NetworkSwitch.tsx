@@ -1,6 +1,7 @@
 import { NETWORKS, NETWORK_LABELS, type Network } from '../core/network.ts';
 import { supportsDirectoryPicker, type StorageEnv } from '../storage/keystore-file.ts';
 import type { NetworkSwitching } from './use-network-switch.ts';
+import { Button } from './kit/index.ts';
 
 const LOCKED_HINT = 'The network is saved in the fleet file: open a fleet to change it.';
 
@@ -15,7 +16,7 @@ export interface NetworkSwitchProps {
 export function NetworkSwitch({ network, locked, onChoose }: NetworkSwitchProps) {
   return (
     <div
-      className={`network-switch ${network}`}
+      className={`k-seg network-switch ${network}`}
       role="group"
       aria-label="Network"
       title={locked ? LOCKED_HINT : undefined}
@@ -64,9 +65,9 @@ export function NetworkNotice({
             <p className="muted">Your browser will download the file. Check “Downloads” then.</p>
           )}
           <div className="actions">
-            <button type="button" className="primary" disabled={file.saving} onClick={save}>
+            <Button variant="primary" disabled={file.saving} onClick={save}>
               {file.saving ? 'Saving…' : 'Save the fleet file with the new network'}
-            </button>
+            </Button>
           </div>
         </div>
       )}

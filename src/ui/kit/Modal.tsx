@@ -7,6 +7,8 @@ export interface ModalProps {
   readonly open: boolean;
   readonly onClose: () => void;
   readonly title: string;
+  /** `alertdialog`: a decision that interrupts (confirm spending, arming). */
+  readonly role?: 'dialog' | 'alertdialog';
   /** `danger`: the decision spends money or shows secrets. */
   readonly tone?: 'neutral' | 'danger';
   /** `false` while work that must not be interrupted runs: Esc and the backdrop do nothing. */
@@ -25,6 +27,7 @@ export function Modal({
   open,
   onClose,
   title,
+  role = 'dialog',
   tone = 'neutral',
   dismissible = true,
   footer,
@@ -33,6 +36,7 @@ export function Modal({
 }: ModalProps) {
   const dialog = useRef<HTMLDivElement>(null);
   const titleId = useId();
+  const bodyId = useId();
 
   useEffect(() => {
     if (!open) return;
@@ -81,9 +85,10 @@ export function Modal({
     >
       <div
         ref={dialog}
-        role="dialog"
+        role={role}
         aria-modal="true"
         aria-labelledby={titleId}
+        aria-describedby={role === 'alertdialog' ? bodyId : undefined}
         tabIndex={-1}
         className={cx('k-modal', tone === 'danger' && 'k-modal-danger', className)}
         onKeyDown={onKeyDown}
@@ -91,7 +96,9 @@ export function Modal({
         <h2 id={titleId} className="k-modal-title">
           {title}
         </h2>
-        <div className="k-modal-body">{children}</div>
+        <div id={bodyId} className="k-modal-body">
+          {children}
+        </div>
         {footer !== undefined && <div className="k-modal-footer">{footer}</div>}
       </div>
     </div>,

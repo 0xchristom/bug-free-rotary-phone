@@ -60,6 +60,10 @@
   --sol-a: #9945ff;
   --sol-b: #14f195;
 
+  /* A QR code is read by a camera, not by the theme: always black on white. */
+  --qr-paper: #ffffff;
+  --qr-ink: #000000;
+
   --focus: var(--watch);
 
   /* Type: one sans face for everything; figures use tabular numerals. */
