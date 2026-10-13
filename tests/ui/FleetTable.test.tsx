@@ -1,12 +1,12 @@
 // @vitest-environment jsdom
 import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AppError } from '../../src/core/errors.ts';
 import type { FleetSettingsV1 } from '../../src/core/index.ts';
 import { App } from '../../src/ui/App.tsx';
 import type { VaultInfo, VaultRequest, VaultStatus } from '../../src/worker/protocol.ts';
 import { fleetInfo, mockStorage, mockVault } from './fakes.ts';
+import { setupUser } from './user.ts';
 
 const SOL = 1_000_000_000n;
 
@@ -80,7 +80,7 @@ function setup({ count = 3, settings = {}, lamports = () => SOL, probe }: Setup 
     vault,
     saved,
     storage,
-    user: userEvent.setup(),
+    user: setupUser(),
     setBalances: (f: (index: number) => bigint) => {
       balanceOf = f;
     },
@@ -247,6 +247,20 @@ describe('fleet table', () => {
 });
 
 describe('100 wallets', () => {
+  /**
+   * `cells()` for a table of 100 rows, through the table's own structure. A role query with
+   * a name works out the accessible name of every cell on the page; with 100 rows one call
+   * took 1–2 s in jsdom, and `waitFor` repeats it (BUNNDLY-65). The tests with three rows
+   * above keep the role queries.
+   */
+  function cellsOf(label: string): string[] {
+    const tr = [...document.querySelectorAll('tbody tr')].find(
+      (r) => r.children[1]?.textContent === label,
+    );
+    if (!tr) throw new Error(`row ${label}`);
+    return [...tr.children].map((c) => c.textContent);
+  }
+
   it('a balance refresh re-renders only the rows whose balance changed', async () => {
     const renders = new Map<number, number>();
     const probe = (index: number): void => {
@@ -255,7 +269,7 @@ describe('100 wallets', () => {
     const { user, setBalances } = setup({ count: 100, probe });
     await ready();
     await waitFor(() => {
-      expect(cells('W100')[3]).toBe('1');
+      expect(cellsOf('W100')[3]).toBe('1');
     });
     expect(renders.size).toBe(100);
     const before = new Map(renders);
@@ -269,7 +283,7 @@ describe('100 wallets', () => {
     setBalances((i) => (i === 42 ? 2n * SOL : SOL));
     await user.click(screen.getByRole('button', { name: 'Refresh balances' }));
     await waitFor(() => {
-      expect(cells('W43')[3]).toBe('2');
+      expect(cellsOf('W43')[3]).toBe('2');
     });
     const changed = [...renders].filter(([i, n]) => n !== before.get(i)).map(([i]) => i);
     expect(changed).toEqual([42]);

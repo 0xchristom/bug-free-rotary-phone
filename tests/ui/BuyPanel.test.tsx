@@ -4,13 +4,14 @@
  * explorer links, STOP, live mode only after confirmation, render counts at 100 wallets.
  */
 import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
+import type { UserEvent } from '@testing-library/user-event';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { FleetSettingsV1 } from '../../src/core/index.ts';
 import type { RunEvent, WalletEvent } from '../../src/executor/index.ts';
 import { App } from '../../src/ui/App.tsx';
 import type { VaultInfo, VaultRequest, VaultStatus } from '../../src/worker/protocol.ts';
 import { fleetInfo, mockStorage, mockVault } from './fakes.ts';
+import { setupUser } from './user.ts';
 
 afterEach(cleanup);
 
@@ -102,7 +103,7 @@ function setup({ count = 3, global = {}, probe, jupiterKey = false }: Setup = {}
   return {
     vault,
     requests,
-    user: userEvent.setup(),
+    user: setupUser(),
     finishBuy: () => {
       buy = null;
     },
@@ -152,7 +153,7 @@ function walletEvent(
   };
 }
 
-async function showMint(user: ReturnType<typeof userEvent.setup>): Promise<void> {
+async function showMint(user: UserEvent): Promise<void> {
   await screen.findByText(/^Balances as of /u);
   await user.type(screen.getByLabelText('Token address (mint)'), MINT);
   await user.click(screen.getByRole('button', { name: 'Show token balance' }));
