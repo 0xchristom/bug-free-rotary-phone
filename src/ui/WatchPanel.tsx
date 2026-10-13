@@ -1,5 +1,6 @@
 import { useEffect, useId, useState } from 'react';
 import { toUserMessage } from '../core/errors.ts';
+import { DEFAULT_NETWORK, NETWORK_LABELS } from '../core/network.ts';
 import type { BuyMode } from '../core/settings.ts';
 import type { ApiKeyFlags } from '../worker/protocol.ts';
 import type { WatchDetection } from '../watcher/watch.ts';
@@ -266,8 +267,9 @@ export function WatchPanel({
             <strong>Arm the watcher in live mode?</strong>
           </p>
           <p id={`${ids}-arm-text`}>
-            After a token is detected the fleet buys automatically: up to {formatSol(toSpend)} SOL
-            from {readyCount} {readyCount === 1 ? 'wallet' : 'wallets'}
+            Network: {NETWORK_LABELS[status?.network ?? DEFAULT_NETWORK]}. After a token is detected
+            the fleet buys automatically: up to {formatSol(toSpend)} SOL from {readyCount}{' '}
+            {readyCount === 1 ? 'wallet' : 'wallets'}
             {mode === 'continuous' ? ' for every token' : ''}. On-chain transactions cannot be
             undone.
           </p>

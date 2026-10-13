@@ -141,9 +141,11 @@ describe('validateGlobalSettings', () => {
 
 describe('Helius endpoints and API key values', () => {
   it('builds the documented mainnet URLs', () => {
-    expect(heliusRpcUrl('abc-123')).toBe('https://mainnet.helius-rpc.com/?api-key=abc-123');
-    expect(heliusWsUrl('abc-123')).toBe('wss://mainnet.helius-rpc.com/?api-key=abc-123');
-    expect(heliusRpcUrl('a&b')).toBe('https://mainnet.helius-rpc.com/?api-key=a%26b');
+    expect(heliusRpcUrl('mainnet', 'abc-123')).toBe(
+      'https://mainnet.helius-rpc.com/?api-key=abc-123',
+    );
+    expect(heliusWsUrl('mainnet', 'abc-123')).toBe('wss://mainnet.helius-rpc.com/?api-key=abc-123');
+    expect(heliusRpcUrl('mainnet', 'a&b')).toBe('https://mainnet.helius-rpc.com/?api-key=a%26b');
   });
 
   it.each([
@@ -276,6 +278,36 @@ describe('settings in the keystore secrets', () => {
       global: { dryRun: true },
       resetFields: ['dryRun'],
     });
+  });
+
+  it('a file without network (before BUNNDLY-44) is a mainnet fleet, without a reset notice', () => {
+    const raw = json();
+    const settings = raw.settings as { global: Record<string, unknown> };
+    expect(settings.global.network).toBe('mainnet');
+    delete settings.global.network;
+    const read = parseSecrets(raw).settings;
+    expect(read.global.network).toBe('mainnet');
+    expect(read.resetFields).toBeUndefined();
+  });
+
+  it.each(['testnet', 'Devnet', '', 7, null, ['devnet']])(
+    'network %j in the file reads as mainnet and is reported, the fleet still opens',
+    (value) => {
+      const raw = json();
+      (raw.settings as { global: Record<string, unknown> }).global.network = value;
+      expect(parseSecrets(raw).settings).toMatchObject({
+        global: { network: 'mainnet' },
+        resetFields: ['network'],
+      });
+    },
+  );
+
+  it('devnet in the file is kept', () => {
+    const raw = json();
+    (raw.settings as { global: Record<string, unknown> }).global.network = 'devnet';
+    const read = parseSecrets(raw).settings;
+    expect(read.global.network).toBe('devnet');
+    expect(read.resetFields).toBeUndefined();
   });
 
   it('a partial global object fills the missing fields with defaults', () => {

@@ -14,6 +14,7 @@ import {
   type WalletEvent,
 } from '../../src/executor/index.ts';
 import { parseExecution } from '../../src/jupiter/client.ts';
+import type { LoggedEvent } from '../../src/executor/oplog.ts';
 import type { WatchEvent } from '../../src/watcher/watch.ts';
 import { T0 } from '../helpers/fake-clock.ts';
 
@@ -119,6 +120,59 @@ describe('log entries', () => {
       observed: 2_000n,
       message: 'Warning: the token balance grew by a different amount than Jupiter reported.',
     });
+  });
+});
+
+describe('network (BUNNDLY-44)', () => {
+  it('every entry carries the network of its event, also in CSV and JSON', () => {
+    const devnet = { ...context, network: 'devnet' as const };
+    const run: LoggedEvent = {
+      kind: 'run',
+      runId: 1,
+      at: T0,
+      phase: 'started',
+      mint: 'So11111111111111111111111111111111111111112',
+      dryRun: true,
+      wallets: 1,
+      counts: {
+        IDLE: 0,
+        QUEUED: 1,
+        QUOTING: 0,
+        SIGNING: 0,
+        SUBMITTED: 0,
+        CONFIRMED: 0,
+        FAILED: 0,
+        UNKNOWN: 0,
+        SKIPPED: 0,
+      },
+    };
+    const watch: LoggedEvent = {
+      kind: 'watch',
+      at: T0,
+      type: 'armed',
+      creator: 'Creator1',
+      mode: 'one-shot',
+    };
+    const entries = [run, watch, confirmed()].map((e) => logEntry(e, devnet));
+    expect(entries.map((e) => e.network)).toEqual(['devnet', 'devnet', 'devnet']);
+
+    expect(LOG_COLUMNS.at(-1)).toBe('network');
+    const rows = toCsv(entries).split('\r\n');
+    expect(rows[0]?.endsWith(',network')).toBe(true);
+    expect(rows.slice(1, 4).every((r) => r.endsWith(',devnet'))).toBe(true);
+    const parsed = JSON.parse(toJson(entries)) as Record<string, unknown>[];
+    expect(parsed.map((e) => e.network)).toEqual(['devnet', 'devnet', 'devnet']);
+  });
+
+  it('an entry recorded without a network, or with an unknown one, reads as mainnet', () => {
+    expect(logEntry(confirmed(), context).network).toBe('mainnet');
+    const odd = { ...context, network: 'testnet' } as unknown as typeof context;
+    expect(logEntry(confirmed(), odd).network).toBe('mainnet');
+    expect(
+      toCsv([logEntry(confirmed(), context)])
+        .split('\r\n')[1]
+        ?.endsWith(',mainnet'),
+    ).toBe(true);
   });
 });
 

@@ -8,10 +8,11 @@
  * a failed transaction gives none.
  */
 import { base58 } from '@scure/base';
+import type { Network } from '../../core/network.ts';
 import {
   INITIALIZE_MINT_TAGS,
   KNOWN_MINTS,
-  MINT_INSTRUCTIONS,
+  mintInstructions,
   TOKEN_PROGRAMS,
   type DetectionSource,
 } from './programs.ts';
@@ -130,13 +131,15 @@ function startsWith(data: Uint8Array, prefix: readonly number[]): boolean {
 export function detectFromTransaction(
   tx: TransactionJson,
   watched: string,
+  network: Network = 'mainnet',
 ): TransactionDetection[] {
   if (tx.meta === null || tx.meta.err !== null) return [];
   if (!signers(tx).includes(watched)) return [];
   const launchpad: TransactionDetection[] = [];
   const generic: TransactionDetection[] = [];
+  const mints = mintInstructions(network);
   for (const ix of instructions(tx)) {
-    const known = MINT_INSTRUCTIONS.find(
+    const known = mints.find(
       (m) => m.program === ix.program && startsWith(ix.data, m.discriminator),
     );
     if (known) {

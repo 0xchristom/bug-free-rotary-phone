@@ -3,6 +3,7 @@
  * UI, English messages and small pure helpers. Results carry only statuses, times and
  * public data from the answers, never a key or a URL with a key (D-016, D-024).
  */
+import type { Network } from './network.ts';
 
 /** Why a check failed. The worker sends the code; the UI shows the message. */
 export const CONNECTION_PROBLEMS = {
@@ -72,9 +73,12 @@ export interface JupiterCheck extends ConnectionCheck {
 }
 
 export interface ConnectionReport {
+  /** The network the Helius checks ran on. */
+  readonly network: Network;
   readonly heliusHttp: HeliusHttpCheck;
   readonly heliusWs: HeliusWsCheck;
-  readonly jupiter: JupiterCheck;
+  /** Null on a network Jupiter does not serve: nothing was sent to it. */
+  readonly jupiter: JupiterCheck | null;
   /** ISO-8601 time of the test. */
   readonly testedAt: string;
 }

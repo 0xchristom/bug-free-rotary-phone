@@ -49,6 +49,37 @@ body {
   font-size: 1.4rem;
 }
 
+/* Network switch (BUNNDLY-44): devnet is marked by colour and by the pressed label. */
+.network-switch {
+  display: flex;
+  gap: 0;
+}
+
+.network-switch button {
+  border-radius: 0;
+}
+
+.network-switch button:first-child {
+  border-radius: 6px 0 0 6px;
+}
+
+.network-switch button:last-child {
+  border-radius: 0 6px 6px 0;
+  margin-left: -1px;
+}
+
+.network-switch button[aria-pressed='true'] {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 25%, transparent);
+  font-weight: 700;
+}
+
+.network-switch.devnet button[aria-pressed='true'] {
+  border-color: var(--warning);
+  background: var(--warning);
+  color: #111;
+}
+
 .unlocked-bar {
   display: flex;
   flex: 1;

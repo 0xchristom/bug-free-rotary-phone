@@ -859,3 +859,47 @@ Rejestr decyzji i rozbieżności z dokumentacją zewnętrzną. Nowe wpisy dopisu
 - Kontekst: Na Windows z `core.autocrlf=true` (ustawienie systemowe gita) pliki w drzewie roboczym mają końce CRLF. Prettier oczekuje LF, więc `npm run format:check` padał na każdym pliku, także w świeżym klonie i w worktree odbioru. Sprawdzone 2026-10-11: `prettier --check README.md src/main.tsx package.json` daje 3 ostrzeżenia przy `i/lf w/crlf`.
 - Decyzja: `.gitattributes` z `* text=auto eol=lf`. Każdy klon i każdy worktree dostaje LF niezależnie od ustawień maszyny. W indeksie pliki już były w LF, więc treść commitów się nie zmienia.
 - Konsekwencje / alternatywy: Istniejące drzewo robocze trzeba raz odświeżyć (nowy worktree albo ponowny checkout). Odrzucone: `endOfLine: "auto"` w Prettierze (dopuszcza mieszane końce w repo) i lokalne `core.autocrlf=false` (działa tylko na jednej maszynie i tylko dopóki ktoś o nim pamięta).
+
+## D-041: Sieć Mainnet / Devnet jako ustawienie floty
+
+- Data: 2026-10-12
+- Zadanie: BUNNDLY-44
+- Źródła (odczyt 2026-10-12):
+  - Helius, adresy: <https://www.helius.dev/docs/api-reference/endpoints>. Mainnet `https://mainnet.helius-rpc.com/?api-key=…` i `wss://mainnet.helius-rpc.com/?api-key=…`, devnet `https://devnet.helius-rpc.com/?api-key=…` i `wss://devnet.helius-rpc.com/?api-key=…`. Strona podaje oba adresy z tym samym parametrem klucza, ale nie mówi wprost, że jeden klucz działa na obu sieciach. **Niesprawdzone prawdziwym kluczem.**
+  - Publiczny RPC: <https://solana.com/docs/references/clusters>. `https://api.mainnet.solana.com` i `https://api.devnet.solana.com`; devnet ma limit 100 zapytań na 10 s z jednego IP (40 na metodę).
+  - Jupiter: indeks dokumentacji <https://developers.jup.ag/docs/llms.txt> nie wymienia devnetu dla Swap API. Odczyt Andy'ego z publicznego RPC devnetu: pod adresem programu Jupitera nie ma tam programu.
+  - Orb: <https://www.helius.dev/docs/orb>. Adres `https://orbmarkets.io`, devnet przez `?cluster=devnet`.
+  - Raydium LaunchLab na devnecie: `DRay6fNdQ5J82H7xV6uq2aV3mNrUZ1J4PgSKsWgptcm6` (tabela adresów programów w dokumentacji Raydium, ustalenie Andy'ego). pump.fun i Meteora DBC mają na devnecie ten sam identyfikator co na mainnecie.
+- Decyzja:
+  - **Jedno źródło prawdy:** `src/core/network.ts`. Adresy Helius, zapasowy publiczny RPC, linki eksploratorów, etykiety `Mainnet` / `Devnet` i droga zakupu są wybierane stamtąd. Żaden inny moduł w `src` nie zawiera hosta sieci (pilnuje tego test).
+  - **Gdzie jest zapisana:** pole `network` w ustawieniach floty (`GlobalSettingsV1`, zaszyfrowana część pliku), domyślnie `mainnet`. Plik bez pola to `mainnet` bez komunikatu; nieznana wartość to `mainnet` z wpisem w `resetFields`, jak inne ustawienia spoza zakresu (D-019). Sieć należy więc do floty: flota testowa zostaje na devnecie, a prawdziwa na mainnecie, także na innym komputerze.
+  - **Przełącznik:** żądanie `setNetwork` w workerze zmienia tylko to pole i zwraca nowy tekst pliku. Sieć działa od razu, a nagłówek pokazuje komunikat z przyciskiem zapisu pliku. Zablokowana flota pokazuje `Mainnet` z nieaktywnym przełącznikiem, bo wtedy aplikacja nie czyta niczego z sieci.
+  - **Blokady:** worker odrzuca zmianę sieci kodem `BUY_RUNNING` w trakcie zakupu (także gdy przychodzi w `saveSettings`) i `WATCH_ARMED` przy aktywnym watcherze. UI sprawdza to samo przed wysłaniem i nie przełącza też wtedy, gdy ekran trzyma niezapisany plik floty, bo ten plik nie znałby nowej sieci.
+  - **Salda:** odpowiedź `refreshBalances` niesie sieć, z której pochodzi. UI czyści salda w chwili przełączenia i odrzuca odpowiedź z innej sieci; worker nie przyjmuje takiej odpowiedzi jako sald do kontroli przed zakupem.
+  - **Własne adresy Helius:** obowiązują tylko na sieci, na którą wskazuje host (`devnet.helius-rpc.com` to devnet, każdy inny host Helius to mainnet). Na drugiej sieci używany jest adres z klucza; bez klucza brak adresu (`HELIUS_KEY_MISSING`).
+  - **Zakup na devnecie:** `buyRouteOf(network)` zwraca `'jupiter'` dla mainnetu i `null` dla devnetu. Bez drogi zakupu worker odrzuca `startBuy` i `arm` kodem `NO_BUY_ROUTE_ON_NETWORK`, test połączeń nie odpytuje Jupitera (`jupiter: null`), a UI wyłącza „Kupuj teraz” i UZBRÓJ z jednym zdaniem. Późniejszy zakup bezpośrednio przez launchpad to nowa wartość `BuyRoute` i jej obsługa w `startBuy`, bez zmian w przełączniku.
+  - **Detektory:** `mintInstructions(network)` podstawia identyfikator LaunchLab z devnetu. Układ instrukcji i dyskryminatory na devnecie **nie są potwierdzone prawdziwą transakcją**; dopóki uzbrojenie jest tam wyłączone, ta ścieżka nie działa.
+  - **Linki:** `transactionUrl` i `addressUrl` dodają `?cluster=devnet`. Orb dostał adres z dokumentacji (`orbmarkets.io` zamiast `orb.helius.dev`), także dla mainnetu. Parametru `?cluster=devnet` dla Solscan i Solana Explorer nie znalazłem w ich dokumentacji, więc sprawdziłem go w przeglądarce 2026-10-12 na prawdziwej transakcji z devnetu (sygnatura z `getSignaturesForAddress` publicznego RPC): Solscan pokazuje znacznik „DEVNET”, Solana Explorer „Devnet”, Orb „You are currently looking at devnet”.
+  - **Dziennik:** każdy wpis ma `network` (ostatnia kolumna CSV, żeby nie przesuwać dotychczasowych); wpis bez sieci czyta się jako `mainnet`.
+  - **CSP:** dopisany tylko `https://api.devnet.solana.com`. Hosty Helius devnetu mieszczą się w `*.helius-rpc.com`.
+- Konsekwencje / alternatywy:
+  - Każde przełączenie tworzy nowy plik floty do zapisania. Odrzucone: `localStorage` (lint celowo blokuje to API w `src`, a wybór byłby wspólny dla wszystkich flot w przeglądarce) i sieć trzymana tylko w pamięci sesji (nie byłaby zapamiętana).
+  - Starsza wersja aplikacji nie otworzy pliku z polem `network` (nieznany klucz ustawień), tak samo jak przy `dryRun`.
+  - USDC ma na devnecie inny mint (znany mi adres `4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU`, niesprawdzony w dokumentacji Circle ani w łańcuchu), a lista `KNOWN_MINTS` w detektorach zawiera minty z mainnetu. Dotyczy BUNNDLY-43.
+
+## D-042: Interfejs wyłącznie po angielsku; format liczb i nazwa pliku eksportu
+
+- Data: 2026-10-12
+- Zadanie: BUNNDLY-50
+- Kontekst: Decyzja Krystiana z 12.10.2026: interfejs wyłącznie po angielsku, bez wyboru języka (SPEC sekcja 5). Zadanie wymaga liczb i dat w formacie angielskim. Kilka zmian wykracza przez to poza sam tekst na ekranie.
+- Decyzja:
+  - **Teksty:** zwykłe napisy w kodzie, bez biblioteki i18n i bez ustawienia języka. Jeden termin ma jedno słowo w całej aplikacji; słownik jest w opisie PR. Test `tests/ui/english-only.test.ts` skanuje `src` poza komentarzami i `index.html`.
+  - **Liczby:** kwoty SOL i tokenów, czasy i limity są pokazywane z kropką dziesiętną, bez separatora tysięcy. Pola kwot i procentów nadal przyjmują kropkę i przecinek (parsowanie bez zmian), więc dotychczasowy nawyk wpisywania `0,5` działa.
+  - **Godziny:** `toLocaleTimeString('en-GB')`, czyli format 24 h, jak dotąd.
+  - **Eksport dziennika:** pole `price` w CSV i JSON ma teraz kropkę (`0.00012` zamiast `0,00012`), bo ta sama funkcja formatuje cenę w tabeli. Kwoty w lamportach i jednostkach bazowych były i są liczbami całkowitymi. Nazwy kolumn bez zmian.
+  - **Eksport jawny:** plik nazywa się `<flota>.PLAIN-EXPORT.txt` albo `.json` (było `.EKSPORT-JAWNY`); etykiety w pliku tekstowym są po angielsku, klucze JSON bez zmian. Ten wpis zastępuje nazwę pliku podaną w starszym wpisie o eksporcie jawnym.
+  - **Bez zmian:** kody błędów, pola formatu pliku floty, nazwy kolumn dziennika, zachowanie i układ ekranów.
+- Konsekwencje / alternatywy:
+  - Arkusz albo skrypt, który czytał `price` z przecinkiem, trzeba dostosować. Odrzucone: osobny formater ceny dla eksportu (dwa formaty tej samej liczby w jednej aplikacji).
+  - Test „kreator nie pokazuje mnemonika” sprawdza teraz, że na stronie nie ma żadnych trzech kolejnych słów mnemonika. Poprzednia wersja sprawdzała pojedyncze słowa, a angielski interfejs zawiera słowa z listy BIP39 (np. „cloud”, „wallet”), więc dawała fałszywy alarm.
+  - Dokumenty w `docs/`, `PROGRESS.md` i komentarze w Plane zostają po polsku (`CLAUDE.md`).

@@ -1,5 +1,6 @@
 import { useEffect, useId, useState, type ReactNode } from 'react';
 import { toUserMessage } from '../core/errors.ts';
+import { DEFAULT_NETWORK, NETWORK_LABELS } from '../core/network.ts';
 import type { BuyMode, JupiterPlan } from '../core/settings.ts';
 import type { ApiKeyFlags } from '../worker/protocol.ts';
 import { PLAN_LABELS } from './plan-labels.ts';
@@ -179,7 +180,8 @@ export function BuyPanel({
                 <strong>Switch to live mode?</strong>
               </p>
               <p id={`${ids}-live-text`}>
-                The next buy will spend real SOL: up to {formatSol(toSpend)} SOL from {readyCount}{' '}
+                Network: {NETWORK_LABELS[status?.network ?? DEFAULT_NETWORK]}. The next buy will
+                spend real SOL: up to {formatSol(toSpend)} SOL from {readyCount}{' '}
                 {readyCount === 1 ? 'wallet' : 'wallets'}. On-chain transactions cannot be undone.
               </p>
               <div className="actions">

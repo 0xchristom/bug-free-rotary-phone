@@ -39,6 +39,7 @@ function setup({ count = 3, global = {}, probe, jupiterKey = false }: Setup = {}
   let buy: VaultStatus['buy'] = null;
   const status = (): VaultStatus => ({
     locked: false,
+    network: info.settings.global.network,
     armed: buy !== null,
     info,
     buy,
@@ -65,6 +66,7 @@ function setup({ count = 3, global = {}, probe, jupiterKey = false }: Setup = {}
                 },
               }
             : {}),
+          network: info.settings.global.network,
           source: 'helius',
           fetchedAt: '2026-10-02T12:00:00.000Z',
         });
@@ -244,7 +246,7 @@ describe('mode A', () => {
     expect(ok.getByText('0.004759638267')).toBeTruthy(); // SOL per token
     expect(ok.getByText('confirmed')).toBeTruthy();
     expect(ok.getByRole('link', { name: 'Transaction' }).getAttribute('href')).toBe(
-      `https://orb.helius.dev/tx/${SIG}`,
+      `https://orbmarkets.io/tx/${SIG}`,
     );
     const failed = within(row('W02'));
     expect(failed.getByText('Failed')).toBeTruthy();
@@ -341,6 +343,27 @@ describe('DRY-RUN and live mode', () => {
       expect(requests.filter((r) => r.type === 'saveSettings')).toHaveLength(2);
     });
     expect(await screen.findByLabelText('Mode: DRY-RUN')).toBeTruthy();
+  });
+});
+
+describe('transaction links follow the network (BUNNDLY-44)', () => {
+  it.each([
+    ['solscan', `https://solscan.io/tx/${SIG}?cluster=devnet`],
+    ['orb', `https://orbmarkets.io/tx/${SIG}?cluster=devnet`],
+    ['solana-explorer', `https://explorer.solana.com/tx/${SIG}?cluster=devnet`],
+  ] as const)('devnet fleet, %s: the row links to the devnet page', async (explorer, href) => {
+    const { vault } = setup({ global: { network: 'devnet', explorer } });
+    await screen.findByText(/^Balances as of /u);
+    act(() => {
+      vault.emit(runEvent('started'));
+      vault.emit(
+        walletEvent(0, 'CONFIRMED', {
+          result: { signature: SIG, slot: 1n, totalInputAmount: 1n, totalOutputAmount: 1n },
+        }),
+      );
+    });
+    const link = await within(row('W01')).findByRole('link', { name: 'Transaction' });
+    expect(link.getAttribute('href')).toBe(href);
   });
 });
 

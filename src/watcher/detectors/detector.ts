@@ -9,6 +9,7 @@
  *   the fast path: a mismatch is a warning, not a stop (the buy has already started).
  * - Each mint is detected once per arming, whichever path sees it first.
  */
+import type { Network } from '../../core/network.ts';
 import type { StreamClock } from '../stream.ts';
 import { detectFromLogs } from './log-path.ts';
 import type { DetectionSource } from './programs.ts';
@@ -70,6 +71,8 @@ export function createDetector(
   },
   options: {
     readonly watched: string;
+    /** Launchpad program ids differ between networks; mainnet by default. */
+    readonly network?: Network;
     readonly pollMs?: number;
     readonly timeoutMs?: number;
   },
@@ -100,7 +103,7 @@ export function createDetector(
       if (isStopped()) return;
       const tx = answer === null ? null : asTransaction(answer);
       if (tx !== null) {
-        const found = detectFromTransaction(tx, options.watched);
+        const found = detectFromTransaction(tx, options.watched, options.network);
         for (const f of found) {
           if (fastMints.includes(f.mint)) continue;
           detect({

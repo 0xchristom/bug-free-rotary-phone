@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useId, useMemo, useState, type SyntheticEvent } from 'react';
 import { toUserMessage } from '../../core/errors.ts';
+import { NO_BUY_ROUTE_MESSAGE, buyRouteOf } from '../../core/network.ts';
 import { effectiveJupiterPlan } from '../../core/settings.ts';
 import {
   saveKeystoreFile,
@@ -101,7 +102,13 @@ export function FleetScreen({
     setMint(null);
     setMintError(message);
   }, []);
-  const balances = useBalances(client, balanceRefreshMs, mint, onBadMint);
+  const balances = useBalances(
+    client,
+    balanceRefreshMs,
+    mint,
+    onBadMint,
+    info.settings.global.network,
+  );
   const [maxSpendText, setMaxSpendText] = useState<Drafts>(() => maxSpendDrafts(info));
   const [active, setActive] = useState<ActiveDrafts>(() => activeDrafts(info));
   const ids = useId();
@@ -216,11 +223,14 @@ export function FleetScreen({
   const checkedMint = balances.token !== null && balances.token.mint === mint ? mint : null;
   const { global } = info.settings;
   const hasRpc = info.apiKeys.helius || info.apiKeys.heliusRpcUrl;
-  const buyBlocked = tableDirty
-    ? 'Save the table changes first: a buy uses the settings saved in the vault.'
-    : !global.dryRun && !hasRpc
-      ? 'Live mode needs a Helius key (Settings).'
-      : null;
+  const buyBlocked =
+    buyRouteOf(global.network) === null
+      ? NO_BUY_ROUTE_MESSAGE
+      : tableDirty
+        ? 'Save the table changes first: a buy uses the settings saved in the vault.'
+        : !global.dryRun && !hasRpc
+          ? 'Live mode needs a Helius key (Settings).'
+          : null;
   const token = balances.token;
   useEffect(() => {
     if (token) onMintDecimals?.(token.mint, token.decimals);
@@ -469,6 +479,7 @@ export function FleetScreen({
         buy={buyView.run === null ? null : buyView.rows}
         buyDecimals={buyDecimals}
         explorer={global.explorer}
+        network={global.network}
       />
       <div className="actions">
         <button

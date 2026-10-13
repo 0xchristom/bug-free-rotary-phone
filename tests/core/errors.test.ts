@@ -27,6 +27,7 @@ describe('ERROR_MESSAGES', () => {
         'KEYSTORE_WRONG_PASSWORD_OR_CORRUPTED',
         'PASSWORD_TOO_SHORT',
         'VAULT_LOCKED',
+        'NO_BUY_ROUTE_ON_NETWORK',
         'INVALID_SETTINGS',
         'RPC_UNAVAILABLE',
         'NOT_A_TOKEN_MINT',

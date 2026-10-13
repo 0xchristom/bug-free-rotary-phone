@@ -67,6 +67,7 @@ describe('vault client ↔ handler', () => {
 
     expect(await client.request({ type: 'status' })).toEqual({
       locked: true,
+      network: 'mainnet',
       armed: false,
       info: null,
       buy: null,

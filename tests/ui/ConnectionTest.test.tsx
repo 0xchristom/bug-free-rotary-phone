@@ -22,8 +22,11 @@ const JUPITER = 'jupiterKeyUiConn456';
 
 vi.setConfig({ testTimeout: 60_000 });
 
-async function setup(helius: (body: { id: number; method: string }) => FetchReply) {
-  const { fetch } = fakeFetch((call) =>
+async function setup(
+  helius: (body: { id: number; method: string }) => FetchReply,
+  network: 'mainnet' | 'devnet' = 'mainnet',
+) {
+  const { fetch, calls } = fakeFetch((call) =>
     call.url.startsWith('https://api.jup.ag/')
       ? {
           status: 200,
@@ -61,6 +64,7 @@ async function setup(helius: (body: { id: number; method: string }) => FetchRepl
     settings: defaultFleetSettings(),
     apiKeys: { helius: HELIUS, jupiter: JUPITER },
   });
+  if (network !== 'mainnet') await handler.handle({ type: 'setNetwork', network });
   const client = {
     request: (r: unknown, o?: object) => handler.handle(r, o),
     onEvent: (l) => handler.onEvent(l),
@@ -73,7 +77,7 @@ async function setup(helius: (body: { id: number; method: string }) => FetchRepl
   const table = await screen.findByRole('table', { name: 'Connection test results' });
   const row = (name: RegExp) =>
     within(table).getByRole('rowheader', { name }).closest('tr')?.textContent ?? '';
-  return { row };
+  return { row, calls };
 }
 
 afterEach(cleanup);
@@ -94,6 +98,24 @@ describe('connection test in the settings', () => {
     );
     expect(document.body.innerHTML).not.toContain(HELIUS);
     expect(document.body.innerHTML).not.toContain(JUPITER);
+  });
+
+  it('devnet: Jupiter is skipped with a sentence and nothing is sent to it', async () => {
+    const { row, calls } = await setup(
+      (b) => ({
+        status: 200,
+        json: { jsonrpc: '2.0', id: b.id, result: b.method === 'getHealth' ? 'ok' : 5 },
+      }),
+      'devnet',
+    );
+    expect(row(/Helius HTTP/u)).toMatch(/OK, \d+ ms/u);
+    expect(row(/Jupiter/u)).toContain('Skipped');
+    expect(row(/Jupiter/u)).toContain('Jupiter works on Mainnet only');
+    expect(screen.getByText('Network: Devnet')).toBeTruthy();
+    expect(calls.map((c) => new URL(c.url).host)).toEqual([
+      'devnet.helius-rpc.com',
+      'devnet.helius-rpc.com',
+    ]);
   });
 
   it('a rejected Helius key: English message in that row, the others still run', async () => {

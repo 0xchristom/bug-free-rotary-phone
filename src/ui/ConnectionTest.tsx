@@ -7,6 +7,7 @@ import {
   type RateLimitHeaders,
 } from '../core/connection.ts';
 import { toUserMessage } from '../core/errors.ts';
+import { NETWORK_LABELS } from '../core/network.ts';
 import { formatUnits } from './sol.ts';
 import { useVault } from './vault-state.ts';
 
@@ -46,9 +47,12 @@ function jupiterDetails(j: JupiterCheck): string {
 
 interface Row {
   readonly name: string;
-  readonly check: ConnectionCheck;
+  /** Null: not checked on this network, nothing was sent. */
+  readonly check: ConnectionCheck | null;
   readonly details: string;
 }
+
+const JUPITER_SKIPPED = 'Jupiter works on Mainnet only: nothing was sent to it on Devnet.';
 
 function rowsOf(report: ConnectionReport): Row[] {
   const { heliusHttp: http, heliusWs: ws, jupiter } = report;
@@ -69,7 +73,7 @@ function rowsOf(report: ConnectionReport): Row[] {
     {
       name: 'Jupiter (quote SOL → USDC, not executed)',
       check: jupiter,
-      details: jupiterDetails(jupiter),
+      details: jupiter === null ? JUPITER_SKIPPED : jupiterDetails(jupiter),
     },
   ];
 }
@@ -124,6 +128,7 @@ export function ConnectionTest() {
       {report && (
         // Wrapped like the fleet table: on a phone the table scrolls, not the page.
         <div className="table-wrap">
+          <p className="muted">Network: {NETWORK_LABELS[report.network]}</p>
           <table aria-label="Connection test results" className="connections">
             <thead>
               <tr>
@@ -134,14 +139,14 @@ export function ConnectionTest() {
             </thead>
             <tbody>
               {rowsOf(report).map((row) => (
-                <tr key={row.name} className={row.check.ok ? '' : 'row-error'}>
+                <tr key={row.name} className={row.check?.ok === false ? 'row-error' : ''}>
                   <th scope="row">{row.name}</th>
                   <td>
-                    {row.check.ok ? 'OK' : 'Error'}
-                    {row.check.ms === null ? '' : `, ${timeOf(row.check.ms)}`}
+                    {row.check === null ? 'Skipped' : row.check.ok ? 'OK' : 'Error'}
+                    {row.check === null || row.check.ms === null ? '' : `, ${timeOf(row.check.ms)}`}
                   </td>
                   <td>
-                    {row.check.ok
+                    {row.check === null || row.check.ok
                       ? row.details
                       : [problemOf(row.check), row.details].filter(Boolean).join(' ')}
                   </td>

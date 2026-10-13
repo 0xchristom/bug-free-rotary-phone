@@ -99,6 +99,7 @@ describe('SOL balance refresh on the fleet screen', () => {
       req.type === 'refreshBalances'
         ? Promise.resolve({
             balances: [],
+            network: 'mainnet',
             source: 'fallback',
             fetchedAt: '2026-10-02T12:00:00.000Z',
           })

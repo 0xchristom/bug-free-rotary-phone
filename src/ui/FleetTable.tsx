@@ -1,5 +1,5 @@
 import { memo } from 'react';
-import type { Explorer } from '../core/settings.ts';
+import { transactionUrl, type Explorer, type Network } from '../core/network.ts';
 import { formatPrice } from '../executor/oplog.ts';
 import {
   FAIL_MESSAGES,
@@ -10,7 +10,6 @@ import {
 } from '../executor/states.ts';
 import { VERIFY_MESSAGES, type VerifyStatus } from '../executor/verify.ts';
 import { AddressQr } from './AddressQr.tsx';
-import { transactionUrl } from './explorer.ts';
 import { rowState } from './fleet-math.ts';
 import { formatSol, formatUnits, parseSolAmount } from './sol.ts';
 import type { BuyRow } from './use-buy.ts';
@@ -43,6 +42,7 @@ interface RowProps extends FleetRowData {
   readonly buy: BuyRow | null;
   readonly decimals: number | null;
   readonly explorer: Explorer;
+  readonly network: Network;
 }
 
 const STATE_LABELS: Record<WalletState, string> = {
@@ -106,10 +106,12 @@ function BuyCells({
   buy,
   decimals,
   explorer,
+  network,
 }: {
   readonly buy: BuyRow | null;
   readonly decimals: number | null;
   readonly explorer: Explorer;
+  readonly network: Network;
 }) {
   if (buy === null) {
     return (
@@ -134,7 +136,7 @@ function BuyCells({
       : null;
   // DRY-RUN says it in the badge already; other reasons explain the state.
   const why = buy.reason?.code === 'DRY_RUN' ? null : reasonText(buy.reason);
-  const url = result?.signature ? transactionUrl(explorer, result.signature) : null;
+  const url = result?.signature ? transactionUrl(explorer, network, result.signature) : null;
   const warn = buy.verify === 'MISMATCH' || buy.verify === 'NO_INCREASE';
   return (
     <>
@@ -244,7 +246,9 @@ const FleetRow = memo(function FleetRow(p: RowProps) {
           }}
         />
       </td>
-      {p.showBuy && <BuyCells buy={p.buy} decimals={p.decimals} explorer={p.explorer} />}
+      {p.showBuy && (
+        <BuyCells buy={p.buy} decimals={p.decimals} explorer={p.explorer} network={p.network} />
+      )}
       <td>
         <button
           type="button"
@@ -290,6 +294,8 @@ export interface FleetTableProps {
   /** Decimals of the bought token. */
   readonly buyDecimals?: number | null;
   readonly explorer?: Explorer;
+  /** Transaction links lead to this network's explorer pages. */
+  readonly network?: Network;
 }
 
 /** Fleet table (SPEC 3.2), with the purchase columns once a buy started (SPEC 3.6). */
@@ -297,6 +303,7 @@ export function FleetTable(t: FleetTableProps) {
   const showBuy = t.buy !== undefined && t.buy !== null;
   const decimals = t.buyDecimals ?? null;
   const explorer = t.explorer ?? 'solscan';
+  const network = t.network ?? 'mainnet';
   return (
     <div className="table-wrap">
       <table className="wallets">
@@ -352,6 +359,7 @@ export function FleetTable(t: FleetTableProps) {
               buy={t.buy?.get(w.index) ?? null}
               decimals={decimals}
               explorer={explorer}
+              network={network}
             />
           ))}
         </tbody>

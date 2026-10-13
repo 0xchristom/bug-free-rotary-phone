@@ -6,6 +6,8 @@
  * message always comes from ERROR_MESSAGES, never from the caller.
  */
 
+import { NO_BUY_ROUTE_MESSAGE } from './network.ts';
+
 /** Code → user-facing message (English). The keys define the ErrorCode union. */
 export const ERROR_MESSAGES = {
   INVALID_MNEMONIC: 'Invalid recovery phrase. Check the words and their order.',
@@ -37,6 +39,7 @@ export const ERROR_MESSAGES = {
     'This is not a valid creator wallet address (base58, 32 bytes, not the SOL mint).',
   WATCH_ARMED:
     'The watcher is armed. Disarm it with DISARM first, then lock the fleet or change the settings or the fleet.',
+  NO_BUY_ROUTE_ON_NETWORK: NO_BUY_ROUTE_MESSAGE,
   VAULT_TIMEOUT: 'The key vault did not respond in time. Try again.',
   INTERNAL_ERROR: 'An internal application error occurred. Try again.',
   STORAGE_CANCELLED: 'The file or folder choice was cancelled. No file was saved or loaded.',

@@ -7,6 +7,7 @@
  * CSV cells that a spreadsheet would run as a formula get a leading apostrophe.
  */
 import { ERROR_MESSAGES } from '../core/errors.ts';
+import { parseNetwork, type Network } from '../core/network.ts';
 import type { DetectionProblem, WatchEvent } from '../watcher/watch.ts';
 import { FAIL_MESSAGES, SKIP_MESSAGES, UNKNOWN_MESSAGES } from './states.ts';
 import { VERIFY_MESSAGES } from './verify.ts';
@@ -51,6 +52,8 @@ export interface LogEntry {
   readonly source: string | null;
   readonly path: string | null;
   readonly reactionMs: number | null;
+  /** The network the event happened on (BUNNDLY-44). */
+  readonly network: Network;
 }
 
 export const LOG_COLUMNS = [
@@ -81,6 +84,7 @@ export const LOG_COLUMNS = [
   'source',
   'path',
   'reactionMs',
+  'network',
 ] as const satisfies readonly (keyof LogEntry)[];
 
 const LAMPORTS_DECIMALS = 9n;
@@ -111,6 +115,8 @@ export interface LogContext {
   readonly addressOf: (index: number) => string | null;
   /** Decimals of the bought token, when known (for the price). */
   readonly decimals: number | null;
+  /** The network of the event; entries recorded without one count as mainnet */
+  readonly network?: Network | undefined;
 }
 
 const EMPTY = {
@@ -151,7 +157,7 @@ function problemMessage(problem: DetectionProblem): string {
   return ERROR_MESSAGES[problem];
 }
 
-function watchEntry(event: WatchEvent, time: string): LogEntry {
+function watchEntry(event: WatchEvent, time: string): Omit<LogEntry, 'network'> {
   const base = { ...EMPTY, time, runId: null, event: 'watch' as const, state: event.type };
   switch (event.type) {
     case 'armed':
@@ -188,6 +194,10 @@ function watchEntry(event: WatchEvent, time: string): LogEntry {
 }
 
 export function logEntry(event: LoggedEvent, context: LogContext): LogEntry {
+  return { ...entryOf(event, context), network: parseNetwork(context.network) };
+}
+
+function entryOf(event: LoggedEvent, context: LogContext): Omit<LogEntry, 'network'> {
   const time = new Date(event.at).toISOString();
   switch (event.kind) {
     case 'watch':
