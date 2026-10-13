@@ -3,6 +3,7 @@ import { toUserMessage } from '../core/errors.ts';
 import { DEFAULT_NETWORK, NETWORK_LABELS } from '../core/network.ts';
 import type { BuyMode, JupiterPlan } from '../core/settings.ts';
 import type { ApiKeyFlags } from '../worker/protocol.ts';
+import { DRY_RUN_NOTE, LIVE_NOTE } from './mode-text.ts';
 import { PLAN_LABELS } from './plan-labels.ts';
 import { formatSol } from './sol.ts';
 import type { BuyView } from './use-buy.ts';
@@ -157,11 +158,7 @@ export function BuyPanel({
           </button>
         ))}
       </div>
-      <p className="muted">
-        {dryRun
-          ? 'DRY-RUN: real price requests and signatures, but no transaction will be sent.'
-          : 'Live mode: a buy sends real transactions and spends SOL from the wallets.'}
-      </p>
+      <p className="muted">{dryRun ? DRY_RUN_NOTE : LIVE_NOTE}</p>
 
       {watchArmed && !running && <p className="muted">{WATCH_FROZEN}</p>}
       {!running &&
