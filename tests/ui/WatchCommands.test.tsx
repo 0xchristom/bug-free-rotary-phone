@@ -577,7 +577,8 @@ describe('detections and progress', () => {
     act(() => {
       vault.emit(started);
     });
-    expect(await screen.findByText(/^Fleet fill · 0 of 3 filled · DRY-RUN$/u)).toBeTruthy();
+    // fleetFill (BUNNDLY-56): no wallet event yet, the 3 selected wallets wait
+    expect(await screen.findByText(/^Fleet fill · 0 of 3 filled$/u)).toBeTruthy();
     expect(screen.getByTitle('Counted from the detection')).toBeTruthy();
   });
 });

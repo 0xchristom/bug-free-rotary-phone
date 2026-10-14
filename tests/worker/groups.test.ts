@@ -174,6 +174,23 @@ describe('two groups at once', () => {
     expect(socket.closed).toBe(false);
   });
 
+  it('STOP of B, the second group, stops B only; A keeps taking its Stairs steps (BUNNDLY-61)', async () => {
+    const t = await setup(100);
+    const stairs = { intervalMs: 60_000, perStep: 1 };
+    await t.startBuy('g1', USDC, stairs); // A's steps at a, a + 60 s, a + 120 s
+    await t.startBuy('g2', MINT, stairs); // B's steps from about 11 s later
+    expect(t.askedBy(USDC)).toEqual([0]);
+    expect(t.askedBy(MINT)).toEqual([3]);
+    await t.h.handle({ type: 'stop', group: 'g2' });
+    // B no longer takes commands (its run may already have ended); A still does
+    expect((await t.group('g2'))?.buy?.accepting ?? false).toBe(false);
+    expect((await t.group('g1'))?.buy?.accepting).toBe(true);
+    await t.clock.runUntil(t.clock.now() + 120_000);
+    // A's two later steps came; B's never did
+    expect(t.askedBy(USDC)).toEqual([0, 1, 2]);
+    expect(t.askedBy(MINT)).toEqual([3]);
+  });
+
   it('PAUSE of B holds only B’s Stairs steps; A’s steps go on (BUNNDLY-61)', async () => {
     const t = await setup(100);
     const stairs = { intervalMs: 60_000, perStep: 1 };

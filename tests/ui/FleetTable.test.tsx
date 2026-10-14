@@ -22,7 +22,7 @@ const SOL = 1_000_000_000n;
 
 /** Column positions of the wallet table. */
 const BALANCE = 2;
-const TOKEN = 6;
+const TOKEN = 7;
 
 interface Setup {
   readonly count?: number;
@@ -196,6 +196,7 @@ describe('fleet table', () => {
       'Buy amount',
       'Priority fee',
       'Slippage',
+      'Fill',
       'Tokens',
       'Status',
       'Last transaction',
