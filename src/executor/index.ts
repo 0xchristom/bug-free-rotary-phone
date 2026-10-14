@@ -84,6 +84,7 @@ export type {
   VerifyWallet,
 } from './verify.ts';
 export { DEFAULT_SELL_PERCENT, isSellPercent, sellAmount } from './sell-plan.ts';
+export { isBuyPercent, percentBuyAmount } from './buy-plan.ts';
 export {
   LOG_COLUMNS,
   PRICE_DIGITS,
