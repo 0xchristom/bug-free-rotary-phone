@@ -1,6 +1,6 @@
 /**
  * Stairs in the vault worker (BUNNDLY-61): the request's parameters reach the executor for
- * a buy and a sell, bad ones are refused before anything starts, and pause / resume act on
+ * a buy and a sell, bad ones are refused before anything starts, and pauseStairs / resumeStairs act on
  * the named group's run. Real vault and signing, fake Jupiter and clock, DRY-RUN.
  */
 import type { RpcTransport } from '@solana/kit';
@@ -193,16 +193,16 @@ describe('startBuy and startSell with Stairs', () => {
   });
 });
 
-describe('pause and resume requests', () => {
+describe('pauseStairs and resumeStairs requests', () => {
   it('pause holds the next step and shows in the status; resume moves it by the pause', async () => {
     const { clock, h, events, firstOrders, status, t0 } = await setup();
     await h.handle({ type: 'startBuy', mint: USDC, wallets: [0, 1, 2], stairs: STAIRS });
     await clock.runUntil(t0 + 12_000);
-    const paused = (await h.handle({ type: 'pause' })) as VaultStatus;
+    const paused = (await h.handle({ type: 'pauseStairs' })) as VaultStatus;
     expect(paused.buy?.paused).toBe(true);
     await clock.runUntil(t0 + 42_000);
     expect((await status()).buy?.paused).toBe(true);
-    const resumed = (await h.handle({ type: 'resume' })) as VaultStatus;
+    const resumed = (await h.handle({ type: 'resumeStairs' })) as VaultStatus;
     expect(resumed.buy?.paused).toBe(false);
     await runToEnd(clock, events);
     // Step 3 at 20 s moves by the 30 s pause to 50 s.
@@ -217,7 +217,7 @@ describe('pause and resume requests', () => {
   it('pause of an Immediate run changes nothing', async () => {
     const { clock, h, events, firstOrders } = await setup();
     await h.handle({ type: 'startBuy', mint: USDC, wallets: [0, 1, 2] });
-    const after = (await h.handle({ type: 'pause' })) as VaultStatus;
+    const after = (await h.handle({ type: 'pauseStairs' })) as VaultStatus;
     expect(after.buy?.paused).toBeUndefined();
     await runToEnd(clock, events);
     expect(firstOrders()).toEqual([0, 100, 100]);

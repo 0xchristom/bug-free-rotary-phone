@@ -181,13 +181,13 @@ describe('two groups at once', () => {
     await t.startBuy('g2', MINT, stairs); // B's step 1 began about 11 s after A's
     expect(t.askedBy(USDC)).toEqual([0]);
     expect(t.askedBy(MINT)).toEqual([3]);
-    await t.h.handle({ type: 'pause', group: 'g2' });
+    await t.h.handle({ type: 'pauseStairs', group: 'g2' });
     expect((await t.group('g2'))?.buy?.paused).toBe(true);
     expect((await t.group('g1'))?.buy?.paused).toBe(false);
     await t.clock.runUntil(t.clock.now() + 120_000);
     expect(t.askedBy(USDC)).toEqual([0, 1, 2]);
     expect(t.askedBy(MINT)).toEqual([3]);
-    await t.h.handle({ type: 'resume', group: 'g2' });
+    await t.h.handle({ type: 'resumeStairs', group: 'g2' });
     expect((await t.group('g2'))?.buy?.paused).toBe(false);
   });
 

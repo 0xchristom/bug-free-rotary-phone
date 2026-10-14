@@ -1706,14 +1706,14 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
         }
         return status();
       }
-      case 'pause':
-      case 'resume': {
+      case 'pauseStairs':
+      case 'resumeStairs': {
         // Only the named group's run; the others go on. The run says whether anything
         // changed: an Immediate one never pauses.
         const id = unlocked === null ? null : groupFor(unlocked, request.group).id;
         const run = id === null ? undefined : groupRuns.get(id);
         if (run?.buy) {
-          const pausing = request.type === 'pause';
+          const pausing = request.type === 'pauseStairs';
           const changed = pausing ? run.buy.run.pause() : run.buy.run.resume();
           if (changed) run.buy.status = { ...run.buy.status, paused: pausing };
         }

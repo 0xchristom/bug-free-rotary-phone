@@ -158,12 +158,12 @@ export type VaultRequest =
   /** STOP: no new `/order`; transactions already sent are followed to the end. */
   | { readonly type: 'stop'; readonly group?: string }
   /**
-   * Stairs (BUNNDLY-61): no new step and no new `/order` until `resume`; sent transactions
+   * Stairs (BUNNDLY-61): no new step and no new `/order` until `resumeStairs`; sent transactions
    * finish. Without a Stairs run, or once every step has started, nothing changes.
    */
-  | { readonly type: 'pause'; readonly group?: string }
+  | { readonly type: 'pauseStairs'; readonly group?: string }
   /** Stairs: the steps left start later by the time paused. */
-  | { readonly type: 'resume'; readonly group?: string }
+  | { readonly type: 'resumeStairs'; readonly group?: string }
   /**
    * Mode B (SPEC 3.4 B, BUNNDLY-34): watch `creator` and buy every token it creates, by
    * the `mode` setting. `wallets` as in startBuy, fixed until disarmed (BUNNDLY-59); the
@@ -302,8 +302,8 @@ export interface VaultResultMap {
   readonly startBuy: BuyStatus;
   readonly startSell: BuyStatus;
   readonly stop: VaultStatus;
-  readonly pause: VaultStatus;
-  readonly resume: VaultStatus;
+  readonly pauseStairs: VaultStatus;
+  readonly resumeStairs: VaultStatus;
   readonly arm: VaultStatus;
   readonly disarm: VaultStatus;
   readonly activity: VaultStatus;
