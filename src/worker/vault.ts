@@ -1262,17 +1262,25 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
     return kind;
   };
 
-  /** A manual buy: the target must be a token mint, checked before anything starts. */
+  /**
+   * A manual buy: the target must be a token mint, checked before anything starts. An armed
+   * group's watcher does the buying (BUNNDLY-86): a manual buy waits for DISARM, or for a
+   * one-shot detection that disarms it.
+   */
   const startManualBuy = async (request: VaultRequestOf<'startBuy'>): Promise<BuyStatus> => {
     const vault = requireUnlocked();
     const group = groupFor(vault, request.group);
     const list = walletListOf(request.wallets, group);
     const stairs = stairsOf(request.stairs);
-    if (runOf(group.id).buy !== null) throw new AppError('BUY_RUNNING');
+    const run = runOf(group.id);
+    if (run.buy !== null) throw new AppError('BUY_RUNNING');
+    if (watchActive(run)) throw new AppError('BUY_WHILE_ARMED');
     requireBuyRoute(vault);
     const mint = mintOf(request.mint);
     buyWallets(vault, group, list); // no RPC read for a buy that cannot start
     if ((await classify(vault, mint)).kind !== 'mint') throw new AppError('TARGET_KIND_MISMATCH');
+    // Checked again after the read, as arm does: no manual buy beside a watcher.
+    if (watchActive(run)) throw new AppError('BUY_WHILE_ARMED');
     return startBuy(group, mint, null, list, stairs);
   };
 

@@ -55,6 +55,8 @@ export const ERROR_MESSAGES = {
     'BUY needs a token mint and ARM needs a creator wallet; this address is the other kind.',
   WATCH_ARMED:
     'The watcher is armed. Disarm it with DISARM first, then lock the fleet or change the settings or the fleet.',
+  BUY_WHILE_ARMED:
+    'This group is armed: its watcher buys the creator’s next token. Press DISARM to buy by hand.',
   NO_BUY_ROUTE_ON_NETWORK: NO_BUY_ROUTE_MESSAGE,
   VAULT_TIMEOUT: 'The key vault did not respond in time. Try again.',
   INTERNAL_ERROR: 'An internal application error occurred. Try again.',

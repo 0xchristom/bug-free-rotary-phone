@@ -398,6 +398,84 @@ describe('state chip: Sold, Stopped, Retrying (BUNNDLY-89)', () => {
   });
 });
 
+/** The text of a wallet's cell in the column with this header. */
+function cellOf(label: string, header: string): string {
+  const th = screen.getByRole('columnheader', { name: header });
+  const column = [...(th.parentElement?.children ?? [])].indexOf(th);
+  const bar = screen.getByRole('progressbar', { name: `Fill of ${label}` });
+  const cell = bar.closest('tr')?.children[column];
+  if (!cell) throw new Error(`no ${header} cell in ${label}`);
+  return cell.textContent.trim();
+}
+
+/** Wallet names in the order the table shows them. */
+function rowOrder(): string[] {
+  return screen
+    .getAllByRole('progressbar', { name: /^Fill of /u })
+    .map((bar) => bar.getAttribute('aria-label')?.replace('Fill of ', '') ?? '?');
+}
+
+describe('Tokens estimate and Fill sorting (BUNNDLY-92)', () => {
+  // 0.01 SOL quoted for 1 234.5 tokens (6 decimals): 1_234_500_000 base units
+  const quote = { inAmount: 10_000_000n, outAmount: 1_234_500_000n, router: 'test' };
+
+  it('DRY-RUN: Tokens says the quote with ≈, the chain balance (0) is not shown as bought', async () => {
+    const { vault, user } = setup({ dryRun: true });
+    await showMint(user);
+    expect(cellOf('W01', 'Tokens (SPL)')).toBe('0');
+    act(() => {
+      vault.emit(runEvent('started', true));
+      vault.emit(
+        walletEvent(0, 'SKIPPED', {
+          quote,
+          reason: { kind: 'SKIPPED', code: 'DRY_RUN', detail: null },
+        }),
+      );
+      vault.emit(walletEvent(1, 'QUEUED', { attempt: 0 }));
+    });
+    await eventually(() => {
+      expect(cellOf('W01', 'Tokens (SPL)')).toBe('≈ 1234.5');
+    });
+    // no quote yet: the chain balance, without ≈
+    expect(cellOf('W02', 'Tokens (SPL)')).toBe('0');
+  });
+
+  it('live: Tokens stays the chain balance even with a quote', async () => {
+    const { vault, user } = setup({ dryRun: false });
+    await showMint(user);
+    act(() => {
+      vault.emit(runEvent('started', false));
+      vault.emit(walletEvent(0, 'SIGNING', { quote }));
+    });
+    await eventually(() => {
+      expect(fillOf('W01')).toEqual({ now: '35', text: '35%, Signing' });
+    });
+    expect(cellOf('W01', 'Tokens (SPL)')).toBe('0');
+  });
+
+  it('Fill sorts the fullest first, then the other way; a click on the header', async () => {
+    const { vault, user } = setup({ dryRun: false });
+    await showMint(user);
+    act(() => {
+      vault.emit(runEvent('started', false));
+      vault.emit(walletEvent(0, 'QUOTING')); // 20
+      vault.emit(walletEvent(1, 'SUBMITTED')); // 60
+      vault.emit(walletEvent(2, 'QUEUED', { attempt: 0 })); // 5
+    });
+    await eventually(() => {
+      expect(fillOf('W02').now).toBe('60');
+    });
+    expect(rowOrder()).toEqual(['W01', 'W02', 'W03']);
+    const header = screen.getByRole('columnheader', { name: 'Fill' });
+    await user.click(within(header).getByRole('button', { name: 'Fill' }));
+    expect(rowOrder()).toEqual(['W02', 'W01', 'W03']);
+    expect(header.getAttribute('aria-sort')).toBe('descending');
+    await user.click(within(header).getByRole('button', { name: 'Fill' }));
+    expect(rowOrder()).toEqual(['W03', 'W01', 'W02']);
+    expect(header.getAttribute('aria-sort')).toBe('ascending');
+  });
+});
+
 describe('Stairs in the toolbar (BUNNDLY-61 part 2)', () => {
   // BUNNDLY-93: Stairs is the default, every 6 s, 1 wallet per step (Andy's interim decision)
   it('Stairs by default, every 6 s and 1 per step, with the plan; BUY sends the steps', async () => {

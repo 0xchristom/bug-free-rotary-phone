@@ -367,8 +367,9 @@ describe('fleet table', () => {
     });
     setBalances(() => 3n * SOL);
     await user.click(screen.getByRole('button', { name: /^Fleet balance:/u }));
+    // 1 SOL before, 3 after: the cell says the balance and, under it, the change (BUNNDLY-92)
     await waitFor(() => {
-      expect(cells('W01')[BALANCE]).toBe('3');
+      expect(cells('W01')[BALANCE]).toBe('3+2');
     });
     expect(refreshes().at(-1)?.mint).toBeUndefined();
     expect(screen.getByRole('alert').textContent).toContain('is a token account, not a token');
@@ -601,8 +602,9 @@ describe('100 wallets', () => {
     // one wallet changed: only that row renders, once
     setBalances((i) => (i === 42 ? 2n * SOL : SOL));
     await user.click(screen.getByRole('button', { name: /^Fleet balance:/u }));
+    // 1 SOL before, 2 after: "+1" under it, written on the element, not a second render
     await waitFor(() => {
-      expect(cells('W43')[BALANCE]).toBe('2');
+      expect(cells('W43')[BALANCE]).toBe('2+1');
     });
     const changed = [...renders].filter(([i, n]) => n !== before.get(i)).map(([i]) => i);
     expect(changed).toEqual([42]);

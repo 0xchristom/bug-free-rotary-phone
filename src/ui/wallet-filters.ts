@@ -83,7 +83,7 @@ export function matchesSearch(query: string, label: string, address: string): bo
   return q === '' || label.toLowerCase().includes(q) || address.toLowerCase().includes(q);
 }
 
-export type SortKey = 'wallet' | 'balance' | 'amount' | 'tokens';
+export type SortKey = 'wallet' | 'balance' | 'amount' | 'tokens' | 'fill';
 
 export interface Sort {
   readonly key: SortKey;
@@ -108,6 +108,8 @@ export interface SortWallet {
   readonly balance: bigint | null;
   readonly amount: bigint | null;
   readonly tokens: bigint | null;
+  /** The Fill bar's percent (BUNNDLY-92); null before the wallet's first buy or sell. */
+  readonly fill: bigint | null;
 }
 
 /** Wallet indices in the order of the sort; ties keep the wallet order. */

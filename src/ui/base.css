@@ -657,6 +657,20 @@ table.wallets tr.unsel td:not(.c-check, .c-acts) {
   }
 }
 
+/* The change of a balance under it for a few seconds (BUNNDLY-92); empty otherwise. */
+.bal-delta {
+  display: block;
+  min-height: 1lh;
+  font-size: var(--fs-caption);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--fg-3);
+}
+
+.bal-delta[data-sign='up'] {
+  color: var(--ok);
+}
+
 /* Live or polling, next to the balance column header (BUNNDLY-57). */
 .feed-tag {
   margin-left: var(--s-2);

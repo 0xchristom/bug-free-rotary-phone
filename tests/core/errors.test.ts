@@ -56,6 +56,7 @@ describe('ERROR_MESSAGES', () => {
         'INVALID_STAIRS',
         'INVALID_CREATOR_ADDRESS',
         'WATCH_ARMED',
+        'BUY_WHILE_ARMED',
       ].sort(),
     );
   });

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatSol, parseSol } from '../../src/ui/sol.ts';
+import { formatSol, formatSolChange, parseSol } from '../../src/ui/sol.ts';
 
 describe('SOL amounts', () => {
   it.each([
@@ -27,5 +27,17 @@ describe('SOL amounts', () => {
     [0n, '0'],
   ])('formatSol(%s) = %s', (lamports, text) => {
     expect(formatSol(lamports)).toBe(text);
+  });
+});
+
+// BUNNDLY-92: the change under a balance, from lamports written out by hand.
+describe('a balance change', () => {
+  it.each([
+    [250_000_000n, '+0.25'],
+    [-100_100_000n, '−0.1001'],
+    [1n, '+0.000000001'],
+    [-2_000_000_000n, '−2'],
+  ])('formatSolChange(%s) = %s', (change, text) => {
+    expect(formatSolChange(change)).toBe(text);
   });
 });
