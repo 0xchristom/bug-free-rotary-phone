@@ -395,6 +395,43 @@ describe('another fleet over a remembered fleet the disk lacks', () => {
     },
   );
 
+  it('the device cannot be read: opening a file asks without a name; No sends no unlock', async () => {
+    const handler = createVaultHandler({ remember: memoryRememberStore() });
+    const sent: string[] = [];
+    // Every `remembered` question to the worker fails; the rest goes to the real handler.
+    const failing = {
+      request: (request, options) => {
+        sent.push(request.type);
+        return request.type === 'remembered'
+          ? Promise.reject(new Error('IndexedDB is gone'))
+          : handler.handle(request, options);
+      },
+      onEvent: (l) => handler.onEvent(l),
+    } as VaultClient;
+    const storage = mockStorage();
+    storage.offerFile({ name: FILE_NAME, text: fileText });
+    render(<App vault={failing} storage={storage.env} statusPollMs={60_000} />);
+    const user = setupUser();
+    await user.click(await screen.findByRole('button', { name: 'Open a fleet file' }));
+    await user.click(screen.getByRole('button', { name: 'Choose a fleet file' }));
+    await screen.findByRole('heading', { name: 'Fleet preview' });
+
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValueOnce(false);
+    await user.type(screen.getByLabelText('Password'), PASSWORD);
+    await user.click(screen.getByRole('button', { name: 'Unlock' }));
+    // unknown is the risky case: the question comes, with no fleet to name
+    await waitFor(() => {
+      expect(confirm.mock.calls).toEqual([
+        [
+          'A fleet is remembered on this device. The fleet file on your disk is older than this fleet, or was never saved: only this browser holds the latest changes. Opening another fleet file replaces it and deletes them for good. Continue anyway?',
+        ],
+      ]);
+    });
+    expect((await screen.findByRole('alert')).textContent).toBe(KEPT);
+    expect(sent).not.toContain('unlock');
+    expect(handler.inspect().unlocked).toBeNull();
+  });
+
   it('a remembered fleet whose file is saved: opening another file asks nothing', async () => {
     const store = memoryRememberStore();
     const { user } = load(store);
