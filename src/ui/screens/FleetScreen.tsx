@@ -11,7 +11,7 @@ import {
   type SaveResult,
   type StorageEnv,
 } from '../../storage/keystore-file.ts';
-import type { GroupStatus, VaultInfo } from '../../worker/protocol.ts';
+import type { BuyStatus, GroupStatus, VaultInfo } from '../../worker/protocol.ts';
 import {
   CommandBar,
   CommandButtons,
@@ -21,7 +21,7 @@ import {
 } from '../CommandBar.tsx';
 import { ARM_TARGET, BUY_TARGET, SELL_TARGET, targetReason } from '../target-reasons.ts';
 import { CreateWallets } from '../CreateWallets.tsx';
-import type { StairsOptions } from '../../executor/index.ts';
+import type { StairsOptions, WalletState } from '../../executor/index.ts';
 import { ARMED_FILL, fillOf, fleetFill, type Fill } from '../fill.ts';
 import { FleetSegments, FleetSummaryBar } from '../FleetSummaryBar.tsx';
 import { summarize } from '../fleet-math.ts';
@@ -103,6 +103,36 @@ const QUEUED_ROW: BuyRow = {
 };
 
 const NO_READY = 'No ready wallets: select wallets that have a buy amount.';
+/** How long the rail says what a command did (BUNNDLY-90, Andy's interim decision). */
+const SAY_MS = 4_200;
+
+const walletsText = (n: number): string => `${String(n)} wallet${n === 1 ? '' : 's'}`;
+
+/** "Wallet 4–8" for labels that differ only in their last number; "A–B" otherwise. */
+function labelRange(first: string, last: string): string {
+  if (first === last) return first;
+  const a = /^(.*?)(\d+)$/u.exec(first);
+  const b = /^(.*?)(\d+)$/u.exec(last);
+  if (a && b && a[1] === b[1]) return `${first}–${b[2] ?? ''}`;
+  return `${first}–${last}`;
+}
+
+/** States in which STOP leaves a wallet without sending. */
+const NOT_SENT: ReadonlySet<WalletState> = new Set(['IDLE', 'SCHEDULED', 'QUEUED']);
+
+/** "Stopped · 4 wallets did not send"; an armed group says it is disarmed (BUNNDLY-87). */
+function stoppedText(notSent: number, armed: boolean): string {
+  const parts = ['Stopped'];
+  if (armed) parts.push('the group is disarmed');
+  if (notSent > 0) parts.push(`${walletsText(notSent)} did not send`);
+  return parts.join(' · ');
+}
+
+/** "Buy started on 3 wallets · Stairs · DRY-RUN", from what the worker accepted. */
+function startedText(side: 'Buy' | 'Sell', run: BuyStatus): string {
+  const mode = run.stairs ? 'Stairs' : 'Immediate';
+  return `${side} started on ${walletsText(run.wallets)} · ${mode}${run.dryRun ? ' · DRY-RUN' : ''}`;
+}
 const PICK_GROUP = 'Pick a group tab: the commands act on one group at a time.';
 /** Why Immediate / Stairs cannot change now (BUNNDLY-93, the mockup's words). */
 const MODE_LOCKED = 'The mode can change once the current run ends.';
@@ -533,6 +563,22 @@ export function FleetScreen({
           arm: groupReasons.arm ?? stairsBad,
         };
 
+  // The rail's message line (BUNNDLY-90): said only after the worker accepted the command;
+  // a refusal stays in the command error. A newer message restarts the 4.2 s.
+  const [said, setSaid] = useState<{ readonly text: string; readonly n: number } | null>(null);
+  const say = useCallback((text: string) => {
+    setSaid((before) => ({ text, n: (before?.n ?? 0) + 1 }));
+  }, []);
+  useEffect(() => {
+    if (said === null) return;
+    const id = window.setTimeout(() => {
+      setSaid(null);
+    }, SAY_MS);
+    return () => {
+      window.clearTimeout(id);
+    };
+  }, [said]);
+
   const command = async (task: () => Promise<unknown>): Promise<boolean> => {
     setCommandError(null);
     setCommandBusy(true);
@@ -558,8 +604,9 @@ export function FleetScreen({
       since: runId,
     });
     void command(async () => {
+      let run: BuyStatus;
       try {
-        await client.request({
+        run = await client.request({
           type: 'startBuy',
           mint: buyFor,
           wallets,
@@ -570,6 +617,7 @@ export function FleetScreen({
         setPending(null); // refused: the rows go back to what they were
         throw e;
       }
+      say(startedText('Buy', run));
       await refresh();
     });
   };
@@ -591,8 +639,9 @@ export function FleetScreen({
   ): void => {
     setPending({ wallets: new Set(wallets), since: runId });
     void command(async () => {
+      let run: BuyStatus;
       try {
-        await client.request({
+        run = await client.request({
           type: 'startSell',
           mint,
           wallets,
@@ -603,6 +652,7 @@ export function FleetScreen({
         setPending(null);
         throw e;
       }
+      say(startedText('Sell', run));
       await refresh();
     });
   };
@@ -629,6 +679,7 @@ export function FleetScreen({
     alarm.prime(); // the click allows the alarm sound later (autoplay policy)
     void command(async () => {
       await client.request({ type: 'arm', creator, wallets, group, ...(stairs ? { stairs } : {}) });
+      say('Armed · the fleet buys as soon as the creator launches a token');
       await refresh();
     });
   };
@@ -656,14 +707,25 @@ export function FleetScreen({
     const group = commandGroup.id;
     void command(async () => {
       await client.request({ type: 'disarm', group });
+      say('Disarmed');
       await refresh();
     });
   };
   const onStop = (): void => {
     if (reasons.stop !== null || commandGroup === null) return;
     const group = commandGroup.id;
+    // Counted at the click: the wallets of this group's run that have not sent yet. STOP
+    // empties the queue and the steps to come; the ones already sending finish (SPEC 3.6).
+    const notSent =
+      viewRun === null || viewRun.phase === 'finished'
+        ? 0
+        : [...buyView.rows].filter(
+            ([index, row]) => NOT_SENT.has(row.state) && groupOf(groups, index) === group,
+          ).length;
+    const wasArmed = groupArmed;
     void command(async () => {
       await client.request({ type: 'stop', group });
+      say(stoppedText(notSent, wasArmed));
       await refresh();
     });
   };
@@ -679,8 +741,13 @@ export function FleetScreen({
     const group = commandGroup.id;
     const request = pause.request;
     void command(async () => {
-      if (request === 'pauseStairs') await client.request({ type: 'pauseStairs', group });
-      else await client.request({ type: 'resumeStairs', group });
+      if (request === 'pauseStairs') {
+        await client.request({ type: 'pauseStairs', group });
+        say('Paused · wallets already sending will finish');
+      } else {
+        await client.request({ type: 'resumeStairs', group });
+        say('Resumed');
+      }
       await refresh();
     });
   };
@@ -917,6 +984,10 @@ export function FleetScreen({
     setPhase({ kind: 'adding' });
     try {
       const result = await client.request({ type: 'addWallets', count });
+      const added = result.info.wallets.slice(-count);
+      const first = added[0]?.label;
+      const last = added.at(-1)?.label;
+      if (first !== undefined && last !== undefined) say(`Created ${labelRange(first, last)}`);
       setPhase({
         kind: 'unsaved',
         fileText: result.fileText,
@@ -1041,6 +1112,7 @@ export function FleetScreen({
           </button>,
           slots.balance,
         )}
+      {slots.say && said && createPortal(<span key={said.n}>{said.text}</span>, slots.say)}
 
       <CommandBar
         text={targetTexts[barKey] ?? ''}
@@ -1214,7 +1286,12 @@ export function FleetScreen({
             <CreateWallets room={room} limit={MAX_WALLETS} blocked={createBlocked} onCreate={add} />
             <EditSelected
               count={selectedCount}
-              onSave={(patch) => saveTrade(selectedIndexes, patch)}
+              onSave={async (patch) => {
+                const problem = await saveTrade(selectedIndexes, patch);
+                if (problem === null)
+                  say(`Settings saved for ${walletsText(selectedIndexes.length)}`);
+                return problem;
+              }}
             />
           </>
         }

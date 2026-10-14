@@ -661,6 +661,10 @@ describe('create wallets', () => {
 
     await screen.findByText(/New wallets: 5\./u);
     expect(added).toEqual([5]);
+    // BUNNDLY-90: the new labels in the rail; the fake names index 3…7 "Wallet 3"…"Wallet 7"
+    expect(screen.getByRole('status', { name: 'Last command' }).textContent).toBe(
+      'Created Wallet 3–7',
+    );
     expect(vault.request.mock.calls.map(([r]) => r).filter((r) => r.type === 'addWallets')).toEqual(
       [{ type: 'addWallets', count: 5 }],
     );

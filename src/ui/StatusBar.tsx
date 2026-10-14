@@ -18,6 +18,8 @@ export interface StatusBarProps {
   readonly autoLockMinutes: AutoLockMinutes | null;
   /** Opens the plain export of the recovery phrase and keys; null while locked. */
   readonly onExport?: (() => void) | null;
+  /** The line where the Dashboard says what a command did (BUNNDLY-90, header-slots.ts). */
+  readonly saySlot?: ((element: HTMLElement | null) => void) | undefined;
 }
 
 const SOCKET_TONE = { ok: 'ok', wait: 'warn', bad: 'danger' } as const;
@@ -34,6 +36,7 @@ export function StatusBar({
   feed = null,
   autoLockMinutes,
   onExport = null,
+  saySlot,
 }: StatusBarProps) {
   const open = status !== null && !status.locked && status.info !== null ? status : null;
   const watch = open?.watch?.armed === true ? open.watch : null;
@@ -59,6 +62,8 @@ export function StatusBar({
                 ? 'Armed: auto-lock is paused'
                 : `Auto-lock after ${AUTO_LOCK_LABELS[autoLockMinutes]} of inactivity`}
           </span>
+          {/* Stays in the page while open, so a screen reader hears what is put in it. */}
+          <span ref={saySlot} className="rail-say" role="status" aria-label="Last command" />
           <div className="rail-right">
             <span className="rail-item">
               <FolderIcon />
