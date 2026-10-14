@@ -343,3 +343,52 @@ describe('amounts of a sell come from totalInputAmount and totalOutputAmount', (
     });
   });
 });
+
+describe('slippage per wallet, on either side (BUNNDLY-58)', () => {
+  const solWallets = (list: readonly { maxSpend: bigint; slippageBps?: number }[]) =>
+    list.map((w, i) => ({
+      index: i,
+      address: `Wallet${String(i).padStart(3, '0')}`,
+      balance: 1_000_000_000n,
+      ...w,
+    }));
+
+  it('a buy: the wallet with 250 bps asks with slippageBps 250, the Auto one without', async () => {
+    const { jupiter, signed, finish } = setup({
+      side: 'buy',
+      walletList: solWallets([
+        { maxSpend: 10_000_000n, slippageBps: 250 },
+        { maxSpend: 20_000_000n },
+      ]),
+    });
+    await finish();
+    const asked = jupiter.orderRequests().map((r) => [r.taker, r.amount, r.slippageBps]);
+    expect(asked).toEqual([
+      ['Wallet000', 10_000_000n, 250],
+      ['Wallet001', 20_000_000n, undefined],
+    ]);
+    expect(jupiter.orderRequests()[1]).not.toHaveProperty('slippageBps');
+    expect(signed.map((r) => r.amount)).toEqual([10_000_000n, 20_000_000n]);
+  });
+
+  it('a sell: the slippage given to the run goes into the sell orders', async () => {
+    const { jupiter, finish } = setup({
+      walletList: holders([5n, 7n]).map((w, i) => (i === 0 ? { ...w, slippageBps: 1000 } : w)),
+    });
+    await finish();
+    expect(jupiter.orderRequests().map((r) => [r.inputMint, r.amount, r.slippageBps])).toEqual([
+      [MINT, 5n, 1000],
+      [MINT, 7n, undefined],
+    ]);
+  });
+
+  it('a buy of 0 lamports (a percent of a balance at the reserve) is skipped without /order', async () => {
+    const { jupiter, finish } = setup({
+      side: 'buy',
+      walletList: solWallets([{ maxSpend: 0n }, { maxSpend: 10_000_000n }]),
+    });
+    const s = await finish();
+    expect(reasons(s)).toEqual(['INSUFFICIENT_SOL', undefined]);
+    expect(jupiter.orderRequests().map((r) => r.taker)).toEqual(['Wallet001']);
+  });
+});
