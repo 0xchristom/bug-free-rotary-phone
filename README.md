@@ -234,4 +234,4 @@ docs/          SPEC.md, DECISIONS.md
 
 ### Bezpieczeństwo w kodzie
 
-Klucze prywatne i mnemonik nigdy nie trafiają do `localStorage`, `sessionStorage`, IndexedDB, logów ani konsoli (SPEC 6). Lint blokuje te API w `src/`. Pliki `*.keystore.json` są w `.gitignore`. Szczegóły: [SECURITY.md](SECURITY.md).
+Klucze prywatne i mnemonik nigdy nie trafiają do `localStorage`, `sessionStorage`, IndexedDB, logów ani konsoli (SPEC 6). Lint blokuje te API w `src/`; jedyny wyjątek to zaszyfrowana zapamiętana flota w IndexedDB, zapisywana przez worker (D-051). Pliki `*.keystore.json` są w `.gitignore`. Szczegóły: [SECURITY.md](SECURITY.md).

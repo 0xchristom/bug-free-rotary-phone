@@ -1090,6 +1090,16 @@ dl.summary dd {
   font-size: var(--fs-strong);
 }
 
+/* The password of a remembered fleet: a field that stands out from the panel. */
+.hero .form {
+  width: 100%;
+  max-width: 360px;
+}
+
+.hero .k-input {
+  background: var(--surface-base);
+}
+
 /* STOP is the one control that must be found without reading. */
 .k-btn.stop {
   min-width: 96px;

@@ -1051,3 +1051,20 @@ Rejestr decyzji i rozbieżności z dokumentacją zewnętrzną. Nowe wpisy dopisu
 - Konsekwencje / alternatywy:
   - Każda zmiana kwoty daje nowy tekst pliku do zapisania; „Create wallets” czeka na zapis pliku jak dotąd.
   - Odrzucone: zapis kwot przyciskiem „Save table changes” (zadanie wymaga zapisu po Enter) i blokada całej tabeli w trakcie przebiegu (portfele spoza przebiegu i spoza uzbrojonej grupy wolno zmieniać, D-046).
+
+## D-051: Zapamiętana flota i okno bez hasła: wszystko w workerze, klucz pliku jako nieeksportowalny CryptoKey
+
+- Data: 2026-10-14
+- Zadanie: BUNNDLY-52
+- Decyzja:
+  - **Co i gdzie:** IndexedDB strony (baza `bunndly`, magazyn `remember`) ma trzy rekordy: `account` (tekst zaszyfrowanego pliku floty, ten sam co na dysk, i `fileId` = nazwa floty i czas utworzenia), `session` (okno bez hasła) i `prefs` (czy pamiętać i jak długo okno). Czyta je i zapisuje **wyłącznie worker** (`src/worker/remember.ts`, `src/storage/remember-idb.ts`). Do interfejsu trafia tylko nazwa floty, liczba portfeli i ustawienia (`remembered`).
+  - **Wariant B okna:** rekord `session` trzyma klucz pliku floty z sesji (już dziś `extractable: false`, użycia `encrypt` i `decrypt`) jako `CryptoKey` oraz znacznik AES-GCM nad pustym tekstem z danymi uwierzytelnionymi `{v, fileId, expiresAt}`. Zmieniony czas wygaśnięcia albo rekord innego pliku nie przechodzi znacznika i rekord znika. Wznowienie otwiera plik tym kluczem bez hasła i bez scrypt (`openKeystoreWithKey`). Okno z limitem liczy się od ostatniej aktywności, tak jak automatyczna blokada (polecenie Andy'ego z 14.10.2026): aktywność przy otwartej flocie zapisuje rekord od nowa z `expiresAt` = teraz + okno, najwyżej raz na minutę, w kolejce workera po bieżącym żądaniu. Wariant A z zadania (klucz opakowujący i zaszyfrowane nim surowe bajty klucza ze scrypt) odrzucony po dowodzie w Chromium z 14.10.2026 (komentarz w BUNNDLY-52). Właściwości są takie same, ale A wymaga wydania surowych bajtów klucza z `crypto.ts`, a kopia profilu daje w A te bajty na zawsze; w B tylko możliwość użycia klucza w tej przeglądarce. Andy potwierdził B, a Krystian brzmienie SPEC 6.9 („Tak”, 14.10.2026).
+  - **Kto usuwa rekord okna:** Lock, „Forget this device”, wyłączenie pamiętania, otwarcie innego pliku, upływ okna (przy wznowieniu) i każdy błąd odszyfrowania. Automatyczna blokada usuwa okno ograniczone czasem. Okna bez limitu (polecenie Krystiana: „wyłączenie auto-lock w ustawieniach do ponownego włączenia”, wariant „Window without a limit”) automatyczna blokada nie usuwa: zeruje tylko klucze w pamięci workera. Potwierdził to Andy 14.10.2026, a Ustawienia pokazują wtedy ostrzeżenie (SPEC 6.9). Zmiany hasła aplikacja nie ma, więc ten przypadek z zadania nie występuje.
+  - **Okno:** 15 min, 1 h, 2 h albo bez limitu, w Ustawieniach („This device”). **Decyzja tymczasowa (14.10.2026):** domyślnie 15 min — do potwierdzenia przez Krystiana. Pamiętanie jest domyślnie włączone (Krystian, 12.10.2026); opcja jest przy tworzeniu floty, przy otwieraniu pliku i w Ustawieniach.
+  - **Spójność z plikiem na dysku:** każdy zapis, który daje nowy tekst pliku (ustawienia, sieć, nowe portfele), aktualizuje też kopię w IndexedDB, jeśli to ta sama flota. Ostrzeżenie o niezapisanym pliku na dysku działa jak dotąd.
+  - **Przeglądarka bez IndexedDB** (np. okno prywatne odrzuca bazę): pierwszy błąd wyłącza funkcję, opcja jest wyłączona z wyjaśnieniem, reszta działa jak dotąd (`REMEMBER_UNAVAILABLE`).
+  - Reguła ESLint `no-restricted-globals` dla `indexedDB` zostaje; jedyne dozwolone użycie ma wyłączenie w dwóch liniach `remember-idb.ts` z odsyłaczem do tej decyzji.
+- Konsekwencje / alternatywy:
+  - `prefs` zostaje w IndexedDB także przy wyłączonym pamiętaniu (`{remember: false, windowMs}`), żeby wybór przetrwał odświeżenie. Nie ma w nim danych floty.
+  - Kod uruchomiony na stronie w czasie okna może otworzyć flotę bez hasła (SPEC 6.9). Bez okna kopia profilu daje tylko szyfrogram, jak plik na dysku.
+  - Odrzucone: zapis czegokolwiek w `localStorage` albo `sessionStorage`, zapis z wątku interfejsu i trzymanie surowych bajtów klucza (wariant A).
