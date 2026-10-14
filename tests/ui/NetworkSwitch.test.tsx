@@ -268,7 +268,7 @@ describe('balances follow the network', () => {
     expect(await screen.findAllByText('1.5')).toHaveLength(3);
 
     holdNext = true;
-    await user.click(screen.getByRole('button', { name: 'Refresh balances' }));
+    await user.click(screen.getByRole('button', { name: /^Fleet balance:/u }));
     await waitFor(() => {
       expect(lateMainnet).not.toBeNull();
     });
@@ -289,7 +289,7 @@ describe('balances follow the network', () => {
       expect(lateMainnet).not.toBeNull();
     });
     expect(screen.queryAllByText('1.5')).toEqual([]);
-    expect(screen.getByText('Balances: loading…')).toBeTruthy();
+    expect(screen.getByText('RPC: no read yet')).toBeTruthy();
     (lateMainnet as ((value: VaultBalances) => void) | null)?.(balances('devnet'));
     expect(await screen.findAllByText('7')).toHaveLength(3);
     expect(screen.queryAllByText('1.5')).toEqual([]);
@@ -336,9 +336,9 @@ describe('balances follow the network', () => {
     expect(await pressed()).toEqual(['Mainnet']);
     // 7 SOL is devnet's: not in the table, where “max spend as % of the balance” reads it.
     expect(screen.queryAllByText('7')).toEqual([]);
-    expect(screen.getByText('Balances: loading…')).toBeTruthy();
+    expect(screen.getByText('RPC: no read yet')).toBeTruthy();
 
-    await user.click(screen.getByRole('button', { name: 'Refresh balances' }));
+    await user.click(screen.getByRole('button', { name: /^Fleet balance:/u }));
     expect(await screen.findAllByText('1.5')).toHaveLength(3);
     expect(screen.queryAllByText('7')).toEqual([]);
     expect(answered).toBe(2);
@@ -397,14 +397,14 @@ describe('devnet has no buy', () => {
   it('BUY and ARM are off with one sentence; no startBuy and no arm leave the UI', async () => {
     const { user, requests } = setup(onDevnet());
     const sentence = 'Buying and the watcher are off on Devnet: Jupiter works on Mainnet only.';
-    const buy = await screen.findByRole<HTMLButtonElement>('button', { name: 'BUY' });
+    const buy = await screen.findByRole<HTMLButtonElement>('button', { name: 'Buy' });
     expect(buy.disabled).toBe(true);
     expect(screen.getByText(sentence)).toBeTruthy();
     await user.click(buy);
 
     await user.type(screen.getByLabelText(TARGET_LABEL), CREATOR);
     await screen.findByText('Creator wallet', {}, TARGET_WAIT);
-    const arm = screen.getByRole<HTMLButtonElement>('button', { name: 'ARM' });
+    const arm = screen.getByRole<HTMLButtonElement>('button', { name: 'Arm' });
     expect(arm.disabled).toBe(true);
     expect(screen.getByText(sentence)).toBeTruthy();
     await user.click(arm);
@@ -425,7 +425,7 @@ describe('devnet has no buy', () => {
         settings: { ...settings, global: { ...settings.global, network: 'mainnet' } },
       },
     });
-    await screen.findByRole('button', { name: 'BUY' });
+    await screen.findByRole('button', { name: 'Buy' });
     expect(screen.queryByText(/off on Devnet/u)).toBeNull();
   });
 });
@@ -433,7 +433,7 @@ describe('devnet has no buy', () => {
 describe('confirmations name the network', () => {
   it('switching to live mode says which network will spend SOL', async () => {
     const { user } = setup(unlocked());
-    await user.click(await screen.findByRole('button', { name: 'Switch to live mode…' }));
+    await user.click(await screen.findByRole('switch', { name: 'DRY-RUN' }));
     expect(screen.getByRole('alertdialog').textContent).toContain('Network: Mainnet.');
   });
 });

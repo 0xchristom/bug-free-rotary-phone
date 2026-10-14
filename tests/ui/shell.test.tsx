@@ -245,7 +245,7 @@ describe('keyboard', () => {
     // The shell (nav, lock), the token field, the buy panel, the table rows, the backup.
     expect(expected.length).toBeGreaterThan(25);
     expect(expected).toContain(screen.getByRole('button', { name: 'Lock' }));
-    expect(expected).toContain(screen.getByRole('button', { name: 'Refresh balances' }));
+    expect(expected).toContain(screen.getByRole('button', { name: /^Fleet balance:/u }));
     expect(expected).toContain(screen.getByLabelText(TARGET_LABEL));
 
     const visited: Element[] = [];
@@ -279,14 +279,18 @@ describe('keyboard', () => {
     const off = [
       ...`${base}\n${kit}`.matchAll(/([^{}]+)\{[^}]*outline:\s*(?:none|0)\b[^}]*\}/gu),
     ].map((m) => (m[1] ?? '').trim());
-    expect(off).toEqual(['.k-num-input', '.k-pop:focus', '.k-modal:focus']);
+    // The target field of the dashboard: its box draws the ring around the input.
+    expect(off).toEqual(['.target .field input', '.k-num-input', '.k-pop:focus', '.k-modal:focus']);
+    expect(base).toMatch(
+      /\.target \.field:focus-within\s*\{\s*outline:\s*2px solid var\(--focus\);/u,
+    );
     expect(kit).toMatch(/\.k-num:focus-within\s*\{\s*outline:\s*2px solid var\(--focus\);/u);
   });
 
   it('the live-mode confirmation: focus moves in, Tab stays in, Esc closes and gives focus back', async () => {
     const user = setupUser();
     render(<App vault={mockVault(unlocked()).client} storage={mockStorage().env} />);
-    const opener = await screen.findByRole('button', { name: 'Switch to live mode…' });
+    const opener = await screen.findByRole('switch', { name: 'DRY-RUN' });
     opener.focus();
     await user.keyboard('{Enter}');
 
@@ -308,7 +312,7 @@ describe('keyboard', () => {
     expect(screen.queryByRole('alertdialog')).toBeNull();
     expect(document.activeElement).toBe(opener);
     // Esc cancelled: nothing was saved, the fleet is still in DRY-RUN.
-    expect(screen.getByRole('button', { name: 'Switch to live mode…' })).toBeTruthy();
+    expect(opener.getAttribute('aria-checked')).toBe('true');
   });
 
   async function fleetWithUser(vault = mockVault(unlocked())) {
@@ -418,9 +422,9 @@ describe('keyboard', () => {
   });
 });
 
-describe('top bar: the mode chip', () => {
-  // The sentences of the buy panel, typed here by hand. DRY-RUN does sign (SPEC 7): it only
-  // never sends.
+describe('top bar: the mode switch and the mode chip', () => {
+  // The mode sentences, typed here by hand. DRY-RUN does sign (SPEC 7): it only never sends.
+  // The Dashboard has the switch (mockup v2); the other screens keep the plain chip.
   const DRY_RUN = 'DRY-RUN: real price requests and signatures, but no transaction will be sent.';
   const LIVE = 'Live mode: a buy sends real transactions and spends SOL from the wallets.';
 
@@ -432,22 +436,29 @@ describe('top bar: the mode chip', () => {
       ...base.info,
       settings: { ...settings, global: { ...settings.global, dryRun } },
     };
+    const user = setupUser();
     render(<App vault={mockVault({ ...base, info }).client} storage={mockStorage().env} />);
     await screen.findByRole('heading', { name: 'Fleet' });
+    const toggle = screen.getByRole('switch', { name: 'DRY-RUN' });
+    expect(toggle.getAttribute('aria-checked')).toBe(String(dryRun));
+    // The plain chip is not on the Dashboard: the switch says the mode there.
+    expect(screen.queryByText(/^Mode: /u)).toBeNull();
+    expect(toggle.getAttribute('title')).toBe(dryRun ? DRY_RUN : LIVE);
+    await user.click(
+      within(screen.getByRole('navigation')).getByRole('button', { name: 'Settings' }),
+    );
+    await screen.findByRole('heading', { name: 'Settings' });
     return screen.getByText(dryRun ? 'Mode: DRY-RUN' : 'Mode: LIVE');
   }
 
-  it('in DRY-RUN its hint says what the buy panel says: signed, never sent', async () => {
+  it('in DRY-RUN the switch and the chip say the same: signed, never sent', async () => {
     const chip = await chipOf(true);
     expect(chip.getAttribute('title')).toBe(DRY_RUN);
     expect(chip.getAttribute('title')).not.toMatch(/signs nothing/iu);
-    // the same sentence is on the screen in the buy panel
-    expect(screen.getByText(DRY_RUN).closest('.buy-panel')).toBeTruthy();
   });
 
-  it('in live mode its hint says what the buy panel says: real transactions, real SOL', async () => {
+  it('in live mode the switch and the chip say the same: real transactions, real SOL', async () => {
     const chip = await chipOf(false);
     expect(chip.getAttribute('title')).toBe(LIVE);
-    expect(screen.getByText(LIVE).closest('.buy-panel')).toBeTruthy();
   });
 });

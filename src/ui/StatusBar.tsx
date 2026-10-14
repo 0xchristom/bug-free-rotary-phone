@@ -14,6 +14,8 @@ export interface StatusBarProps {
   /** Live or polling balances (BUNNDLY-57); null while no screen reads them. */
   readonly feed?: FeedState | null;
   readonly autoLockMinutes: number;
+  /** Opens the plain export of the recovery phrase and keys; null while locked. */
+  readonly onExport?: (() => void) | null;
 }
 
 const SOCKET_TONE = { ok: 'ok', wait: 'warn', bad: 'danger' } as const;
@@ -23,7 +25,14 @@ const SOCKET_TONE = { ok: 'ok', wait: 'warn', bad: 'danger' } as const;
  * what was measured: no read yet is said as such, and a read answered by the public RPC
  * is called a fallback, never Helius.
  */
-export function StatusBar({ version, status, read, feed = null, autoLockMinutes }: StatusBarProps) {
+export function StatusBar({
+  version,
+  status,
+  read,
+  feed = null,
+  autoLockMinutes,
+  onExport = null,
+}: StatusBarProps) {
   const open = status !== null && !status.locked && status.info !== null ? status : null;
   const watch = open?.watch?.armed === true ? open.watch : null;
   const socketTone = watch === null ? null : SOCKET_TONE[connectionTone(watch.connection)];
@@ -50,6 +59,11 @@ export function StatusBar({ version, status, read, feed = null, autoLockMinutes 
             <span className="rail-item">
               <FolderIcon />
               Backup: manual
+              {onExport && (
+                <button type="button" className="linkbtn" onClick={onExport}>
+                  Plain export (recovery phrase and keys)
+                </button>
+              )}
             </span>
             <span className="rail-sep" aria-hidden="true" />
             {read === null ? (
@@ -61,6 +75,11 @@ export function StatusBar({ version, status, read, feed = null, autoLockMinutes 
             ) : (
               <span className="rail-item" data-tone="warn">
                 Fallback RPC (public) <b>{String(read.ms)} ms</b>
+              </span>
+            )}
+            {read !== null && (
+              <span className="rail-item" aria-live="polite">
+                Balances as of {new Date(read.at).toLocaleTimeString('en-GB')}
               </span>
             )}
             {feed !== null && (

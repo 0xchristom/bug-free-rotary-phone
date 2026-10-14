@@ -12,16 +12,32 @@ export interface AppHeaderProps {
   readonly onLock: () => void;
   /** The network switch (it needs the app's unsaved-file state, so the app builds it). */
   readonly network: ReactNode;
+  /** Where the Dashboard puts the DRY-RUN switch and the fleet balance (header-slots.ts). */
+  readonly modeSlot: (element: HTMLElement | null) => void;
+  readonly balanceSlot: (element: HTMLElement | null) => void;
 }
 
 const NAV: readonly { readonly screen: Screen; readonly label: string }[] = [
-  { screen: 'fleet', label: 'Fleet' },
+  { screen: 'fleet', label: 'Dashboard' },
+  { screen: 'activity', label: 'Activity' },
   { screen: 'settings', label: 'Settings' },
 ];
 
-/** The top bar: brand, sections, run mode, network, the open fleet and its lock. */
-export function AppHeader({ status, screen, onNavigate, onLock, network }: AppHeaderProps) {
+/**
+ * The top bar (mockup v2): brand, sections, then the run mode, the network, the fleet
+ * balance, the open fleet and its lock.
+ */
+export function AppHeader({
+  status,
+  screen,
+  onNavigate,
+  onLock,
+  network,
+  modeSlot,
+  balanceSlot,
+}: AppHeaderProps) {
   const info = status !== null && !status.locked ? status.info : null;
+  const dashboard = info !== null && screen === 'fleet';
   return (
     <header className="top">
       <h1 className="brand">
@@ -45,7 +61,7 @@ export function AppHeader({ status, screen, onNavigate, onLock, network }: AppHe
         </nav>
       )}
       <div className="top-right">
-        {info && (
+        {info && !dashboard && (
           <span
             className="top-chip"
             data-tone={info.settings.global.dryRun ? 'sim' : 'danger'}
@@ -54,7 +70,9 @@ export function AppHeader({ status, screen, onNavigate, onLock, network }: AppHe
             Mode: {info.settings.global.dryRun ? 'DRY-RUN' : 'LIVE'}
           </span>
         )}
+        {dashboard && <span className="top-slot" ref={modeSlot} />}
         {network}
+        {dashboard && <span className="top-slot" ref={balanceSlot} />}
         {info && (
           <>
             <span className="top-chip" title="Fleet name">

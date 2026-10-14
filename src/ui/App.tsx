@@ -5,6 +5,8 @@ import type { StorageEnv } from '../storage/keystore-file.ts';
 import type { VaultClient } from '../worker/vault-client.ts';
 import { DEFAULT_NETWORK, type Network } from '../core/network.ts';
 import { AppHeader } from './AppHeader.tsx';
+import { ExportDialog } from './ExportDialog.tsx';
+import { HeaderSlotsContext, type HeaderSlots } from './header-slots.ts';
 import { NetworkNotice, NetworkSwitch } from './NetworkSwitch.tsx';
 import type { FeedState } from '../chain/balance-stream.ts';
 import { BalanceFeedContext, RpcReadContext, type RpcRead } from './shell-status.ts';
@@ -13,6 +15,7 @@ import { StatusBar } from './StatusBar.tsx';
 import { useNetworkSwitch } from './use-network-switch.ts';
 import { createOperationsLog } from './operations-log.ts';
 import { useBuyView } from './use-buy.ts';
+import { ActivityScreen } from './screens/ActivityScreen.tsx';
 import { FleetScreen } from './screens/FleetScreen.tsx';
 import { OpenScreen } from './screens/OpenScreen.tsx';
 import { SettingsScreen } from './screens/SettingsScreen.tsx';
@@ -83,6 +86,14 @@ export function App({
   // Buy progress outlives screen changes (e.g. a look at Settings during a buy).
   const buyView = useBuyView(vault);
   const [mintDecimals, setMintDecimals] = useState<ReadonlyMap<string, number>>(new Map());
+  // The Dashboard's parts of the top bar (header-slots.ts).
+  const [modeSlot, setModeSlot] = useState<HTMLElement | null>(null);
+  const [balanceSlot, setBalanceSlot] = useState<HTMLElement | null>(null);
+  const slots = useMemo<HeaderSlots>(
+    () => ({ mode: modeSlot, balance: balanceSlot }),
+    [modeSlot, balanceSlot],
+  );
+  const [exportOpen, setExportOpen] = useState(false);
   const onMintDecimals = useCallback((mint: string, decimals: number) => {
     setMintDecimals((m) => (m.get(mint) === decimals ? m : new Map(m).set(mint, decimals)));
   }, []);
@@ -284,6 +295,8 @@ export function App({
                   screen={visible}
                   onNavigate={navigate}
                   onLock={() => void lock()}
+                  modeSlot={setModeSlot}
+                  balanceSlot={setBalanceSlot}
                   network={
                     status && (
                       <NetworkSwitch
@@ -294,7 +307,7 @@ export function App({
                     )
                   }
                 />
-                <main className="content">
+                <main className={visible === 'fleet' ? 'content dash-content' : 'content'}>
                   {unlocked && <WatchGuard />}
                   {unlocked && <NetworkNotice switching={switching} storage={storage} />}
                   {notice && (
@@ -340,16 +353,28 @@ export function App({
                         />
                       )}
                       {visible === 'fleet' && status.info && (
-                        <FleetScreen
+                        <HeaderSlotsContext.Provider value={slots}>
+                          <FleetScreen
+                            info={status.info}
+                            storage={storage}
+                            onUnsavedChange={onScreenUnsaved}
+                            buyView={buyView}
+                            onMintDecimals={onMintDecimals}
+                            {...(balanceRefreshMs === undefined ? {} : { balanceRefreshMs })}
+                            {...(rowProbe === undefined ? {} : { rowProbe })}
+                          />
+                        </HeaderSlotsContext.Provider>
+                      )}
+                      {visible === 'activity' && status.info && (
+                        <ActivityScreen
                           info={status.info}
                           storage={storage}
-                          onUnsavedChange={onScreenUnsaved}
                           operationsLog={operationsLog}
-                          buyView={buyView}
-                          mintDecimals={mintDecimals}
-                          onMintDecimals={onMintDecimals}
-                          {...(balanceRefreshMs === undefined ? {} : { balanceRefreshMs })}
-                          {...(rowProbe === undefined ? {} : { rowProbe })}
+                          decimals={
+                            buyView.run === null
+                              ? null
+                              : (mintDecimals.get(buyView.run.mint) ?? null)
+                          }
                         />
                       )}
                       {visible === 'settings' && status.info && (
@@ -370,7 +395,22 @@ export function App({
                   autoLockMinutes={
                     status?.info?.settings.global.autoLockMinutes ?? DEFAULT_AUTO_LOCK_MS / 60_000
                   }
+                  onExport={
+                    unlocked
+                      ? () => {
+                          setExportOpen(true);
+                        }
+                      : null
+                  }
                 />
+                {exportOpen && unlocked && (
+                  <ExportDialog
+                    storage={storage}
+                    onClose={() => {
+                      setExportOpen(false);
+                    }}
+                  />
+                )}
               </div>
             </ToastProvider>
           </BalanceFeedContext.Provider>

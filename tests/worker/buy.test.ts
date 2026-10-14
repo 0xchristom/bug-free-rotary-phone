@@ -44,31 +44,45 @@ const all = (h: VaultHandler): number[] =>
 /** Addresses of every getMultipleAccounts call, in order (all tests share the mock). */
 const rpcReads: string[][] = [];
 
+/** Accounts a test sets by hand: `null` is an address without an account. */
+const accounts = new Map<string, unknown>();
+/** A test that holds the next read gets its release here; the read answers after it. */
+let held: { readonly release: () => void } | null = null;
+let holdNext = false;
+
 /** RPC mock: every account has 1 SOL; USDC is a token mint. */
 const chain = {
   createTransport: () =>
-    ((config: { payload: unknown }) => {
+    (async (config: { payload: unknown }) => {
       const payload = config.payload as { id: unknown; params: [string[]] };
       rpcReads.push([...payload.params[0]]);
-      return Promise.resolve({
+      if (holdNext) {
+        holdNext = false;
+        await new Promise<void>((release) => {
+          held = { release };
+        });
+      }
+      return {
         jsonrpc: '2.0',
         id: payload.id,
         result: {
           context: { slot: 1n },
           value: payload.params[0].map((account) =>
-            account === USDC
-              ? MINT_ACCOUNT
-              : {
-                  lamports: 1_000_000_000n,
-                  owner: '11111111111111111111111111111111',
-                  data: ['', 'base64'],
-                  executable: false,
-                  rentEpoch: 0n,
-                  space: 0n,
-                },
+            accounts.has(account)
+              ? accounts.get(account)
+              : account === USDC
+                ? MINT_ACCOUNT
+                : {
+                    lamports: 1_000_000_000n,
+                    owner: '11111111111111111111111111111111',
+                    data: ['', 'base64'],
+                    executable: false,
+                    rentEpoch: 0n,
+                    space: 0n,
+                  },
           ),
         },
-      });
+      };
     }) as unknown as RpcTransport,
   sleep: () => Promise.resolve(),
 };
@@ -279,6 +293,64 @@ describe('selected wallets and the target (BUNNDLY-59)', () => {
       'INVALID_TARGET_ADDRESS',
     );
   });
+
+  // Review of 59, mutation B8: only a mint is remembered. An address without an account
+  // reads as a wallet, and can be a mint a moment later (the token is being created).
+  it('a wallet answer is not remembered: an empty address that becomes a mint buys at BUY', async () => {
+    const { clock, h, events } = await setup();
+    const NEW_MINT = 'Cv3DkGpXCiMeacQSWrshtrZjWkzVKpPUxfYz5RMQpump';
+    const reads = () => rpcReads.filter((r) => r.length === 1 && r[0] === NEW_MINT).length;
+    accounts.set(NEW_MINT, null);
+    try {
+      expect(await h.handle({ type: 'classifyTarget', address: NEW_MINT })).toEqual({
+        kind: 'wallet',
+      });
+      accounts.set(NEW_MINT, MINT_ACCOUNT);
+      const started = (await h.handle({
+        type: 'startBuy',
+        mint: NEW_MINT,
+        wallets: all(h),
+      })) as { readonly mint: string };
+      expect(started.mint).toBe(NEW_MINT);
+      // read twice: at the check in the bar and again at BUY
+      expect(reads()).toBe(2);
+      await runToEnd(clock, events);
+    } finally {
+      accounts.delete(NEW_MINT);
+    }
+  });
+
+  // Mutation B9: the vault locks (the worker's auto-lock timer) while the target is read.
+  // The answer must not cross the lock: no kind for the bar, no buy, no remembered mint.
+  it.each(['classifyTarget', 'startBuy'] as const)(
+    'locked during the target read (%s): VAULT_LOCKED and nothing starts',
+    async (type) => {
+      const { clock, h, jupiter } = await setup();
+      const NEW_MINT = 'Cv3DkGpXCiMeacQSWrshtrZjWkzVKpPUxfYz5RMQpump';
+      accounts.set(NEW_MINT, MINT_ACCOUNT);
+      holdNext = true;
+      try {
+        const request =
+          type === 'classifyTarget'
+            ? h.handle({ type, address: NEW_MINT })
+            : h.handle({ type, mint: NEW_MINT, wallets: all(h) });
+        const code = codeOf(request);
+        await vi.waitFor(() => {
+          expect(held).not.toBeNull();
+        });
+        await clock.runUntil(clock.now() + 60_000);
+        expect(h.checkAutoLock()).toBe(true);
+        held?.release();
+        expect(await code).toBe('VAULT_LOCKED');
+        expect(jupiter.calls).toHaveLength(0);
+        expect(h.inspect().unlocked).toBeNull();
+      } finally {
+        held = null;
+        holdNext = false;
+        accounts.delete(NEW_MINT);
+      }
+    },
+  );
 
   it('the remembered mint belongs to its network: on devnet the account is read again', async () => {
     const { h } = await setup();

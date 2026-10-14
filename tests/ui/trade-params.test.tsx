@@ -152,6 +152,12 @@ function slips(label: string): string[] {
   ];
 }
 
+/** The planned buy in the summary under the table (BUNNDLY-73). */
+function plannedBuy(): string {
+  const dt = within(screen.getByLabelText('Fleet summary')).getByText('Planned buy');
+  return dt.nextElementSibling?.textContent ?? '';
+}
+
 function amount(label: string): HTMLInputElement {
   return within(row(label)).getByLabelText<HTMLInputElement>(`Buy amount ${label}`);
 }
@@ -260,7 +266,7 @@ describe('the buy amount in a row', () => {
     });
     // 40 % of the 2 SOL read: 0.8 SOL planned; with W01's 0.75 SOL that is 1.55 SOL
     expect(amount('W02').value).toBe('40');
-    expect(screen.getByLabelText('Before the buy').textContent).toContain('1.55 SOL');
+    expect(plannedBuy()).toBe('1.55 SOL');
 
     // emptying the field gives the wallet back to the fleet default (none): no entry left
     await user.clear(amount('W01'));
@@ -310,7 +316,7 @@ describe('the buy amount in a row', () => {
     });
     await ready();
     await pasteMint(user);
-    await user.click(screen.getByRole('button', { name: 'BUY' }));
+    await user.click(screen.getByRole('button', { name: 'Buy' }));
     act(() => {
       vault.emit(runEvent('started'));
       vault.emit(walletEvent(0, 'QUEUED'));
@@ -348,8 +354,8 @@ describe('the buy amount in a row', () => {
     await ready();
     await pasteMint(user);
     // 10 % of the 2 SOL read: 0.2 SOL, not counted from a maxSpend entry (there is none)
-    expect(screen.getByLabelText('Before the buy').textContent).toContain('0.2 SOL');
-    await user.click(screen.getByRole('button', { name: 'BUY' }));
+    expect(plannedBuy()).toBe('0.2 SOL');
+    await user.click(screen.getByRole('button', { name: 'Buy' }));
     await eventually(() => {
       expect(vault.request.mock.calls.map(([r]) => r).find((r) => r.type === 'startBuy')).toEqual({
         type: 'startBuy',
@@ -537,7 +543,7 @@ describe('Edit selected', () => {
     // The settings are not in the file yet: leaving Settings asks, and the user goes on.
     await screen.findByRole('button', { name: 'Save the updated fleet file' });
     const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
-    await user.click(screen.getByRole('button', { name: 'Fleet' }));
+    await user.click(screen.getByRole('button', { name: 'Dashboard' }));
     expect(confirm).toHaveBeenCalledTimes(1);
     confirm.mockRestore();
     await ready();

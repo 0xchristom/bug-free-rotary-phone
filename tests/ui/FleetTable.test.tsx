@@ -243,7 +243,7 @@ describe('fleet table', () => {
 
   it('the balance is a dash before the first read, never a zero', async () => {
     setup({ holdBalances: true });
-    expect(await screen.findByText('Balances: loading…')).toBeTruthy();
+    expect(await screen.findByText('RPC: no read yet')).toBeTruthy();
     for (const label of ['W01', 'W02', 'W03']) expect(cells(label)[BALANCE]).toBe('—');
     expect(within(row('W01')).getByText('No amount')).toBeTruthy();
   });
@@ -365,7 +365,7 @@ describe('fleet table', () => {
       expect(refreshes().at(-1)?.mint).toBeUndefined();
     });
     setBalances(() => 3n * SOL);
-    await user.click(screen.getByRole('button', { name: 'Refresh balances' }));
+    await user.click(screen.getByRole('button', { name: /^Fleet balance:/u }));
     await waitFor(() => {
       expect(cells('W01')[BALANCE]).toBe('3');
     });
@@ -468,13 +468,23 @@ describe('wallet cell', () => {
     const names = within(row('Wallet 1'))
       .getAllByRole('button')
       .map((b) => b.getAttribute('aria-label'));
+    // As in mockup v2: the short address opens the QR code; Buy, Sell and Trade settings on the right
     expect(names).toEqual([
+      'QR code Wallet 1',
       'Copy address Wallet 1',
       'Unit of the buy amount Wallet 1: SOL. Switch',
       'Buy Wallet 1',
+      'Sell Wallet 1',
       'Trade settings Wallet 1',
-      'QR code Wallet 1',
     ]);
+  });
+
+  it('the QR opener is the short address itself', async () => {
+    setup({ wallets });
+    await ready();
+    const opener = screen.getByRole('button', { name: 'QR code Wallet 1' });
+    expect(opener.textContent).toBe(`${SECOND.slice(0, 4)}…${SECOND.slice(-4)}`);
+    expect(opener.getAttribute('title')).toBe(SECOND);
   });
 
   it('the QR code opens in a popover with the address of its wallet; Esc gives the focus back', async () => {
@@ -583,13 +593,13 @@ describe('100 wallets', () => {
     const before = new Map(renders);
 
     // same balances: no row renders again
-    await user.click(screen.getByRole('button', { name: 'Refresh balances' }));
+    await user.click(screen.getByRole('button', { name: /^Fleet balance:/u }));
     await act(() => Promise.resolve());
     expect(renders).toEqual(before);
 
     // one wallet changed: only that row renders, once
     setBalances((i) => (i === 42 ? 2n * SOL : SOL));
-    await user.click(screen.getByRole('button', { name: 'Refresh balances' }));
+    await user.click(screen.getByRole('button', { name: /^Fleet balance:/u }));
     await waitFor(() => {
       expect(cells('W43')[BALANCE]).toBe('2');
     });
