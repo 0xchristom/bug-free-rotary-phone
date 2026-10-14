@@ -73,6 +73,7 @@ export type {
 export * from './network.ts';
 export * from './settings.ts';
 export * from './trade.ts';
+export * from './groups.ts';
 export {
   buildKeystore,
   buildKeystoreWithSession,

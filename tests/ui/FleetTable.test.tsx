@@ -58,11 +58,15 @@ function setup({ count = 3, settings = {}, lamports = () => SOL, probe }: Setup 
           fetchedAt: '2026-10-02T12:00:00.000Z',
         });
       case 'saveSettings': {
-        // like the worker: without trade parameters the current ones stay
+        // like the worker: without trade parameters or groups the current ones stay
         saved.push(req.settings);
         info = {
           ...info,
-          settings: { ...req.settings, trade: req.settings.trade ?? info.settings.trade },
+          settings: {
+            ...req.settings,
+            trade: req.settings.trade ?? info.settings.trade,
+            groups: req.settings.groups ?? info.settings.groups,
+          },
         };
         return Promise.resolve({ fileText: '{"saved":true}', info });
       }

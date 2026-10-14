@@ -35,6 +35,7 @@ export function fleetInfo(count = 3, fleetName = 'Flota testowa'): VaultInfo {
       active: [],
       global: DEFAULT_GLOBAL_SETTINGS,
       trade: DEFAULT_TRADE_SETTINGS,
+      groups: [],
     },
     apiKeys: { helius: false, jupiter: false, heliusRpcUrl: false, heliusWsUrl: false },
   };

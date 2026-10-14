@@ -22,6 +22,7 @@ import {
   type TradeSettingsV1,
   type WalletTradeV1,
 } from '../trade.ts';
+import { validateGroups, type WalletGroupV1 } from '../groups.ts';
 
 export { MAX_KEYSTORE_FILE_BYTES, isValidFleetName } from './limits.ts';
 
@@ -85,6 +86,11 @@ export interface FleetSettingsV1 {
    */
   readonly trade: TradeSettingsV1;
   /**
+   * Wallet groups (BUNNDLY-68). Empty: one group with every wallet, the fleet from before
+   * groups; such a list is not written, so the file still opens in an older app.
+   */
+  readonly groups: readonly WalletGroupV1[];
+  /**
    * Global settings that were out of the current range in the file and were replaced by
    * the defaults when reading it (D-019). Only present after reading such a file; it is
    * never written and disappears with the next save.
@@ -95,6 +101,11 @@ export interface FleetSettingsV1 {
    * was dropped and the wallet takes the fleet default.
    */
   readonly resetTradeFields?: readonly string[];
+  /**
+   * The groups in the file broke a rule (a wallet in two groups or in none, a name taken
+   * twice) and were replaced by the default single group. Never written.
+   */
+  readonly resetGroups?: true;
 }
 
 export function defaultFleetSettings(): FleetSettingsV1 {
@@ -103,6 +114,7 @@ export function defaultFleetSettings(): FleetSettingsV1 {
     active: [],
     global: DEFAULT_GLOBAL_SETTINGS,
     trade: DEFAULT_TRADE_SETTINGS,
+    groups: [],
   };
 }
 
@@ -489,6 +501,32 @@ function isDefaultTrade(trade: TradeSettingsV1): boolean {
 }
 
 /**
+ * The `groups` part. The shape is strict; a broken rule resets every group to the
+ * default single group, so the fleet still opens with every wallet in it.
+ */
+function parseGroups(
+  value: unknown,
+  walletIndices: ReadonlySet<number>,
+): { groups: readonly WalletGroupV1[]; reset: boolean } {
+  if (value === undefined) return { groups: [], reset: false };
+  if (!Array.isArray(value)) return invalid();
+  const raw: unknown[] = value;
+  const groups = raw.map((item) => {
+    const g = expectKeys(item, ['id', 'name', 'wallets']);
+    if (!Array.isArray(g.wallets)) return invalid();
+    const wallets: unknown[] = g.wallets;
+    return {
+      id: expectString(g.id),
+      name: expectString(g.name),
+      wallets: wallets.map(expectIndex),
+    };
+  });
+  if (groups.length === 0) return invalid();
+  if (validateGroups(groups, walletIndices).length > 0) return { groups: [], reset: true };
+  return { groups, reset: false };
+}
+
+/**
  * Validates decrypted secrets (the JSON inside `ciphertext`). Throws
  * KEYSTORE_INVALID_FORMAT. Mnemonic validity and key consistency are checked by
  * the caller (openKeystore).
@@ -507,7 +545,7 @@ export function parseSecrets(raw: unknown): KeystoreSecretsV1 {
   });
   expectUniqueIndices(wallets);
 
-  const settings = expectKeys(s.settings, ['maxSpend'], ['active', 'global', 'trade']);
+  const settings = expectKeys(s.settings, ['maxSpend'], ['active', 'global', 'trade', 'groups']);
   if (!Array.isArray(settings.maxSpend)) return invalid();
   const rawMaxSpend: unknown[] = settings.maxSpend;
   const maxSpend = rawMaxSpend.map((value) => {
@@ -535,6 +573,7 @@ export function parseSecrets(raw: unknown): KeystoreSecretsV1 {
     walletIndices,
     new Set(maxSpend.filter((m) => m.lamports > 0n).map((m) => m.index)),
   );
+  const { groups, reset: groupsReset } = parseGroups(settings.groups, walletIndices);
 
   const keys = expectKeys(s.apiKeys, [], API_KEY_NAMES);
   const apiKeys: { -readonly [K in ApiKeyName]?: string } = {};
@@ -553,8 +592,10 @@ export function parseSecrets(raw: unknown): KeystoreSecretsV1 {
       active,
       global,
       trade,
+      groups,
       ...(resets.length > 0 ? { resetFields: resets } : {}),
       ...(tradeResets.length > 0 ? { resetTradeFields: tradeResets } : {}),
+      ...(groupsReset ? { resetGroups: true as const } : {}),
     },
     apiKeys,
   };
@@ -581,6 +622,15 @@ export function secretsToJson(secrets: KeystoreSecretsV1): string {
       ...(isDefaultTrade(secrets.settings.trade)
         ? {}
         : { trade: tradeToJson(secrets.settings.trade) }),
+      ...(secrets.settings.groups.length === 0
+        ? {}
+        : {
+            groups: secrets.settings.groups.map((g) => ({
+              id: g.id,
+              name: g.name,
+              wallets: [...g.wallets],
+            })),
+          }),
     },
     apiKeys,
   });

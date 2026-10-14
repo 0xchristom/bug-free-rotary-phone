@@ -74,9 +74,11 @@ import {
   publicRpcUrl,
   effectiveJupiterPlan,
   validateGlobalSettings,
+  validateGroups,
   validateTradeSettings,
   walletTrade,
   wipe,
+  withNewWallets,
   type ApiKeyName,
   type BuyAmount,
   type TradeSettingsV1,
@@ -90,6 +92,7 @@ import {
   type Network,
   type OpenedKeystore,
   type PublicWalletV1,
+  type WalletGroupV1,
 } from '../core/index.ts';
 import { DEFAULT_AUTO_LOCK_MS } from './protocol.ts';
 import type {
@@ -313,14 +316,29 @@ function parseTrade(value: unknown, walletIndices: ReadonlySet<number>): TradeSe
   return { fleet, wallets };
 }
 
+/** Wallet groups from a request: the shape here, the rules in validateGroups. */
+function parseGroups(value: unknown, walletIndices: ReadonlySet<number>): WalletGroupV1[] {
+  if (!Array.isArray(value)) return invalidSettings();
+  const items: unknown[] = value;
+  const groups = items.map((item): WalletGroupV1 => {
+    if (!isRecord(item) || !Array.isArray(item.wallets)) return invalidSettings();
+    if (typeof item.id !== 'string' || typeof item.name !== 'string') return invalidSettings();
+    const wallets: unknown[] = item.wallets;
+    if (!wallets.every((w): w is number => isIndexIn(w, walletIndices))) invalidSettings();
+    return { id: item.id, name: item.name, wallets: [...wallets] };
+  });
+  if (validateGroups(groups, walletIndices).length > 0) invalidSettings();
+  return groups;
+}
+
 /**
  * Full settings from the UI; anything malformed or out of range is INVALID_SETTINGS.
- * Without `trade` the current trade parameters stay.
+ * Without `trade` or `groups` the current ones stay.
  */
 function parseSettings(
   value: unknown,
   walletIndices: ReadonlySet<number>,
-  currentTrade: TradeSettingsV1,
+  current: Pick<FleetSettingsV1, 'trade' | 'groups'>,
 ): FleetSettingsV1 {
   if (!isRecord(value) || !Array.isArray(value.maxSpend) || !Array.isArray(value.active)) {
     return invalidSettings();
@@ -365,11 +383,13 @@ function parseSettings(
     network: g.network,
   } as FleetSettingsV1['global'];
   if (validateGlobalSettings(global).length > 0) return invalidSettings();
-  const trade = value.trade === undefined ? currentTrade : parseTrade(value.trade, walletIndices);
+  const trade = value.trade === undefined ? current.trade : parseTrade(value.trade, walletIndices);
   // Checked against this request's maxSpend: a SOL amount and a percent never both.
   const withSol = new Set(maxSpend.filter((m) => m.lamports > 0n).map((m) => m.index));
   if (validateTradeSettings(trade, walletIndices, withSol).length > 0) return invalidSettings();
-  return { maxSpend, active, global, trade };
+  const groups =
+    value.groups === undefined ? current.groups : parseGroups(value.groups, walletIndices);
+  return { maxSpend, active, global, trade, groups };
 }
 
 /** Applies write-only key changes: missing keeps, null removes, a string replaces. */
@@ -1109,7 +1129,7 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
       case 'saveSettings': {
         const vault = requireUnlocked();
         const indices = new Set(vault.wallets.map((w) => w.index));
-        const settings = parseSettings(request.settings, indices, vault.settings.trade);
+        const settings = parseSettings(request.settings, indices, vault.settings);
         const switched = settings.global.network !== networkOf(vault);
         // A running buy keeps its network to the end (an armed watcher is refused above).
         if (switched && buy !== null) throw new AppError('BUY_RUNNING');
@@ -1147,7 +1167,16 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
         const derived = deriveWallets(new TextDecoder().decode(vault.mnemonic), fromIndex, count);
         const added = derived.map((d) => ({ index: d.index, secretKey: d.secretKey }));
         try {
-          return await rebuild(vault, [...vault.wallets, ...added], vault.settings, vault.apiKeys);
+          const groups = withNewWallets(
+            vault.settings.groups,
+            added.map((w) => w.index),
+          );
+          return await rebuild(
+            vault,
+            [...vault.wallets, ...added],
+            { ...vault.settings, groups },
+            vault.apiKeys,
+          );
         } catch (e) {
           for (const w of added) wipe(w.secretKey);
           throw e;

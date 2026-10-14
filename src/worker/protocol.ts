@@ -57,11 +57,15 @@ export type VaultRequest =
   | {
       readonly type: 'saveSettings';
       /**
-       * Replaces global, maxSpend and active; the trade parameters too when present,
-       * otherwise they stay as they are (BUNNDLY-58).
+       * Replaces global, maxSpend and active; the trade parameters (BUNNDLY-58) and the
+       * wallet groups (BUNNDLY-68) too when present, otherwise they stay as they are.
        */
-      readonly settings: Omit<FleetSettingsV1, 'trade' | 'resetFields' | 'resetTradeFields'> & {
+      readonly settings: Omit<
+        FleetSettingsV1,
+        'trade' | 'groups' | 'resetFields' | 'resetTradeFields' | 'resetGroups'
+      > & {
         readonly trade?: FleetSettingsV1['trade'];
+        readonly groups?: FleetSettingsV1['groups'];
       };
       readonly apiKeys?: ApiKeyChanges;
     }
