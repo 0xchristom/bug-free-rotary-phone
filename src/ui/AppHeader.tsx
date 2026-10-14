@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import type { VaultStatus } from '../worker/protocol.ts';
 import { Avatar, BrandMark, IconButton, LockIcon } from './kit/index.ts';
+import { DRY_RUN_NOTE, LIVE_NOTE } from './mode-text.ts';
 import type { Screen } from './vault-state.ts';
 
 export interface AppHeaderProps {
@@ -48,11 +49,7 @@ export function AppHeader({ status, screen, onNavigate, onLock, network }: AppHe
           <span
             className="top-chip"
             data-tone={info.settings.global.dryRun ? 'sim' : 'danger'}
-            title={
-              info.settings.global.dryRun
-                ? 'DRY-RUN signs nothing and sends nothing'
-                : 'Live mode: a buy sends real transactions'
-            }
+            title={info.settings.global.dryRun ? DRY_RUN_NOTE : LIVE_NOTE}
           >
             Mode: {info.settings.global.dryRun ? 'DRY-RUN' : 'LIVE'}
           </span>

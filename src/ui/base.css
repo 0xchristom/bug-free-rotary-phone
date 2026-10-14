@@ -377,6 +377,21 @@ label.checkbox {
   gap: var(--s-2);
 }
 
+/* A number with its unit: as wide as a number needs, not as wide as the form. */
+.settings-number {
+  width: 220px;
+}
+
+/* A field with buttons next to it: the field takes the room that is left, on one line. */
+.key-field .inline {
+  flex-wrap: nowrap;
+}
+
+.key-field .inline .k-input {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
 select.k-input {
   appearance: auto;
   padding: 0 var(--s-2);
