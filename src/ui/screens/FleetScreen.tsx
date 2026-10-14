@@ -2,6 +2,7 @@ import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { toUserMessage } from '../../core/errors.ts';
 import { NETWORK_LABELS, NO_BUY_ROUTE_MESSAGE, buyRouteOf } from '../../core/network.ts';
 import { effectiveJupiterPlan } from '../../core/settings.ts';
+import { walletTrade } from '../../core/trade.ts';
 import {
   saveKeystoreFile,
   supportsDirectoryPicker,
@@ -76,9 +77,17 @@ const QUEUED_ROW: BuyRow = {
 
 const NO_READY = 'No ready wallets: select wallets that have a saved max spend.';
 
+const CONFIRM_TITLES = {
+  buy: 'Buy in live mode?',
+  sell: 'Sell in live mode?',
+  arm: 'Arm the watcher in live mode?',
+} as const;
+const CONFIRM_YES = { buy: 'Yes, buy', sell: 'Yes, sell', arm: 'Yes, arm' } as const;
+
 /** A command waiting for the live-mode confirmation. */
 type Confirm =
   | { readonly kind: 'buy'; readonly mint: string; readonly wallets: readonly number[] }
+  | { readonly kind: 'sell'; readonly mint: string; readonly wallets: readonly number[] }
   | { readonly kind: 'arm'; readonly creator: string; readonly wallets: readonly number[] };
 
 type Drafts = Readonly<Record<number, string>>;
@@ -408,7 +417,21 @@ export function FleetScreen({
                 : readyIndexes.length === 0
                   ? NO_READY
                   : null,
-    sell: 'Selling is not available yet.',
+    sell: running
+      ? 'A buy or sell is running. Wait for it to end or press STOP.'
+      : commandBusy
+        ? 'Sending the command…'
+        : buyRouteOf(global.network) === null
+          ? NO_BUY_ROUTE_MESSAGE
+          : watchArmed
+            ? 'DISARM first: the armed watcher may buy this token at any moment.'
+            : buyMint === null
+              ? 'Paste the mint of the token to sell.'
+              : !hasRpc
+                ? 'Selling reads the token balances first: it needs a Helius key (Settings).'
+                : selectedIndexes.length === 0
+                  ? 'Select the wallets that sell.'
+                  : null,
     stop: !running ? 'Nothing is running.' : stopping ? 'Stopping…' : null,
   };
 
@@ -445,6 +468,24 @@ export function FleetScreen({
     if (buyMint === null) return;
     if (global.dryRun) launchBuy(buyMint, wallets);
     else setConfirm({ kind: 'buy', mint: buyMint, wallets });
+  };
+  // SELL (BUNNDLY-60): each selected wallet sells its set part of its token balance.
+  const launchSell = (mint: string, wallets: readonly number[]): void => {
+    setPending({ wallets: new Set(wallets), since: runId });
+    void command(async () => {
+      try {
+        await client.request({ type: 'startSell', mint, wallets });
+      } catch (e) {
+        setPending(null);
+        throw e;
+      }
+      await refresh();
+    });
+  };
+  const onSell = (): void => {
+    if (reasons.sell !== null || buyMint === null) return;
+    if (global.dryRun) launchSell(buyMint, selectedIndexes);
+    else setConfirm({ kind: 'sell', mint: buyMint, wallets: selectedIndexes });
   };
   const launchArm = (creator: string, wallets: readonly number[]): void => {
     alarm.prime(); // the click allows the alarm sound later (autoplay policy)
@@ -484,6 +525,13 @@ export function FleetScreen({
   }, []);
   const confirmSpend = (wallets: readonly number[]): bigint =>
     wallets.reduce((sum, i) => sum + (savedMaxSpend.get(i) ?? 0n), 0n);
+  /** The part each wallet sells (BUNNDLY-58 sets it per wallet): one value or a range. */
+  const sellPart = (wallets: readonly number[]): string => {
+    const parts = wallets.map((i) => walletTrade(info.settings.trade, i, undefined).sellPercent);
+    const low = Math.min(...parts);
+    const high = Math.max(...parts);
+    return low === high ? `${String(low)}%` : `${String(low)}–${String(high)}%`;
+  };
   const confirmReady = (wallets: readonly number[]): number =>
     wallets.filter((i) => (savedMaxSpend.get(i) ?? 0n) > 0n).length;
   const tableBuy = useMemo(() => {
@@ -600,6 +648,7 @@ export function FleetScreen({
         detected={detected}
         onTarget={onTarget}
         onBuy={onBuy}
+        onSell={onSell}
         onArm={onArm}
         onDisarm={onDisarm}
         onStop={onStop}
@@ -619,7 +668,7 @@ export function FleetScreen({
           open
           role="alertdialog"
           tone="danger"
-          title={confirm.kind === 'buy' ? 'Buy in live mode?' : 'Arm the watcher in live mode?'}
+          title={CONFIRM_TITLES[confirm.kind]}
           onClose={() => {
             setConfirm(null);
           }}
@@ -638,10 +687,11 @@ export function FleetScreen({
                 onClick={() => {
                   setConfirm(null);
                   if (confirm.kind === 'buy') launchBuy(confirm.mint, confirm.wallets);
+                  else if (confirm.kind === 'sell') launchSell(confirm.mint, confirm.wallets);
                   else launchArm(confirm.creator, confirm.wallets);
                 }}
               >
-                {confirm.kind === 'buy' ? 'Yes, buy' : 'Yes, arm'}
+                {CONFIRM_YES[confirm.kind]}
               </Button>
             </>
           }
@@ -649,12 +699,21 @@ export function FleetScreen({
           <dl className="summary" aria-label="What the command does">
             <div>
               <dt>Wallets</dt>
-              <dd>{confirmReady(confirm.wallets)}</dd>
+              <dd>
+                {confirm.kind === 'sell' ? confirm.wallets.length : confirmReady(confirm.wallets)}
+              </dd>
             </div>
-            <div>
-              <dt>{confirm.kind === 'buy' ? 'Total to spend' : 'To spend per token'}</dt>
-              <dd>up to {formatSol(confirmSpend(confirm.wallets))} SOL</dd>
-            </div>
+            {confirm.kind === 'sell' ? (
+              <div>
+                <dt>To sell</dt>
+                <dd>{sellPart(confirm.wallets)} of each token balance</dd>
+              </div>
+            ) : (
+              <div>
+                <dt>{confirm.kind === 'buy' ? 'Total to spend' : 'To spend per token'}</dt>
+                <dd>up to {formatSol(confirmSpend(confirm.wallets))} SOL</dd>
+              </div>
+            )}
             <div>
               <dt>Network</dt>
               <dd>{NETWORK_LABELS[global.network]}</dd>

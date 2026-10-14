@@ -17,7 +17,7 @@ export interface Target {
 export interface CommandReasons {
   readonly buy: string | null;
   readonly arm: string | null;
-  readonly sell: string;
+  readonly sell: string | null;
   readonly stop: string | null;
 }
 
@@ -34,6 +34,7 @@ export interface CommandBarProps {
   /** Called with the checked target, or null while the field is empty, wrong or checking. */
   readonly onTarget: (target: Target | null) => void;
   readonly onBuy: () => void;
+  readonly onSell: () => void;
   readonly onArm: () => void;
   readonly onDisarm: () => void;
   readonly onStop: () => void;
@@ -79,6 +80,7 @@ export function CommandBar({
   detected,
   onTarget,
   onBuy,
+  onSell,
   onArm,
   onDisarm,
   onStop,
@@ -141,9 +143,9 @@ export function CommandBar({
     report();
   }, [targetKey]);
 
-  const commands = useRef({ onBuy, onStop, reasons });
+  const commands = useRef({ onBuy, onSell, onStop, reasons });
   useEffect(() => {
-    commands.current = { onBuy, onStop, reasons };
+    commands.current = { onBuy, onSell, onStop, reasons };
   });
   useEffect(() => {
     const onKey = (event: KeyboardEvent): void => {
@@ -155,11 +157,13 @@ export function CommandBar({
       if (key === 'b' && c.reasons.buy === null) {
         event.preventDefault();
         c.onBuy();
+      } else if (key === 's' && c.reasons.sell === null) {
+        event.preventDefault();
+        c.onSell();
       } else if (key === 'escape' && c.reasons.stop === null) {
         event.preventDefault();
         c.onStop();
       }
-      // S (sell) waits for selling; the button says so.
     };
     window.addEventListener('keydown', onKey);
     return () => {
@@ -241,7 +245,14 @@ export function CommandBar({
         >
           BUY
         </Button>
-        <Button disabled title={reasons.sell} aria-description={reasons.sell}>
+        <Button
+          variant="danger"
+          disabled={reasons.sell !== null}
+          title={reasons.sell ?? 'Shortcut: S'}
+          aria-description={reasons.sell ?? undefined}
+          aria-keyshortcuts="S"
+          onClick={onSell}
+        >
           SELL
         </Button>
         <Button

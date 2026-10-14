@@ -137,7 +137,7 @@ Sieć jest też w dzienniku operacji (kolumna `network` w CSV i JSON) i w dialog
 
 Tryb A kupuje token od razu portfelami zaznaczonymi w tabeli, które mają zapisany max spend > 0 (portfel z rezerwą poniżej `MIN_RESERVE_SOL` jest pomijany). Każdy portfel kupuje za swój max spend, najwyżej raz.
 
-Na ekranie **Fleet** nad tabelą jest pasek komend: jedno pole celu i przyciski **ARM**, **BUY**, **SELL**, **STOP**. Przycisk, który nie może teraz zadziałać, jest wyłączony, a zdanie pod paskiem (i opis przycisku) mówi dlaczego. **SELL** czeka na sprzedaż (BUNNDLY-60).
+Na ekranie **Fleet** nad tabelą jest pasek komend: jedno pole celu i przyciski **ARM**, **BUY**, **SELL**, **STOP**. Przycisk, który nie może teraz zadziałać, jest wyłączony, a zdanie pod paskiem (i opis przycisku) mówi dlaczego. **SELL** (skrót **S**) sprzedaje token z pola celu zaznaczonymi portfelami: każdy portfel sprzedaje ustawioną dla niego część salda tokenu (domyślnie 100%). Sprzedaż czyta najpierw salda tokenu, więc wymaga klucza Helius, także w DRY-RUN, i nie rusza, gdy watcher jest uzbrojony. W trybie na żywo dialog **Sell in live mode?** podaje liczbę portfeli i sprzedawaną część i czeka na **Yes, sell**.
 
 1. **Cel:** wklej w pole **Token mint or creator wallet** adres tokenu. Aplikacja sama sprawdza w łańcuchu, czym jest adres, i pokazuje etykietę: **Token · SPL**, **Token · Token-2022** albo **Creator wallet**. Adres konta tokenowego, programu albo innego konta zostaje odrzucony z opisem przy polu. Dopiero mint włącza **BUY**.
 2. **Podsumowanie:** panel **Buy** pokazuje liczbę gotowych portfeli, łączną kwotę do wydania i tryb. Zakup wydaje kwoty zapisane w sejfie, więc niezapisane zmiany kwot blokują **BUY** do **Save table changes**. Zmiana zaznaczenia nie wymaga zapisu.

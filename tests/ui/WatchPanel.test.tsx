@@ -508,6 +508,12 @@ describe('detections and progress', () => {
     const chip = await screen.findByLabelText(`Detected token ${usable}`);
     expect(chip.textContent).toBe('Detected Cv3D…pump · LaunchLab');
     expect(screen.getByRole('button', { name: 'BUY' })).toHaveProperty('disabled', false);
+    // the armed watcher may buy this token at any moment: no sell meanwhile
+    const sell = screen.getByRole('button', { name: 'SELL' });
+    expect(sell).toHaveProperty('disabled', true);
+    expect(sell.getAttribute('aria-description')).toBe(
+      'DISARM first: the armed watcher may buy this token at any moment.',
+    );
   });
 
   it('a buy started by a detection: the shared progress view counts from the detection', async () => {

@@ -37,8 +37,10 @@ interface Setup {
   readonly jupiterKey?: boolean;
   /** Saved max spend per wallet in lamports (default 0.01 SOL each). */
   readonly maxSpend?: readonly bigint[];
-  /** How the worker answers startBuy: at once, never, or with a refusal. */
+  /** How the worker answers startBuy and startSell: at once, never, or with a refusal. */
   readonly start?: 'answer' | 'hold' | 'refuse';
+  /** Part of the token balance each wallet sells, by index (BUNNDLY-58); 100 when unset. */
+  readonly sellPercent?: Readonly<Record<number, number>>;
 }
 
 function setup({
@@ -48,6 +50,7 @@ function setup({
   jupiterKey = false,
   maxSpend,
   start = 'answer',
+  sellPercent = {},
 }: Setup = {}) {
   const base = fleetInfo(count);
   let info: VaultInfo = {
@@ -59,6 +62,13 @@ function setup({
         lamports: maxSpend?.[w.index] ?? 10_000_000n,
       })),
       global: { ...base.settings.global, ...global },
+      trade: {
+        ...base.settings.trade,
+        wallets: Object.entries(sellPercent).map(([index, percent]) => ({
+          index: Number(index),
+          sellPercent: percent,
+        })),
+      },
     },
     apiKeys: { ...base.apiKeys, helius: true, jupiter: jupiterKey },
   };
@@ -99,6 +109,7 @@ function setup({
         });
       case 'classifyTarget':
         return classifyFake(req.address);
+      case 'startSell':
       case 'startBuy':
         if (start === 'hold') return new Promise(() => undefined);
         if (start === 'refuse') return Promise.reject(new AppError('BUY_RUNNING'));
@@ -428,6 +439,62 @@ describe('command bar (BUNNDLY-59)', () => {
     expect(requests.filter((r) => r.type === 'startBuy')).toEqual([
       { type: 'startBuy', mint: MINT, wallets: [1] },
     ]);
+  });
+
+  it('SELL sends the mint and the selected wallets; the rows are queued at once', async () => {
+    const { user, requests } = setup({ start: 'hold' });
+    await showMint(user);
+    await user.click(screen.getByRole('checkbox', { name: 'Select W02' }));
+    await user.click(screen.getByRole('button', { name: 'SELL' }));
+    expect(requests.filter((r) => r.type === 'startSell')).toEqual([
+      { type: 'startSell', mint: MINT, wallets: [0, 2] },
+    ]);
+    expect(requests.filter((r) => r.type === 'startBuy')).toEqual([]);
+    expect(['W01', 'W02', 'W03'].map(stateOf)).toEqual(['Queued', 'not queued', 'Queued']);
+  });
+
+  it('S sells, but not while typing in the target field', async () => {
+    const { user, requests } = setup();
+    await showMint(user);
+    await user.keyboard('s');
+    expect(requests.filter((r) => r.type === 'startSell')).toEqual([]);
+    const field = screen.getByLabelText(TARGET_LABEL);
+    await user.clear(field);
+    await user.type(field, MINT);
+    await screen.findByText('Token · SPL', {}, TARGET_WAIT);
+    await user.click(screen.getByRole('heading', { name: 'Buy' }));
+    await user.keyboard('s');
+    expect(requests.filter((r) => r.type === 'startSell')).toHaveLength(1);
+  });
+
+  it('live: SELL asks first and names the part each wallet sells', async () => {
+    // W02 sells 40 % (its own setting), the others the fleet default of 100 %
+    const { user, requests } = setup({ global: { dryRun: false }, sellPercent: { 1: 40 } });
+    await showMint(user);
+    await user.click(screen.getByRole('button', { name: 'SELL' }));
+    const dialog = screen.getByRole('alertdialog', { name: 'Sell in live mode?' });
+    const value = (term: string): string =>
+      within(dialog).getByText(term).nextElementSibling?.textContent ?? '';
+    expect(value('Wallets')).toBe('3');
+    expect(value('To sell')).toBe('40–100% of each token balance');
+    expect(requests.filter((r) => r.type === 'startSell')).toEqual([]);
+    await user.click(within(dialog).getByRole('button', { name: 'Yes, sell' }));
+    expect(requests.filter((r) => r.type === 'startSell')).toEqual([
+      { type: 'startSell', mint: MINT, wallets: [0, 1, 2] },
+    ]);
+  });
+
+  it('SELL needs a token and selected wallets, and says so', async () => {
+    const { user } = setup();
+    await eventually(() => screen.getByText(/^Balances as of /u));
+    const sell = (): HTMLElement => screen.getByRole('button', { name: 'SELL' });
+    expect(sell()).toHaveProperty('disabled', true);
+    expect(sell().getAttribute('aria-description')).toBe('Paste the mint of the token to sell.');
+    await user.type(screen.getByLabelText(TARGET_LABEL), MINT);
+    await screen.findByText('Token · SPL', {}, TARGET_WAIT);
+    expect(sell()).toHaveProperty('disabled', false);
+    await user.click(screen.getByRole('checkbox', { name: 'Select all wallets' }));
+    expect(sell().getAttribute('aria-description')).toBe('Select the wallets that sell.');
   });
 
   it('a creator wallet as the target: BUY waits for that creator’s token', async () => {
