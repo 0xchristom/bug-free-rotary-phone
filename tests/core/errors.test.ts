@@ -41,6 +41,7 @@ describe('ERROR_MESSAGES', () => {
         'STORAGE_FILE_TOO_LARGE',
         'BUY_RUNNING',
         'NO_WALLETS_TO_BUY',
+        'NO_WALLETS_TO_SELL',
         'INVALID_MINT_ADDRESS',
         'INVALID_CREATOR_ADDRESS',
         'WATCH_ARMED',

@@ -106,5 +106,24 @@
   "serverError500": {
     "signature": "k3sza8ZDSPaKeAfH7HTMJv7rMzL2dgDy5D8bWRxo5t7T27eoUqwSVjLdZvBshTFrbdo7tERD99hY7cnW1WzXf8aX",
     "error": "Internal server error"
+  },
+  "sellSource": "BUNNDLY-60, zbudowane z dokumentacji (2026-10-13), nie z prawdziwego API: sprzedaż tokenu za SOL z opłatą pobraną w mincie wejściowym. Wg order-and-execute.md: opłata w mincie wejściowym = totalInputAmount - inputAmountResult, opłata w mincie wyjściowym = outputAmountResult - totalOutputAmount; do sald portfela służą totalInputAmount i totalOutputAmount. O opłacie transferowej Token-2022 dokumentacja nie mówi osobno.",
+  "sellSuccessInputFee": {
+    "status": "Success",
+    "signature": "k3sza8ZDSPaKeAfH7HTMJv7rMzL2dgDy5D8bWRxo5t7T27eoUqwSVjLdZvBshTFrbdo7tERD99hY7cnW1WzXf8aX",
+    "slot": "452713700",
+    "code": 0,
+    "totalInputAmount": "1000000",
+    "totalOutputAmount": "9240000",
+    "inputAmountResult": "990000",
+    "outputAmountResult": "9240000",
+    "swapEvents": [
+      {
+        "inputMint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+        "inputAmount": "990000",
+        "outputMint": "So11111111111111111111111111111111111111112",
+        "outputAmount": "9240000"
+      }
+    ]
   }
 }

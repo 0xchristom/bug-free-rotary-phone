@@ -28,10 +28,17 @@ import {
   type RpcSource,
   type WebSocketFactory,
 } from '../chain/index.ts';
-import { startRun, type ExecutorEvent, type ExecutorRun } from '../executor/executor.ts';
+import {
+  startRun,
+  type ExecutorEvent,
+  type ExecutorRun,
+  type ExecutorWallet,
+  type Side,
+} from '../executor/executor.ts';
+import { DEFAULT_SELL_PERCENT, isSellPercent, sellAmount } from '../executor/sell-plan.ts';
 import { startWatch, type BuyTrigger, type Watch } from '../watcher/watch.ts';
 import type { LandingChecker } from '../executor/landing.ts';
-import { createVerifier, type TokenReader } from '../executor/verify.ts';
+import { createVerifier, type SolReader, type TokenReader } from '../executor/verify.ts';
 import { ExecuteLimiter, OrderLimiter, realClock, type LimiterClock } from '../executor/limiter.ts';
 import { checkOrderTransaction, type OrderCheckProblem } from '../executor/order-check.ts';
 import {
@@ -122,8 +129,13 @@ export interface ExecutorOptions {
   readonly steady?: boolean;
   /** Chain check before retries; by default over Helius with the public fallback. */
   readonly landing?: LandingChecker;
-  /** Token balance reads for the confirmation after a buy; by default over Helius. */
+  /**
+   * Token balance reads for the confirmation after a buy or a sell, and for the plan of a
+   * sell; by default over Helius.
+   */
   readonly tokens?: TokenReader;
+  /** SOL balance reads for the confirmation after a sell; by default over Helius. */
+  readonly sol?: SolReader;
 }
 
 /** Mode B dependencies; the socket comes from `net.createWebSocket`, the clock from `executor`. */
@@ -180,8 +192,13 @@ export interface VaultHandleOptions {
 
 /** What the executor asked `/order` for, for one wallet (BUNNDLY-22). */
 export interface OrderSignRequest {
+  /** A sell only: the token sold. The vault signs it only for its own running sell. */
+  readonly inputMint?: string;
   readonly outputMint: string;
-  /** Lamports asked for; must equal the order's inAmount and fit the max spend. */
+  /**
+   * Input units asked for; must equal the order's inAmount and fit the wallet's limit: its
+   * max spend for a buy, its planned token amount for a sell.
+   */
   readonly amount: bigint;
 }
 
@@ -189,7 +206,13 @@ export type SignOrderResult =
   | ({ readonly ok: true } & SignedOrder)
   | {
       readonly ok: false;
-      readonly problem: OrderCheckProblem | 'VAULT_LOCKED' | 'UNKNOWN_WALLET' | 'SIGNING_FAILED';
+      readonly problem:
+        | OrderCheckProblem
+        | 'VAULT_LOCKED'
+        | 'UNKNOWN_WALLET'
+        | 'SIGNING_FAILED'
+        /** A sell the vault did not plan: another mint, or no sell running. */
+        | 'NO_SELL_PLAN';
     };
 
 export interface VaultHandler {
@@ -198,7 +221,8 @@ export interface VaultHandler {
   /**
    * For the executor inside the worker only (BUNNDLY-22, D-028); not reachable through
    * `handle` or the message protocol. Signs the `/order` transaction of one wallet after
-   * the checks pass; the max spend comes from the vault's own settings. Never throws.
+   * the checks pass; the limit is the vault's own: the max spend from its settings for a
+   * buy, the plan it made at `startSell` for a sell. Never throws.
    */
   signOrder(
     walletIndex: number,
@@ -371,6 +395,12 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
   /** SOL balances from the last refresh of this session (pre-check before `/order`). */
   let balances = new Map<number, bigint>();
   let buy: { readonly run: ExecutorRun; status: BuyStatus } | null = null;
+  /**
+   * The running sell: the mint and what each wallet may put in, from the balance read at
+   * its start. The signer checks every sell order against it (BUNNDLY-60).
+   */
+  let sellPlan: { readonly mint: string; readonly amounts: ReadonlyMap<number, bigint> } | null =
+    null;
   let nextRunId = 1;
   const listeners = new Set<(event: WorkerEvent) => void>();
   /** Limiters live across runs, so a new buy respects the window of the last one. */
@@ -635,53 +665,133 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
     const vault = requireUnlocked();
     if (buy !== null) throw new AppError('BUY_RUNNING');
     requireBuyRoute(vault);
-    const network = networkOf(vault);
+    const mint = mintOf(rawMint);
+    return launch(vault, 'buy', mint, buyWallets(vault), trigger);
+  };
+
+  const mintOf = (rawMint: unknown): string => {
     const mint = str(rawMint).trim();
     if (!/^[1-9A-HJ-NP-Za-km-z]{32,44}$/u.test(mint) || mint === SOL_MINT) {
       throw new AppError('INVALID_MINT_ADDRESS');
     }
+    return mint;
+  };
+
+  /** RPC of the open fleet's network, Helius first; null without a Helius key. */
+  const runTransport = (vault: UnlockedVault): RpcTransport | null => {
+    const rpcUrl = rpcUrlOf(vault);
+    return rpcUrl === null
+      ? null
+      : createResilientTransport({
+          primary: createTransport(rpcUrl),
+          fallback: createTransport(publicRpcUrl(networkOf(vault))),
+          ...(options.chain?.sleep ? { sleep: options.chain.sleep } : {}),
+        });
+  };
+
+  const tokenReader = (transport: RpcTransport | null, mint: string): TokenReader | null =>
+    options.executor?.tokens ??
+    (transport === null
+      ? null
+      : async (owners) => {
+          const t = await fetchTokenBalances(createBalancesRpc(transport), mint, owners);
+          return { amounts: t.amounts, slot: t.slot };
+        });
+
+  /**
+   * startSell (BUNNDLY-60): reads the token balances now, plans each listed wallet's part
+   * and runs the executor with the mints swapped. The plan stays here: the signer refuses
+   * a sell order above it, whatever the executor asked for.
+   */
+  const startSell = async (
+    rawMint: unknown,
+    rawWallets: unknown,
+    rawPercent: unknown,
+  ): Promise<BuyStatus> => {
+    const vault = requireUnlocked();
+    if (buy !== null) throw new AppError('BUY_RUNNING');
+    requireBuyRoute(vault);
+    const mint = mintOf(rawMint);
+    const percent = rawPercent === undefined ? DEFAULT_SELL_PERCENT : rawPercent;
+    if (!isSellPercent(percent) || !Array.isArray(rawWallets)) return badRequest();
+    const known = new Map(vault.publicWallets.map((w) => [w.index, w]));
+    const indices: unknown[] = rawWallets;
+    const picked = indices.map((i) => known.get(int(i)) ?? badRequest());
+    if (new Set(picked).size !== picked.length) return badRequest();
+    if (picked.length === 0) throw new AppError('NO_WALLETS_TO_SELL');
+    // A sell is planned from a balance read, in DRY-RUN too.
+    const read = tokenReader(runTransport(vault), mint);
+    if (read === null) throw new AppError('HELIUS_KEY_MISSING');
+    // Live mode never retries without the chain check, which needs the RPC.
+    if (
+      !vault.settings.global.dryRun &&
+      rpcUrlOf(vault) === null &&
+      options.executor?.landing === undefined
+    ) {
+      throw new AppError('HELIUS_KEY_MISSING');
+    }
+    const readSession = session;
+    let amounts: readonly bigint[];
+    try {
+      amounts = (await read(picked.map((w) => w.address))).amounts;
+    } catch (e) {
+      // Only our own codes cross; anything else may carry the URL with the key.
+      throw isAppError(e) ? e : new AppError('RPC_UNAVAILABLE');
+    }
+    // Auto-lock runs outside the request queue and may lock the vault while it reads. A buy
+    // cannot start meanwhile: requests are queued and a watcher armed before is refused.
+    if (session !== readSession || unlocked === null) throw new AppError('VAULT_LOCKED');
+    const wallets = picked.map((w, i) => ({
+      index: w.index,
+      address: w.address,
+      maxSpend: sellAmount(amounts[i] ?? 0n, percent),
+      balance: balances.get(w.index) ?? null,
+    }));
+    return launch(unlocked, 'sell', mint, wallets, null);
+  };
+
+  /** Starts the executor for a buy or a sell and keeps it as the running one. */
+  const launch = (
+    vault: UnlockedVault,
+    side: Side,
+    mint: string,
+    wallets: readonly ExecutorWallet[],
+    trigger: BuyTrigger | null,
+  ): BuyStatus => {
+    const selling = side === 'sell';
     const { global } = vault.settings;
-    const wallets = buyWallets(vault);
     const live = !global.dryRun;
     const injected = options.executor;
-    const rpcUrl = rpcUrlOf(vault);
-    const transport =
-      rpcUrl === null
-        ? null
-        : createResilientTransport({
-            primary: createTransport(rpcUrl),
-            fallback: createTransport(publicRpcUrl(network)),
-            ...(options.chain?.sleep ? { sleep: options.chain.sleep } : {}),
-          });
+    const transport = runTransport(vault);
     const landing: LandingChecker =
       injected?.landing ??
       (transport === null
         ? // DRY-RUN never calls /execute, so it never checks the chain.
           () => Promise.resolve({ status: 'pending' })
         : createLandingChecker(createLandingRpc(transport), { now }));
-    const tokens: TokenReader | null =
-      injected?.tokens ??
+    const tokens = tokenReader(transport, mint);
+    const sol: SolReader | undefined =
+      injected?.sol ??
       (transport === null
-        ? null
-        : async (owners) => {
-            const t = await fetchTokenBalances(createBalancesRpc(transport), mint, owners);
-            return { amounts: t.amounts, slot: t.slot };
-          });
+        ? undefined
+        : (owners) => fetchSolBalances(createBalancesRpc(transport), owners));
     const clock = injected?.clock ?? realClock;
     const runId = nextRunId++;
-    // After CONFIRMED: the token balance must have grown (BUNNDLY-25). Live mode only.
+    // After CONFIRMED: the token balance must have grown (BUNNDLY-25), or for a sell
+    // fallen, with more SOL in the wallet (BUNNDLY-60). Live mode only.
     const verifier =
       live && tokens !== null
-        ? createVerifier({ read: tokens, clock, emit }, { runId, wallets })
+        ? createVerifier(
+            { read: tokens, clock, emit, ...(selling && sol !== undefined ? { sol } : {}) },
+            { runId, wallets, ...(selling ? { side } : {}) },
+          )
         : null;
     const runEmit = (event: ExecutorEvent): void => {
       emit(event);
       if (verifier !== null && event.kind === 'wallet' && event.state === 'CONFIRMED') {
-        verifier.confirmed(
-          event.index,
-          event.result?.slot ?? null,
-          event.result?.totalOutputAmount ?? null,
-        );
+        // What moved the token balance: the output of a buy, the input of a sell.
+        const moved = selling ? event.result?.totalInputAmount : event.result?.totalOutputAmount;
+        verifier.confirmed(event.index, event.result?.slot ?? null, moved ?? null);
       }
     };
     const net = options.net ?? {};
@@ -705,6 +815,9 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
     // Without a Jupiter key the API applies Keyless limits, not the plan in the settings.
     const effective = effectiveJupiterPlan(global, vault.apiKeys.jupiter !== undefined);
     const pair = limitersFor(effective.plan, effective.orderRpm);
+    sellPlan = selling
+      ? { mint, amounts: new Map(wallets.map((w) => [w.index, w.maxSpend])) }
+      : null;
     const run = startRun(
       {
         jupiter,
@@ -717,6 +830,7 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
       },
       {
         runId,
+        ...(selling ? { side } : {}),
         mint,
         wallets,
         dryRun: global.dryRun,
@@ -731,11 +845,21 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
     );
     const current = {
       run,
-      status: { runId, mint, dryRun: global.dryRun, wallets: wallets.length, accepting: true },
+      status: {
+        ...(selling ? { side } : {}),
+        runId,
+        mint,
+        dryRun: global.dryRun,
+        wallets: wallets.length,
+        accepting: true,
+      },
     };
     buy = current;
     const finish = (): void => {
-      if (buy === current) buy = null;
+      if (buy === current) {
+        buy = null;
+        sellPlan = null;
+      }
       touch(); // the user was busy with the buy: the auto-lock timer starts now
       watch?.buyFinished(); // the next queued detection, if any
     };
@@ -917,6 +1041,10 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
       }
       case 'startBuy':
         return startBuy(request.mint);
+      case 'startSell':
+        // A sell is a command of its own; an armed watcher buys and must not meet one.
+        if (watchActive()) throw new AppError('WATCH_ARMED');
+        return await startSell(request.mint, request.wallets, request.percent);
       case 'arm':
         return await arm(request.creator);
       case 'disarm':
@@ -967,12 +1095,26 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
     if (wallet === undefined || secret === undefined) {
       return { ok: false, problem: 'UNKNOWN_WALLET' };
     }
-    const maxSpend = vault.settings.maxSpend.find((m) => m.index === walletIndex)?.lamports ?? 0n;
+    let limit: bigint;
+    if (request.inputMint === undefined) {
+      limit = vault.settings.maxSpend.find((m) => m.index === walletIndex)?.lamports ?? 0n;
+    } else {
+      // A sell: only the running one, only its mint for SOL, only up to the wallet's plan.
+      if (
+        sellPlan === null ||
+        sellPlan.mint !== request.inputMint ||
+        request.outputMint !== SOL_MINT
+      ) {
+        return { ok: false, problem: 'NO_SELL_PLAN' };
+      }
+      limit = sellPlan.amounts.get(walletIndex) ?? 0n;
+    }
     const check = checkOrderTransaction(order, {
       taker: wallet.address,
+      ...(request.inputMint === undefined ? {} : { inputMint: request.inputMint }),
       outputMint: request.outputMint,
       amount: request.amount,
-      maxSpend,
+      maxSpend: limit,
     });
     if (!check.ok) return check;
     let signed: SignedOrder;

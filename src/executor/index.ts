@@ -49,6 +49,7 @@ export type {
   RunOptions,
   RunPhase,
   RunSummary,
+  Side,
   WalletEvent,
   WalletQuote,
   WalletResult,
@@ -65,8 +66,16 @@ export type { Decision } from './policy.ts';
 export { LANDING_POLL_MS, LANDING_TIMEOUT_MS } from './landing.ts';
 export type { Landing, LandingChecker, LandingQuery } from './landing.ts';
 export { EXECUTE_FATAL, EXECUTE_NOT_SENT } from './policy.ts';
-export { VERIFY_INTERVAL_MS, VERIFY_MESSAGES, VERIFY_READS, createVerifier } from './verify.ts';
+export {
+  SELL_VERIFY_MESSAGES,
+  VERIFY_INTERVAL_MS,
+  VERIFY_MESSAGES,
+  VERIFY_READS,
+  createVerifier,
+  verifyMessage,
+} from './verify.ts';
 export type {
+  SolReader,
   TokenReader,
   Verifier,
   VerifierOptions,
@@ -74,6 +83,7 @@ export type {
   VerifyStatus,
   VerifyWallet,
 } from './verify.ts';
+export { DEFAULT_SELL_PERCENT, isSellPercent, sellAmount } from './sell-plan.ts';
 export {
   LOG_COLUMNS,
   PRICE_DIGITS,
