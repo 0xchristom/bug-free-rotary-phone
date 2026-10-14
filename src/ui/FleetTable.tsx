@@ -83,6 +83,8 @@ interface RowProps extends FleetRowData {
   readonly amountUnit: 'SOL' | '%';
   /** The fleet default amount in words, for the empty field. */
   readonly defaultAmount: string;
+  /** What an empty amount field means, in words: the field's description. */
+  readonly defaultAmountText: string;
   /** What a buy would spend now (a percent counted from the balance), or null. */
   readonly spend: bigint | null;
   /** What the wallet trades with, in words (defaults applied). */
@@ -405,6 +407,7 @@ const FleetRow = memo(function FleetRow(p: RowProps) {
           savedText={p.amountText}
           savedUnit={p.amountUnit}
           placeholder={p.defaultAmount}
+          placeholderText={p.defaultAmountText}
           locked={p.locked}
           problem={amountProblem}
           onSave={save}
@@ -420,7 +423,7 @@ const FleetRow = memo(function FleetRow(p: RowProps) {
         <FillBar label={p.label} percent={p.fillPercent} tone={p.fillTone} text={p.fillLabel} />
       </td>
       <td className="num">{p.token ?? NONE}</td>
-      <td>
+      <td className="c-status">
         {p.buy === null ? (
           <Chip tone={idle.tone}>{idle.text}</Chip>
         ) : (
@@ -666,8 +669,18 @@ export function FleetTable(t: FleetTableProps) {
   });
   const visible = visibleRows.map((r) => r.wallet);
   const fleet = t.trade.fleet;
+  // The row field is narrow (mockup column 114 px): its placeholder is the bare default
+  // ("0.02", "10 %", "—"), the field's description says it in words.
   const defaultAmount =
-    fleet.buyAmount === null ? 'No amount' : `Default ${amountLabel(fleet.buyAmount)}`;
+    fleet.buyAmount === null
+      ? '—'
+      : fleet.buyAmount.kind === 'lamports'
+        ? formatSol(fleet.buyAmount.lamports)
+        : `${String(fleet.buyAmount.percent)} %`;
+  const defaultAmountText =
+    fleet.buyAmount === null
+      ? 'Empty: no fleet default amount.'
+      : `Empty: the fleet default, ${amountLabel(fleet.buyAmount)}.`;
 
   const selectedCount = t.wallets.filter((w) => t.selected[w.index] ?? true).length;
   const visibleSelected = visible.filter((w) => t.selected[w.index] ?? true).length;
@@ -824,6 +837,7 @@ export function FleetTable(t: FleetTableProps) {
                   amountText={amountText(own)}
                   amountUnit={own?.kind === 'percent' ? '%' : 'SOL'}
                   defaultAmount={defaultAmount}
+                  defaultAmountText={defaultAmountText}
                   spend={spend}
                   amountNow={amountLabel(effective.buyAmount)}
                   buySlip={slippageLabel(effective.buySlippageBps)}

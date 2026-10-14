@@ -52,6 +52,7 @@ export function AmountField({
   savedText,
   savedUnit,
   placeholder,
+  placeholderText,
   locked,
   problem,
   onSave,
@@ -61,6 +62,8 @@ export function AmountField({
   readonly savedText: string;
   readonly savedUnit: AmountUnit;
   readonly placeholder: string;
+  /** What the empty field means, for the tooltip and screen readers. */
+  readonly placeholderText?: string;
   /** The wallet is in a running action of its group. */
   readonly locked: boolean;
   /** A warning about the saved amount (reserve, balance), shown when nothing else is. */
@@ -119,6 +122,8 @@ export function AmountField({
           aria-label={`Buy amount ${label}`}
           value={text}
           placeholder={placeholder}
+          title={placeholderText}
+          aria-description={placeholderText}
           disabled={locked}
           invalid={error !== null && !locked}
           onChange={(e) => {
