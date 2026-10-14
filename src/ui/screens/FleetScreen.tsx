@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { isAppError, toUserMessage } from '../../core/errors.ts';
 import type { FleetSettingsV1 } from '../../core/keystore/format.ts';
 import { NETWORK_LABELS, NO_BUY_ROUTE_MESSAGE, buyRouteOf } from '../../core/network.ts';
@@ -170,7 +170,8 @@ export function FleetScreen({
   };
 
   const unsaved = phase.kind === 'unsaved' || tableDirty;
-  useEffect(() => {
+  // Layout effect: the guard holds from the commit that shows the change (BUNNDLY-76).
+  useLayoutEffect(() => {
     onUnsavedChange(unsaved);
     return () => {
       onUnsavedChange(false); // unmounted (e.g. after a lock): nothing left to protect

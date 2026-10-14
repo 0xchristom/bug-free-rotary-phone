@@ -1,4 +1,4 @@
-import { useEffect, useId, useState, type SyntheticEvent } from 'react';
+import { useId, useLayoutEffect, useState, type SyntheticEvent } from 'react';
 import { ERROR_MESSAGES, toUserMessage } from '../../core/errors.ts';
 import { MIN_PASSWORD_LENGTH, isValidFleetName } from '../../core/keystore/limits.ts';
 import {
@@ -87,7 +87,8 @@ export function WizardScreen({ storage, onBack, onDone, onUnsavedChange }: Wizar
   const remember = rememberChoice(remembered, rememberTicked);
 
   const unsaved = phase.kind === 'created';
-  useEffect(() => {
+  // Layout effect: the guard holds from the commit that shows the change (BUNNDLY-76).
+  useLayoutEffect(() => {
     onUnsavedChange(unsaved);
     return () => {
       onUnsavedChange(false); // unmounted (e.g. after a lock): nothing left to protect
