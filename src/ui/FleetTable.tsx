@@ -13,6 +13,7 @@ import { AddressQr } from './AddressQr.tsx';
 import { rowState } from './fleet-math.ts';
 import { formatSol, formatUnits, parseSolAmount } from './sol.ts';
 import type { BuyRow } from './use-buy.ts';
+import { Button, Checkbox, Chip, Input, type Tone } from './kit/index.ts';
 
 export interface FleetRowData {
   readonly index: number;
@@ -65,13 +66,13 @@ function stateLabel(row: BuyRow): string {
   return STATE_LABELS[row.state];
 }
 
-/** Colour class; the text says the same, colour is never the only signal. */
-function stateTone(row: BuyRow): string {
+/** Tone of the state chip; the text says the same, colour is never the only signal. */
+function stateTone(row: BuyRow): Tone {
   if (row.state === 'CONFIRMED') return 'ok';
   if (row.state === 'FAILED') return 'danger';
-  if (row.state === 'UNKNOWN') return 'warning';
-  if (row.state === 'SKIPPED') return row.reason?.code === 'DRY_RUN' ? 'info' : 'muted';
-  return 'busy';
+  if (row.state === 'UNKNOWN') return 'warn';
+  if (row.state === 'SKIPPED') return row.reason?.code === 'DRY_RUN' ? 'sim' : 'muted';
+  return 'run';
 }
 
 function reasonText(reason: WalletReason | null): string | null {
@@ -141,7 +142,9 @@ function BuyCells({
   return (
     <>
       <td>
-        <span className={`badge state ${stateTone(buy)}`}>{stateLabel(buy)}</span>
+        <Chip tone={stateTone(buy)} dot={stateTone(buy) === 'run'}>
+          {stateLabel(buy)}
+        </Chip>
         {why && <p className="reason">{why}</p>}
       </td>
       <td className="amount">{seconds(buy.sinceStartMs)}</td>
@@ -163,12 +166,13 @@ function BuyCells({
         {buy.verify === null ? (
           '–'
         ) : (
-          <span
-            className={`badge ${warn ? 'danger' : buy.verify === 'UNVERIFIABLE' ? 'unverified' : 'ok'}`}
+          <Chip
+            size="sm"
+            tone={warn ? 'danger' : buy.verify === 'UNVERIFIABLE' ? 'warn' : 'ok'}
             title={VERIFY_MESSAGES[buy.verify]}
           >
             {VERIFY_LABELS[buy.verify]}
-          </span>
+          </Chip>
         )}
       </td>
       <td>
@@ -213,9 +217,8 @@ const FleetRow = memo(function FleetRow(p: RowProps) {
       </td>
       <td className="amount">{p.balance === null ? '–' : formatSol(p.balance)}</td>
       <td>
-        <input
+        <Input
           className="amount-input"
-          type="text"
           inputMode="decimal"
           aria-label={`Max spend ${p.label}`}
           value={p.maxSpendText}
@@ -230,19 +233,21 @@ const FleetRow = memo(function FleetRow(p: RowProps) {
       <td className="amount">
         {state.reserve === null ? '–' : formatSol(state.reserve < 0n ? 0n : state.reserve)}
         {state.reserveTooLow && (
-          <span className="badge danger" title="Reserve below MIN_RESERVE_SOL">
-            too low
-          </span>
+          <>
+            {' '}
+            <Chip size="sm" tone="danger" title="Reserve below MIN_RESERVE_SOL">
+              too low
+            </Chip>
+          </>
         )}
       </td>
       <td className="amount">{p.token ?? '–'}</td>
       <td>
-        <input
-          type="checkbox"
+        <Checkbox
           aria-label={`Active ${p.label}`}
           checked={p.active}
-          onChange={(e) => {
-            p.onActive(p.index, e.target.checked);
+          onChange={(checked) => {
+            p.onActive(p.index, checked);
           }}
         />
       </td>
@@ -250,17 +255,15 @@ const FleetRow = memo(function FleetRow(p: RowProps) {
         <BuyCells buy={p.buy} decimals={p.decimals} explorer={p.explorer} network={p.network} />
       )}
       <td>
-        <button
-          type="button"
+        <Button
           aria-label={`Copy address ${p.label}`}
           onClick={() => {
             p.onCopy(p.index, p.address);
           }}
         >
           {p.copied ? 'Copied' : 'Copy'}
-        </button>{' '}
-        <button
-          type="button"
+        </Button>{' '}
+        <Button
           aria-label={`QR code ${p.label}`}
           aria-expanded={p.qrOpen}
           onClick={() => {
@@ -268,7 +271,7 @@ const FleetRow = memo(function FleetRow(p: RowProps) {
           }}
         >
           QR
-        </button>
+        </Button>
       </td>
     </tr>
   );

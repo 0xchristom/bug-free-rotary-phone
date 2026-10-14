@@ -1,0 +1,827 @@
+/*
+ * Styles of the component kit (src/ui/kit). Every colour, size and duration comes from
+ * tokens.css; this file holds no literal colour.
+ */
+
+/* Icons */
+.k-i {
+  width: var(--s-4);
+  height: var(--s-4);
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.k-i-solid {
+  fill: currentColor;
+  stroke: none;
+}
+
+.k-i-sol {
+  width: 14px;
+  height: var(--s-3);
+  stroke: none;
+}
+
+.k-sol-a {
+  stop-color: var(--sol-a);
+}
+
+.k-sol-b {
+  stop-color: var(--sol-b);
+}
+
+.k-brand-mark {
+  width: var(--s-6);
+  height: var(--s-6);
+  flex: none;
+}
+
+.k-brand-tile {
+  fill: var(--fg);
+}
+
+.k-brand-ink {
+  fill: none;
+  stroke: var(--surface-base);
+  stroke-width: 2.6;
+  stroke-linecap: round;
+}
+
+/* Button */
+.k-btn {
+  height: var(--h-control);
+  padding: 0 var(--s-4);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s-2);
+  border: 0;
+  border-radius: var(--r);
+  background: var(--surface-raised);
+  color: var(--fg);
+  font: inherit;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  box-shadow: inset 0 1px 0 var(--sheen);
+  transition:
+    background-color var(--t-fast),
+    filter var(--t-fast);
+}
+
+.k-btn:hover:not(:disabled) {
+  background: var(--surface-hover);
+}
+
+.k-btn-sm {
+  height: var(--h-control-sm);
+  padding: 0 var(--s-3);
+  font-size: var(--fs-control);
+}
+
+.k-btn .k-i {
+  width: 14px;
+  height: 14px;
+}
+
+.k-btn-primary {
+  background: var(--primary-bg);
+  color: var(--primary);
+  box-shadow: none;
+}
+
+.k-btn-success {
+  background: var(--ok-bg);
+  color: var(--ok);
+}
+
+.k-btn-danger {
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+
+.k-btn-warn {
+  background: var(--warn-bg);
+  color: var(--warn);
+}
+
+.k-btn-watch {
+  background: var(--watch-bg);
+  color: var(--watch);
+}
+
+.k-btn-ghost {
+  background: transparent;
+  color: var(--fg-2);
+  font-weight: 500;
+  box-shadow: none;
+}
+
+.k-btn-primary:hover:not(:disabled) {
+  background: var(--primary-bg);
+  filter: brightness(0.88);
+}
+
+.k-btn-success:hover:not(:disabled) {
+  background: var(--ok-bg);
+  filter: brightness(1.25);
+}
+
+.k-btn-danger:hover:not(:disabled) {
+  background: var(--danger-bg);
+  filter: brightness(1.25);
+}
+
+.k-btn-warn:hover:not(:disabled) {
+  background: var(--warn-bg);
+  filter: brightness(1.25);
+}
+
+.k-btn-watch:hover:not(:disabled) {
+  background: var(--watch-bg);
+  filter: brightness(1.25);
+}
+
+.k-btn-ghost:hover:not(:disabled) {
+  background: var(--surface-raised);
+  color: var(--fg);
+}
+
+.k-btn:disabled,
+.k-iconbtn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.k-btn[aria-busy='true'] {
+  opacity: 0.7;
+  cursor: progress;
+}
+
+.k-btn kbd {
+  padding: 1px var(--s-1);
+  border-radius: var(--s-1);
+  background: var(--kbd);
+  font: 500 var(--fs-kbd) var(--font-ui);
+}
+
+.k-spin {
+  width: var(--s-3);
+  height: var(--s-3);
+  flex: none;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: k-spin 0.7s linear infinite;
+}
+
+@keyframes k-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* IconButton */
+.k-iconbtn {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  padding: 0;
+  border: 0;
+  background: var(--surface-raised);
+  color: var(--fg);
+  cursor: pointer;
+  box-shadow: inset 0 1px 0 var(--sheen);
+  transition:
+    background-color var(--t-fast),
+    color var(--t-fast),
+    filter var(--t-fast);
+}
+
+.k-iconbtn:hover:not(:disabled) {
+  background: var(--surface-hover);
+}
+
+.k-iconbtn-md {
+  width: var(--h-control);
+  height: var(--h-control);
+  border-radius: var(--r);
+}
+
+.k-iconbtn-sm {
+  width: var(--h-control-sm);
+  height: var(--h-control-sm);
+  border-radius: var(--r-control);
+}
+
+.k-iconbtn-sm .k-i {
+  width: 14px;
+  height: 14px;
+}
+
+.k-iconbtn-tiny {
+  width: var(--s-5);
+  height: var(--s-5);
+  border-radius: var(--s-1);
+  background: transparent;
+  color: var(--fg-3);
+  box-shadow: none;
+}
+
+.k-iconbtn-tiny .k-i {
+  width: var(--s-3);
+  height: var(--s-3);
+}
+
+.k-iconbtn-tiny:hover:not(:disabled) {
+  background: transparent;
+  color: var(--fg);
+}
+
+.k-iconbtn-success {
+  background: var(--ok-bg);
+  color: var(--ok);
+}
+
+.k-iconbtn-danger {
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+
+.k-iconbtn-success:hover:not(:disabled) {
+  background: var(--ok-bg);
+  filter: brightness(1.3);
+}
+
+.k-iconbtn-danger:hover:not(:disabled) {
+  background: var(--danger-bg);
+  filter: brightness(1.3);
+}
+
+.k-iconbtn-ghost {
+  background: var(--surface-panel);
+  color: var(--fg-2);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+
+.k-iconbtn-ghost:hover:not(:disabled) {
+  background: var(--surface-panel);
+  color: var(--fg);
+}
+
+/* Chip */
+.k-chip {
+  height: var(--h-chip);
+  padding: 0 var(--s-2);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-1);
+  border-radius: var(--r-control);
+  background: var(--muted-bg);
+  color: var(--muted);
+  font-size: var(--fs-note);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.k-chip-sm {
+  height: var(--h-chip-sm);
+  padding: 0 var(--s-1);
+  border-radius: var(--r-chip);
+  font-size: var(--fs-small);
+}
+
+.k-chip .k-i {
+  width: var(--s-3);
+  height: var(--s-3);
+  stroke-width: 2.2;
+}
+
+.k-chip-sm .k-i {
+  width: 10px;
+  height: 10px;
+}
+
+.k-chip[data-tone='ok'] {
+  background: var(--ok-bg);
+  color: var(--ok);
+}
+
+.k-chip[data-tone='danger'] {
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+
+.k-chip[data-tone='warn'] {
+  background: var(--warn-bg);
+  color: var(--warn);
+}
+
+.k-chip[data-tone='watch'] {
+  background: var(--watch-bg);
+  color: var(--watch);
+}
+
+.k-chip[data-tone='sim'] {
+  background: var(--sim-bg);
+  color: var(--sim);
+}
+
+.k-chip[data-tone='run'] {
+  background: var(--run-bg);
+  color: var(--run);
+}
+
+.k-dot {
+  width: 6px;
+  height: 6px;
+  flex: none;
+  border-radius: 50%;
+  background: currentColor;
+  animation: k-blink 0.9s ease-in-out infinite alternate;
+}
+
+@keyframes k-blink {
+  to {
+    opacity: 0.25;
+  }
+}
+
+/* Input */
+.k-input,
+.k-num {
+  height: var(--h-control);
+  width: 100%;
+  background: var(--surface-panel);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  color: var(--fg);
+  font: inherit;
+  transition: border-color var(--t-fast);
+}
+
+.k-input {
+  padding: 0 var(--s-3);
+}
+
+.k-input::placeholder,
+.k-num-input::placeholder {
+  color: var(--fg-3);
+}
+
+.k-input:hover:not(:disabled),
+.k-num:hover {
+  border-color: var(--line-2);
+}
+
+.k-input:disabled,
+.k-num:has(:disabled) {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.k-input[aria-invalid='true'],
+.k-num:has([aria-invalid='true']) {
+  border-color: var(--danger);
+}
+
+.k-num {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+  padding: 0 var(--s-3);
+}
+
+.k-num:focus-within {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.k-num-input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  outline: none;
+  color: inherit;
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.k-num-unit {
+  flex: none;
+  color: var(--fg-3);
+  font-size: var(--fs-small);
+  font-weight: 500;
+}
+
+/* Segmented */
+.k-seg {
+  display: inline-flex;
+  gap: var(--s-0);
+  padding: var(--s-0);
+  background: var(--surface-panel);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+}
+
+.k-seg button {
+  height: calc(var(--h-control) - 2 * var(--s-0) - 2px);
+  padding: 0 var(--s-3);
+  border: 0;
+  border-radius: var(--r-control);
+  background: transparent;
+  color: var(--fg-2);
+  font: inherit;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background-color var(--t-fast),
+    color var(--t-fast);
+}
+
+.k-seg button:hover:not(:disabled) {
+  color: var(--fg);
+}
+
+.k-seg button[aria-pressed='true'] {
+  background: var(--surface-hover);
+  color: var(--fg);
+}
+
+.k-seg button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* Checkbox */
+.k-cb {
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  flex: none;
+  display: inline-grid;
+  place-content: center;
+  background: var(--surface-panel);
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-chip);
+  cursor: pointer;
+  vertical-align: middle;
+  transition:
+    background-color var(--t-fast),
+    border-color var(--t-fast);
+}
+
+.k-cb:checked {
+  background: var(--fg);
+  border-color: var(--fg);
+}
+
+.k-cb:checked::after {
+  content: '';
+  width: 9px;
+  height: 5px;
+  border-left: 2px solid var(--surface-base);
+  border-bottom: 2px solid var(--surface-base);
+  transform: translateY(-1px) rotate(-45deg);
+}
+
+.k-cb:indeterminate::after {
+  content: '';
+  width: var(--s-2);
+  height: 2px;
+  background: var(--fg-2);
+  border-radius: 1px;
+}
+
+.k-cb:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* Popover */
+.k-pop-anchor {
+  position: relative;
+  display: inline-flex;
+}
+
+.k-pop {
+  position: absolute;
+  top: calc(100% + var(--s-2));
+  right: 0;
+  z-index: 30;
+  width: 312px;
+  padding: var(--s-4);
+  display: grid;
+  gap: var(--s-3);
+  background: var(--surface-panel);
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-pop);
+  box-shadow: var(--shadow);
+  white-space: normal;
+}
+
+.k-pop-start {
+  right: auto;
+  left: 0;
+}
+
+.k-pop:focus {
+  outline: none;
+}
+
+/* Modal */
+.k-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  place-items: center;
+  padding: var(--s-6);
+  background: var(--overlay);
+  overflow: auto;
+}
+
+.k-modal {
+  width: min(520px, 100%);
+  max-height: 100%;
+  padding: var(--s-5);
+  display: grid;
+  gap: var(--s-4);
+  background: var(--surface-panel);
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-frame);
+  box-shadow: var(--shadow);
+  overflow: auto;
+}
+
+.k-modal:focus {
+  outline: none;
+}
+
+.k-modal-danger {
+  border-color: var(--danger);
+}
+
+.k-modal-title {
+  margin: 0;
+  font-size: var(--fs-brand);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.k-modal-body {
+  display: grid;
+  gap: var(--s-3);
+  color: var(--fg-2);
+}
+
+.k-modal-footer {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--s-2);
+}
+
+/* Toast */
+.k-toasts {
+  position: fixed;
+  right: var(--s-6);
+  bottom: calc(var(--h-control) + var(--s-6));
+  z-index: 60;
+  width: min(340px, calc(100% - 2 * var(--s-6)));
+  display: grid;
+  gap: var(--s-2);
+  pointer-events: none;
+}
+
+.k-toast {
+  padding: var(--s-3);
+  display: grid;
+  gap: var(--s-0);
+  background: var(--surface-raised);
+  border: 1px solid var(--line-2);
+  border-left: 3px solid var(--fg-3);
+  border-radius: var(--r-bar);
+  box-shadow: var(--shadow);
+  color: var(--fg-2);
+  font-size: var(--fs-note);
+  animation: k-rise var(--t-slow) var(--ease-out);
+}
+
+.k-toast b {
+  color: var(--fg);
+  font-size: var(--fs-base);
+  font-weight: 600;
+}
+
+.k-toast[data-tone='ok'] {
+  border-left-color: var(--ok);
+}
+
+.k-toast[data-tone='danger'] {
+  border-left-color: var(--danger);
+}
+
+.k-toast[data-tone='warn'] {
+  border-left-color: var(--warn);
+}
+
+.k-toast[data-tone='watch'] {
+  border-left-color: var(--watch);
+}
+
+.k-toast[data-tone='sim'] {
+  border-left-color: var(--sim);
+}
+
+.k-toast[data-tone='run'] {
+  border-left-color: var(--fg);
+}
+
+@keyframes k-rise {
+  from {
+    transform: translateY(var(--s-2));
+    opacity: 0;
+  }
+}
+
+/* Tooltip */
+.k-tip-anchor {
+  position: relative;
+  display: inline-flex;
+}
+
+.k-tip {
+  position: absolute;
+  bottom: calc(100% + var(--s-2));
+  left: 50%;
+  z-index: 40;
+  transform: translateX(-50%);
+  width: max-content;
+  max-width: 260px;
+  padding: var(--s-1) var(--s-2);
+  background: var(--surface-hover);
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-control);
+  box-shadow: var(--shadow);
+  color: var(--fg);
+  font-size: var(--fs-small);
+  font-weight: 400;
+  white-space: normal;
+  pointer-events: none;
+}
+
+/* ProgressBar */
+.k-bar {
+  height: var(--h-bar);
+  flex: 1;
+  min-width: 0;
+  border-radius: var(--s-1);
+  background: var(--surface-raised);
+  overflow: hidden;
+}
+
+.k-bar-fill {
+  position: relative;
+  height: 100%;
+  border-radius: var(--s-1);
+  background: var(--fg-3);
+  overflow: hidden;
+  transition:
+    width var(--t-slow) var(--ease-out),
+    background-color var(--t-base);
+}
+
+.k-bar[data-tone='run'] .k-bar-fill {
+  background: var(--fg);
+}
+
+.k-bar[data-tone='run'] .k-bar-fill::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, var(--sheen-2), transparent);
+  transform: translateX(-100%);
+  animation: k-sheen 1.1s linear infinite;
+}
+
+@keyframes k-sheen {
+  to {
+    transform: translateX(100%);
+  }
+}
+
+.k-bar[data-tone='ok'] .k-bar-fill {
+  background: var(--ok);
+}
+
+.k-bar[data-tone='danger'] {
+  background: var(--danger-bg);
+}
+
+.k-bar[data-tone='danger'] .k-bar-fill {
+  background: var(--danger);
+}
+
+.k-bar[data-tone='warn'] {
+  background: var(--warn-bg);
+}
+
+.k-bar[data-tone='warn'] .k-bar-fill {
+  background: var(--warn);
+}
+
+.k-bar[data-tone='watch'] .k-bar-fill {
+  background: var(--watch);
+}
+
+.k-bar[data-tone='sim'] .k-bar-fill {
+  background: repeating-linear-gradient(135deg, var(--sim) 0 4px, var(--sim-bg) 4px 7px);
+}
+
+/* Skeleton */
+.k-skel {
+  display: inline-block;
+  width: 100%;
+  height: 1em;
+  border-radius: var(--s-1);
+  background: var(--surface-raised);
+  vertical-align: middle;
+  animation: k-blink 0.9s ease-in-out infinite alternate;
+}
+
+/* Avatar */
+.k-ava {
+  width: var(--s-8);
+  height: var(--s-8);
+  flex: none;
+  border-radius: 7px;
+  background: var(--ava-bg);
+  fill: var(--ava-fg);
+  shape-rendering: crispEdges;
+}
+
+.k-ava-sm {
+  width: var(--s-5);
+  height: var(--s-5);
+  border-radius: var(--r-chip);
+}
+
+/* A pulsing dot for live states (WebSocket live, watcher armed). */
+.k-pulse {
+  width: var(--s-2);
+  height: var(--s-2);
+  flex: none;
+  border-radius: 50%;
+  background: var(--fg-3);
+}
+
+.k-pulse[data-tone='ok'] {
+  background: var(--ok);
+  color: var(--ok);
+  animation: k-pulse var(--t-pulse) ease-out infinite;
+}
+
+.k-pulse[data-tone='watch'] {
+  background: var(--watch);
+  color: var(--watch);
+  animation: k-pulse var(--t-pulse) ease-out infinite;
+}
+
+.k-pulse[data-tone='warn'] {
+  background: var(--warn);
+}
+
+.k-pulse[data-tone='danger'] {
+  background: var(--danger);
+}
+
+@keyframes k-pulse {
+  from {
+    box-shadow: 0 0 0 0 color-mix(in srgb, currentColor 55%, transparent);
+  }
+
+  to {
+    box-shadow: 0 0 0 7px transparent;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}

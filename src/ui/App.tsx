@@ -3,9 +3,11 @@ import { toUserMessage } from '../core/errors.ts';
 import { DEFAULT_AUTO_LOCK_MS, type VaultStatus } from '../worker/protocol.ts';
 import type { StorageEnv } from '../storage/keystore-file.ts';
 import type { VaultClient } from '../worker/vault-client.ts';
-import { DEFAULT_NETWORK } from '../core/network.ts';
+import { DEFAULT_NETWORK, type Network } from '../core/network.ts';
 import { AppHeader } from './AppHeader.tsx';
 import { NetworkNotice, NetworkSwitch } from './NetworkSwitch.tsx';
+import { RpcReadContext, type RpcRead } from './shell-status.ts';
+import { StatusBar } from './StatusBar.tsx';
 import { useNetworkSwitch } from './use-network-switch.ts';
 import { createOperationsLog } from './operations-log.ts';
 import { useBuyView } from './use-buy.ts';
@@ -14,6 +16,7 @@ import { OpenScreen } from './screens/OpenScreen.tsx';
 import { SettingsScreen } from './screens/SettingsScreen.tsx';
 import { StartScreen } from './screens/StartScreen.tsx';
 import { WizardScreen } from './screens/WizardScreen.tsx';
+import { APP_VERSION } from './version.ts';
 import { UNLOCKED_SCREENS, VaultContext, type Screen, type VaultState } from './vault-state.ts';
 import { WatchGuard } from './WatchGuard.tsx';
 import {
@@ -90,9 +93,20 @@ export function App({
     operationsLog.setNetwork(network);
   }, [operationsLog, network]);
 
+  // The status rail shows the last balance read of the network on screen, never an older one.
+  const [lastRead, setLastRead] = useState<(RpcRead & { readonly network: Network }) | null>(null);
+  const reportRead = useCallback(
+    (read: RpcRead) => {
+      setLastRead({ ...read, network });
+    },
+    [network],
+  );
+
   const applyStatus = useCallback((next: VaultStatus, reason: 'auto' | 'user') => {
     setStatus(next);
     if (next.locked) {
+      // The next fleet may hold another RPC key: its rail starts from "no read yet".
+      setLastRead(null);
       if (wasUnlocked.current) {
         // The wizard keeps its encrypted, not yet saved file; other screens go to Start.
         setScreen((s) => (UNLOCKED_SCREENS.has(s) ? 'start' : s));
@@ -227,97 +241,101 @@ export function App({
   return (
     <VaultContext.Provider value={context}>
       <WatchRuntimeContext.Provider value={watchRuntime}>
-        <div className="app">
-          <header className="app-header">
-            <h1>Bunndly</h1>
-            {status && (
-              <NetworkSwitch
-                network={network}
-                locked={status.locked || status.info === null}
-                onChoose={switching.choose}
-              />
-            )}
-            {status && (
-              <AppHeader
-                status={status}
-                screen={visible}
-                autoLockMinutes={
-                  status.info?.settings.global.autoLockMinutes ?? DEFAULT_AUTO_LOCK_MS / 60_000
-                }
-                onNavigate={navigate}
-                onLock={() => void lock()}
-              />
-            )}
-          </header>
-          <main>
-            {unlocked && <WatchGuard />}
-            {unlocked && <NetworkNotice switching={switching} storage={storage} />}
-            {notice && (
-              <p className="notice" role="alert">
-                {notice}
-              </p>
-            )}
-            {status === null ? (
-              <p className="muted">Connecting to the vault…</p>
-            ) : (
-              <>
-                {visible === 'start' && (
-                  <StartScreen
-                    onCreate={() => {
-                      navigate('wizard');
-                    }}
-                    onOpen={() => {
-                      navigate('open');
-                    }}
+        <RpcReadContext.Provider value={reportRead}>
+          <div className="app">
+            <AppHeader
+              status={status}
+              screen={visible}
+              onNavigate={navigate}
+              onLock={() => void lock()}
+              network={
+                status && (
+                  <NetworkSwitch
+                    network={network}
+                    locked={status.locked || status.info === null}
+                    onChoose={switching.choose}
                   />
-                )}
-                {visible === 'wizard' && (
-                  <WizardScreen
-                    storage={storage}
-                    onBack={() => {
-                      navigate(unlocked ? 'fleet' : 'start');
-                    }}
-                    onDone={() => {
-                      navigate('fleet');
-                    }}
-                    onUnsavedChange={onScreenUnsaved}
-                  />
-                )}
-                {visible === 'open' && (
-                  <OpenScreen
-                    storage={storage}
-                    onBack={() => {
-                      navigate('start');
-                    }}
-                    onUnlocked={() => {
-                      navigate('fleet');
-                    }}
-                  />
-                )}
-                {visible === 'fleet' && status.info && (
-                  <FleetScreen
-                    info={status.info}
-                    storage={storage}
-                    onUnsavedChange={onScreenUnsaved}
-                    operationsLog={operationsLog}
-                    buyView={buyView}
-                    mintDecimals={mintDecimals}
-                    onMintDecimals={onMintDecimals}
-                    {...(balanceRefreshMs === undefined ? {} : { balanceRefreshMs })}
-                    {...(rowProbe === undefined ? {} : { rowProbe })}
-                  />
-                )}
-                {visible === 'settings' && status.info && (
-                  <SettingsScreen
-                    info={status.info}
-                    storage={storage}
-                    onUnsavedChange={onScreenUnsaved}
-                  />
-                )}
-              </>
-            )}
-          </main>
-        </div>
+                )
+              }
+            />
+            <main className="content">
+              {unlocked && <WatchGuard />}
+              {unlocked && <NetworkNotice switching={switching} storage={storage} />}
+              {notice && (
+                <p className="notice" role="alert">
+                  {notice}
+                </p>
+              )}
+              {status === null ? (
+                <p className="muted">Connecting to the vault…</p>
+              ) : (
+                <>
+                  {visible === 'start' && (
+                    <StartScreen
+                      onCreate={() => {
+                        navigate('wizard');
+                      }}
+                      onOpen={() => {
+                        navigate('open');
+                      }}
+                    />
+                  )}
+                  {visible === 'wizard' && (
+                    <WizardScreen
+                      storage={storage}
+                      onBack={() => {
+                        navigate(unlocked ? 'fleet' : 'start');
+                      }}
+                      onDone={() => {
+                        navigate('fleet');
+                      }}
+                      onUnsavedChange={onScreenUnsaved}
+                    />
+                  )}
+                  {visible === 'open' && (
+                    <OpenScreen
+                      storage={storage}
+                      onBack={() => {
+                        navigate('start');
+                      }}
+                      onUnlocked={() => {
+                        navigate('fleet');
+                      }}
+                    />
+                  )}
+                  {visible === 'fleet' && status.info && (
+                    <FleetScreen
+                      info={status.info}
+                      storage={storage}
+                      onUnsavedChange={onScreenUnsaved}
+                      operationsLog={operationsLog}
+                      buyView={buyView}
+                      mintDecimals={mintDecimals}
+                      onMintDecimals={onMintDecimals}
+                      {...(balanceRefreshMs === undefined ? {} : { balanceRefreshMs })}
+                      {...(rowProbe === undefined ? {} : { rowProbe })}
+                    />
+                  )}
+                  {visible === 'settings' && status.info && (
+                    <SettingsScreen
+                      info={status.info}
+                      storage={storage}
+                      onUnsavedChange={onScreenUnsaved}
+                    />
+                  )}
+                </>
+              )}
+            </main>
+            <StatusBar
+              version={APP_VERSION}
+              status={status}
+              read={unlocked && lastRead?.network === network ? lastRead : null}
+              autoLockMinutes={
+                status?.info?.settings.global.autoLockMinutes ?? DEFAULT_AUTO_LOCK_MS / 60_000
+              }
+            />
+          </div>
+        </RpcReadContext.Provider>
       </WatchRuntimeContext.Provider>
     </VaultContext.Provider>
   );

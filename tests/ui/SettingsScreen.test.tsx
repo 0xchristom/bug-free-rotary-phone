@@ -117,6 +117,35 @@ describe('form', () => {
     expect(saveButton().disabled).toBe(true);
   });
 
+  it('every number field carries its unit inside the field and names it to screen readers', async () => {
+    const { user } = await setup();
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Jupiter plan' }), 'custom');
+    const units: [string | RegExp, string][] = [
+      ['/order limit (requests per minute)', '/min'],
+      ['Minimum reserve (MIN_RESERVE_SOL)', 'SOL'],
+      ['Max attempts per wallet', 'attempts'],
+      [/^Price ceiling/u, '%'],
+      ['“No route” retry window', 's'],
+      ['Retry delay: first', 'ms'],
+      ['Retry delay: longest', 'ms'],
+      ['Auto-lock after inactivity', 'min'],
+    ];
+    for (const [label, unit] of units) {
+      const input = field(label);
+      // the unit is drawn in the same box as the number, not beside or under it
+      const box = input.closest('.k-num');
+      expect(box?.querySelector('.k-num-unit')?.textContent, String(label)).toBe(unit);
+      expect(input.getAttribute('aria-description'), String(label)).toBe(unit);
+    }
+    expect(document.querySelectorAll('.k-num')).toHaveLength(units.length);
+
+    // a wrong value still marks the field itself
+    expect(field(/^Price ceiling/u).getAttribute('aria-invalid')).toBeNull();
+    await retype(user, /^Price ceiling/u, '0');
+    expect(field(/^Price ceiling/u).getAttribute('aria-invalid')).toBe('true');
+    expect(field('Max attempts per wallet').getAttribute('aria-invalid')).toBeNull();
+  });
+
   it('Jupiter plan sets the limit; "Custom" lets the user type it', async () => {
     const { user } = await setup();
     const plan = screen.getByRole('combobox', { name: 'Jupiter plan' });

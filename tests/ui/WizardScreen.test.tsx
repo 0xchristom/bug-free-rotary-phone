@@ -476,7 +476,7 @@ describe('creating and saving', () => {
 
     expect(screen.getByRole('heading', { name: 'Creating the fleet…' })).toBeTruthy();
     const bar = screen.getByRole('progressbar', { name: 'Encryption progress' });
-    expect(bar.getAttribute('value')).toBe('30');
+    expect(bar.getAttribute('aria-valuenow')).toBe('30');
     expect(screen.getByText('30%')).toBeTruthy();
     // the page still reacts to input while scrypt runs in the worker
     await user.click(screen.getByRole('heading', { name: 'Creating the fleet…' }));

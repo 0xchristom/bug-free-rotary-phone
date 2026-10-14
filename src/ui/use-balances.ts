@@ -3,6 +3,7 @@ import { isAppError, toUserMessage } from '../core/errors.ts';
 import { DEFAULT_NETWORK, type Network } from '../core/network.ts';
 import type { VaultBalances } from '../worker/protocol.ts';
 import type { VaultClient } from '../worker/vault-client.ts';
+import { useReportRpcRead } from './shell-status.ts';
 
 /** SPEC 3.2: every 10–15 s. Each refresh costs Helius credits (D-020). */
 export const DEFAULT_BALANCE_REFRESH_MS = 12_000;
@@ -62,6 +63,7 @@ export function useBalances(
     setShownNetwork(network);
     setState(EMPTY);
   }
+  const reportRead = useReportRpcRead();
   const inflight = useRef(false);
   const mounted = useRef(true);
   /** A refresh asked for while one was running (e.g. a new mint): run it afterwards. */
@@ -87,6 +89,7 @@ export function useBalances(
     };
     const asked = mint;
     const askedNetwork = network;
+    const askedAt = performance.now();
     // The user may change or clear the mint while this request runs. Its answer, success
     // or error, then belongs to a mint no longer on screen and must be ignored; the
     // refresh for the new mint follows right after (`again`).
@@ -96,6 +99,7 @@ export function useBalances(
       (res) => {
         // The worker says where it read: the switch may have landed between ask and read.
         if (!stale() && res.network === askedNetwork) {
+          reportRead({ source: res.source, ms: Math.round(performance.now() - askedAt) });
           setState({
             lamports: new Map(res.balances.map((b) => [b.index, b.lamports])),
             token: res.token
@@ -126,7 +130,7 @@ export function useBalances(
         done();
       },
     );
-  }, [client, mint, onBadMint, network]);
+  }, [client, mint, onBadMint, network, reportRead]);
 
   // A layout effect runs at commit, before any passive effect: no answer arriving between
   // the commit and the effects can be checked against the old mint, and the new mint is

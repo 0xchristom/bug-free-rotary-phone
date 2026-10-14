@@ -11,6 +11,7 @@ import type { VaultInfo } from '../../worker/protocol.ts';
 import { ExportDialog } from '../ExportDialog.tsx';
 import { passwordStrength } from '../password-strength.ts';
 import { useVault } from '../vault-state.ts';
+import { Button, Checkbox, Input, ProgressBar } from '../kit/index.ts';
 
 export const DEFAULT_WALLET_COUNT = 30;
 const MAX_WALLETS = 100;
@@ -218,10 +219,10 @@ export function WizardScreen({ storage, onBack, onDone, onUnsavedChange }: Wizar
   if (phase.kind === 'creating') {
     const percent = Math.round(phase.progress * 100);
     return (
-      <section className="screen" aria-labelledby={`${ids}-title`}>
+      <section className="screen narrow" aria-labelledby={`${ids}-title`}>
         <h2 id={`${ids}-title`}>Creating the fleet…</h2>
         <p>Encrypting the fleet file. This may take a few seconds.</p>
-        <progress max={100} value={percent} aria-label="Encryption progress" />
+        <ProgressBar label="Encryption progress" value={percent} max={100} tone="run" />
         <p className="muted">{percent}%</p>
       </section>
     );
@@ -230,7 +231,7 @@ export function WizardScreen({ storage, onBack, onDone, onUnsavedChange }: Wizar
   if (phase.kind === 'created') {
     const download = !supportsDirectoryPicker(storage);
     return (
-      <section className="screen" aria-labelledby={`${ids}-title`}>
+      <section className="screen narrow" aria-labelledby={`${ids}-title`}>
         <h2 id={`${ids}-title`}>Fleet created</h2>
         <p>
           Wallets: <strong>{phase.info.wallets.length}</strong>, fleet name:{' '}
@@ -246,14 +247,13 @@ export function WizardScreen({ storage, onBack, onDone, onUnsavedChange }: Wizar
         )}
         {errorBox}
         <div className="actions">
-          <button
-            type="button"
-            className="primary"
+          <Button
+            variant="primary"
             disabled={phase.saving}
             onClick={() => void save(phase.fileText, phase.info)}
           >
             {phase.saving ? 'Saving…' : 'Save the fleet file'}
-          </button>
+          </Button>
         </div>
       </section>
     );
@@ -262,7 +262,7 @@ export function WizardScreen({ storage, onBack, onDone, onUnsavedChange }: Wizar
   if (phase.kind === 'saved') {
     const { result, info } = phase;
     return (
-      <section className="screen" aria-labelledby={`${ids}-title`}>
+      <section className="screen narrow" aria-labelledby={`${ids}-title`}>
         <h2 id={`${ids}-title`}>Fleet file saved</h2>
         <ul>
           <li>
@@ -285,17 +285,16 @@ export function WizardScreen({ storage, onBack, onDone, onUnsavedChange }: Wizar
           this fleet cannot be recovered. Back up the recovery phrase now and keep it offline.
         </p>
         <div className="actions">
-          <button
-            type="button"
+          <Button
             onClick={() => {
               setExportOpen(true);
             }}
           >
             Back up the recovery phrase
-          </button>
-          <button type="button" className="primary" onClick={onDone}>
+          </Button>
+          <Button variant="primary" onClick={onDone}>
             Go to the fleet
-          </button>
+          </Button>
         </div>
         {exportOpen && (
           <ExportDialog
@@ -310,12 +309,12 @@ export function WizardScreen({ storage, onBack, onDone, onUnsavedChange }: Wizar
   }
 
   return (
-    <section className="screen" aria-labelledby={`${ids}-title`}>
+    <section className="screen narrow" aria-labelledby={`${ids}-title`}>
       <h2 id={`${ids}-title`}>New fleet wizard</h2>
       {errorBox}
       <form className="form" onSubmit={(e) => void create(e)} noValidate>
         <label htmlFor={`${ids}-count`}>Number of wallets</label>
-        <input
+        <Input
           id={`${ids}-count`}
           type="number"
           min={1}
@@ -331,9 +330,8 @@ export function WizardScreen({ storage, onBack, onDone, onUnsavedChange }: Wizar
         {fieldError('count')}
 
         <label htmlFor={`${ids}-name`}>Fleet name</label>
-        <input
+        <Input
           id={`${ids}-name`}
-          type="text"
           value={fleetName}
           autoComplete="off"
           onChange={(e) => {
@@ -348,7 +346,7 @@ export function WizardScreen({ storage, onBack, onDone, onUnsavedChange }: Wizar
         {fieldError('name')}
 
         <label htmlFor={`${ids}-pw`}>Password</label>
-        <input
+        <Input
           id={`${ids}-pw`}
           type="password"
           value={password}
@@ -362,14 +360,12 @@ export function WizardScreen({ storage, onBack, onDone, onUnsavedChange }: Wizar
           aria-invalid={shown('pw') !== null}
           aria-describedby={describedBy('pw')}
         />
-        <meter
-          min={0}
-          max={4}
-          low={2}
-          high={3}
-          optimum={4}
+        <ProgressBar
+          label="Password strength"
           value={strength.score}
-          aria-label="Password strength"
+          max={4}
+          valueText={strength.label}
+          tone={strength.score <= 1 ? 'danger' : strength.score === 2 ? 'warn' : 'ok'}
         />
         <p className="muted" aria-live="polite">
           Password strength: {strength.label}
@@ -383,7 +379,7 @@ export function WizardScreen({ storage, onBack, onDone, onUnsavedChange }: Wizar
           ))}
 
         <label htmlFor={`${ids}-pw2`}>Repeat the password</label>
-        <input
+        <Input
           id={`${ids}-pw2`}
           type="password"
           value={password2}
@@ -400,12 +396,11 @@ export function WizardScreen({ storage, onBack, onDone, onUnsavedChange }: Wizar
         {fieldError('pw2')}
 
         <label className="checkbox">
-          <input
-            type="checkbox"
+          <Checkbox
             checked={importMnemonic}
-            onChange={(e) => {
-              setImportMnemonic(e.target.checked);
-              if (!e.target.checked) setMnemonic('');
+            onChange={(checked) => {
+              setImportMnemonic(checked);
+              if (!checked) setMnemonic('');
             }}
           />
           I already have a recovery phrase (import 12–24 words)
@@ -419,7 +414,7 @@ export function WizardScreen({ storage, onBack, onDone, onUnsavedChange }: Wizar
           <>
             <label htmlFor={`${ids}-mn`}>Recovery phrase</label>
             <div className="inline">
-              <input
+              <Input
                 id={`${ids}-mn`}
                 type={showMnemonic ? 'text' : 'password'}
                 value={mnemonic}
@@ -435,26 +430,25 @@ export function WizardScreen({ storage, onBack, onDone, onUnsavedChange }: Wizar
                 aria-invalid={shown('mn') !== null}
                 aria-describedby={describedBy('mn')}
               />
-              <button
-                type="button"
+              <Button
                 onClick={() => {
                   setShowMnemonic((s) => !s);
                 }}
               >
                 {showMnemonic ? 'Hide' : 'Show'}
-              </button>
+              </Button>
             </div>
             {fieldError('mn')}
           </>
         )}
 
         <div className="actions">
-          <button type="submit" className="primary">
+          <Button type="submit" variant="primary">
             Create the fleet
-          </button>
-          <button type="button" onClick={onBack}>
+          </Button>
+          <Button variant="ghost" onClick={onBack}>
             Back
-          </button>
+          </Button>
         </div>
       </form>
     </section>

@@ -1,12 +1,17 @@
+import type { ReactNode } from 'react';
 import type { VaultStatus } from '../worker/protocol.ts';
+import { Avatar, BrandMark, IconButton, LockIcon } from './kit/index.ts';
+import { DRY_RUN_NOTE, LIVE_NOTE } from './mode-text.ts';
 import type { Screen } from './vault-state.ts';
 
 export interface AppHeaderProps {
-  readonly status: VaultStatus;
+  /** null until the vault answers for the first time. */
+  readonly status: VaultStatus | null;
   readonly screen: Screen;
-  readonly autoLockMinutes: number;
   readonly onNavigate: (screen: Screen) => void;
   readonly onLock: () => void;
+  /** The network switch (it needs the app's unsaved-file state, so the app builds it). */
+  readonly network: ReactNode;
 }
 
 const NAV: readonly { readonly screen: Screen; readonly label: string }[] = [
@@ -14,35 +19,52 @@ const NAV: readonly { readonly screen: Screen; readonly label: string }[] = [
   { screen: 'settings', label: 'Settings' },
 ];
 
-export function AppHeader({ status, screen, autoLockMinutes, onNavigate, onLock }: AppHeaderProps) {
-  if (status.locked || status.info === null) return null;
+/** The top bar: brand, sections, run mode, network, the open fleet and its lock. */
+export function AppHeader({ status, screen, onNavigate, onLock, network }: AppHeaderProps) {
+  const info = status !== null && !status.locked ? status.info : null;
   return (
-    <div className="unlocked-bar">
-      <span className="fleet-name" title="Fleet name">
-        {status.info.fleetName}
-      </span>
-      <nav aria-label="Navigation">
-        {NAV.map((item) => (
-          <button
-            key={item.screen}
-            type="button"
-            aria-current={screen === item.screen ? 'page' : undefined}
-            onClick={() => {
-              onNavigate(item.screen);
-            }}
+    <header className="top">
+      <h1 className="brand">
+        <BrandMark />
+        Bunndly
+      </h1>
+      {info && (
+        <nav className="nav" aria-label="Navigation">
+          {NAV.map((item) => (
+            <button
+              key={item.screen}
+              type="button"
+              aria-current={screen === item.screen ? 'page' : undefined}
+              onClick={() => {
+                onNavigate(item.screen);
+              }}
+            >
+              {item.label}
+            </button>
+          ))}
+        </nav>
+      )}
+      <div className="top-right">
+        {info && (
+          <span
+            className="top-chip"
+            data-tone={info.settings.global.dryRun ? 'sim' : 'danger'}
+            title={info.settings.global.dryRun ? DRY_RUN_NOTE : LIVE_NOTE}
           >
-            {item.label}
-          </button>
-        ))}
-      </nav>
-      <span className="autolock" role="status">
-        {status.armed
-          ? 'Armed: auto-lock is paused'
-          : `Auto-lock after ${String(autoLockMinutes)} min of inactivity`}
-      </span>
-      <button type="button" className="danger" onClick={onLock}>
-        Lock
-      </button>
-    </div>
+            Mode: {info.settings.global.dryRun ? 'DRY-RUN' : 'LIVE'}
+          </span>
+        )}
+        {network}
+        {info && (
+          <>
+            <span className="top-chip" title="Fleet name">
+              <Avatar seed={info.fleetName} size="sm" />
+              {info.fleetName}
+            </span>
+            <IconButton label="Lock" variant="ghost" icon={<LockIcon />} onClick={onLock} />
+          </>
+        )}
+      </div>
+    </header>
   );
 }

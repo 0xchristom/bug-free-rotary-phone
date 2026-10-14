@@ -22,6 +22,7 @@ import { useBalances } from '../use-balances.ts';
 import { EMPTY_BUY, type BuyView } from '../use-buy.ts';
 import { useVault } from '../vault-state.ts';
 import { WATCH_FROZEN } from '../watch-labels.ts';
+import { Button, Input } from '../kit/index.ts';
 
 const MAX_WALLETS = 100;
 
@@ -178,6 +179,23 @@ export function FleetScreen({
   const onQr = useCallback((index: number) => {
     setQrFor((current) => (current === index ? null : index));
   }, []);
+  // Escape closes the QR code shown in the table; a dialog that has the focus handles its
+  // own Escape first and stops it.
+  useEffect(() => {
+    if (qrFor === null) return;
+    const onKey = (event: KeyboardEvent): void => {
+      if (event.key !== 'Escape') return;
+      const opener = document.querySelector<HTMLElement>(
+        'table.wallets button[aria-expanded="true"]',
+      );
+      setQrFor(null);
+      opener?.focus();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [qrFor]);
 
   const tokenAmounts = useMemo(() => {
     const token = balances.token;
@@ -376,9 +394,7 @@ export function FleetScreen({
             ? `Balances as of ${new Date(balances.fetchedAt).toLocaleTimeString('en-GB')}`
             : 'Balances: loading…'}
         </span>
-        <button type="button" onClick={balances.refresh}>
-          Refresh balances
-        </button>
+        <Button onClick={balances.refresh}>Refresh balances</Button>
       </div>
       {balances.source === 'fallback' && (
         <p className="notice warning">
@@ -401,9 +417,8 @@ export function FleetScreen({
       <form className="token-bar" onSubmit={showToken}>
         <label htmlFor={`${ids}-mint`}>Token address (mint)</label>
         <div className="inline">
-          <input
+          <Input
             id={`${ids}-mint`}
-            type="text"
             value={mintText}
             spellCheck={false}
             autoComplete="off"
@@ -413,7 +428,7 @@ export function FleetScreen({
               setMintText(e.target.value);
             }}
           />
-          <button type="submit">Show token balance</button>
+          <Button type="submit">Show token balance</Button>
         </div>
         {mintError ? (
           <p className="field-error" id={`${ids}-mint-help`} role="alert">
@@ -482,9 +497,8 @@ export function FleetScreen({
         network={global.network}
       />
       <div className="actions">
-        <button
-          type="button"
-          className="primary"
+        <Button
+          variant="primary"
           disabled={
             watchArmed ||
             !tableDirty ||
@@ -494,7 +508,7 @@ export function FleetScreen({
           onClick={() => void saveTable()}
         >
           {phase.kind === 'savingTable' ? 'Saving…' : 'Save table changes'}
-        </button>
+        </Button>
         {watchArmed ? (
           <span className="muted">{WATCH_FROZEN}</span>
         ) : (
@@ -511,14 +525,9 @@ export function FleetScreen({
             </p>
           )}
           <div className="actions">
-            <button
-              type="button"
-              className="primary"
-              disabled={phase.saving}
-              onClick={() => void save(phase)}
-            >
+            <Button variant="primary" disabled={phase.saving} onClick={() => void save(phase)}>
               {phase.saving ? 'Saving…' : 'Save the updated fleet file'}
-            </button>
+            </Button>
           </div>
         </div>
       )}
@@ -538,7 +547,7 @@ export function FleetScreen({
       ) : (
         <form className="form" onSubmit={(e) => void add(e)} noValidate>
           <label htmlFor={`${ids}-add`}>Number of new wallets</label>
-          <input
+          <Input
             id={`${ids}-add`}
             type="number"
             min={1}
@@ -556,13 +565,13 @@ export function FleetScreen({
             </p>
           )}
           <div className="actions">
-            <button
+            <Button
               type="submit"
-              className="primary"
+              variant="primary"
               disabled={watchArmed || !countValid || phase.kind === 'adding'}
             >
               {phase.kind === 'adding' ? 'Adding…' : 'Add wallets'}
-            </button>
+            </Button>
             {watchArmed && <span className="muted">{WATCH_FROZEN}</span>}
           </div>
         </form>
@@ -573,24 +582,24 @@ export function FleetScreen({
         The only way to get a copy of the recovery phrase and the private keys is a plain export
         after typing the password again.
       </p>
-      {exportOpen ? (
+      {/* The opener stays mounted: the dialog gives the focus back to it. */}
+      <div className="actions">
+        <Button
+          aria-expanded={exportOpen}
+          onClick={() => {
+            setExportOpen(true);
+          }}
+        >
+          Plain export (recovery phrase and keys)
+        </Button>
+      </div>
+      {exportOpen && (
         <ExportDialog
           storage={storage}
           onClose={() => {
             setExportOpen(false);
           }}
         />
-      ) : (
-        <div className="actions">
-          <button
-            type="button"
-            onClick={() => {
-              setExportOpen(true);
-            }}
-          >
-            Plain export (recovery phrase and keys)
-          </button>
-        </div>
       )}
     </section>
   );

@@ -1,0 +1,633 @@
+/*
+ * Page, app shell and screen layout (BUNNDLY-54). Desktop only: built for windows 1280 to
+ * 1920 px wide. Controls live in kit/kit.css; every value comes from tokens.css.
+ */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  padding: var(--s-4);
+  background: var(--surface-page);
+  color: var(--fg);
+  font: 400 var(--fs-base) / var(--lh) var(--font-ui);
+  -webkit-font-smoothing: antialiased;
+}
+
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+h2,
+h3,
+h4,
+p {
+  margin: 0;
+}
+
+h2 {
+  font-size: var(--fs-heading);
+  font-weight: 600;
+  letter-spacing: -0.015em;
+}
+
+h3 {
+  font-size: var(--fs-brand);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+h4 {
+  font-size: var(--fs-strong);
+  font-weight: 600;
+}
+
+a {
+  color: var(--fg);
+  text-decoration: underline;
+  text-decoration-color: var(--line-2);
+  text-underline-offset: 3px;
+}
+
+a:hover {
+  text-decoration-color: var(--fg-2);
+}
+
+strong {
+  font-weight: 600;
+}
+
+/* The framed window: top bar, scrolling content, status rail. */
+.app {
+  height: 100%;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface-base);
+  border: 1px solid var(--line);
+  border-radius: var(--r-frame);
+  overflow: hidden;
+}
+
+.top {
+  flex: none;
+  min-height: 58px;
+  padding: var(--s-2) var(--s-4);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-1) var(--s-2);
+  border-bottom: 1px solid var(--line);
+}
+
+.brand {
+  margin: 0 var(--s-4) 0 0;
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  font-size: var(--fs-brand);
+  font-weight: 600;
+  letter-spacing: -0.015em;
+}
+
+.nav {
+  display: flex;
+  gap: var(--s-1);
+}
+
+.nav button {
+  height: var(--h-control);
+  padding: 0 var(--s-3);
+  border: 0;
+  border-radius: var(--r);
+  background: transparent;
+  color: var(--fg-2);
+  font: inherit;
+  font-size: var(--fs-strong);
+  font-weight: 500;
+  cursor: pointer;
+  transition:
+    background-color var(--t-fast),
+    color var(--t-fast);
+}
+
+.nav button:hover {
+  color: var(--fg);
+}
+
+.nav button[aria-current='page'] {
+  background: var(--surface-raised);
+  color: var(--fg);
+}
+
+.top-right {
+  margin-left: auto;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-2);
+}
+
+/* A bordered box in the top bar: the account, the run mode. */
+.top-chip {
+  height: var(--h-control);
+  padding: 0 var(--s-3);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+  background: var(--surface-panel);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.top-chip[data-tone='sim'] {
+  color: var(--sim);
+}
+
+.top-chip[data-tone='danger'] {
+  color: var(--danger);
+}
+
+/* Devnet is marked by colour and by its label. */
+.network-switch.devnet button[aria-pressed='true'] {
+  background: var(--warn-bg);
+  color: var(--warn);
+}
+
+.content {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: var(--s-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3);
+  overflow: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-2) transparent;
+}
+
+.rail {
+  flex: none;
+  min-height: 38px;
+  padding: var(--s-1) var(--s-4);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-1) var(--s-3);
+  border-top: 1px solid var(--line);
+  color: var(--fg-2);
+  font-size: var(--fs-note);
+}
+
+.rail b {
+  color: var(--fg);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.rail-sep {
+  width: 1px;
+  height: var(--s-3);
+  background: var(--line-2);
+}
+
+.rail-right {
+  margin-left: auto;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-1) var(--s-3);
+}
+
+.rail-item {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+}
+
+.rail-item[data-tone='ok'],
+.rail-item[data-tone='ok'] b {
+  color: var(--ok);
+}
+
+.rail-item[data-tone='warn'],
+.rail-item[data-tone='warn'] b {
+  color: var(--warn);
+}
+
+.rail-item[data-tone='danger'],
+.rail-item[data-tone='danger'] b {
+  color: var(--danger);
+}
+
+.rail .k-i {
+  width: 13px;
+  height: 13px;
+}
+
+/* Screens */
+.screen {
+  display: grid;
+  gap: var(--s-4);
+  align-content: start;
+  min-width: 0;
+}
+
+/* Entry screens (start, open, create, settings): one readable column. */
+.screen.narrow {
+  width: min(720px, 100%);
+  margin: var(--s-6) auto;
+}
+
+.panel {
+  padding: var(--s-4);
+  display: grid;
+  gap: var(--s-3);
+  min-width: 0;
+  background: var(--surface-panel);
+  border: 1px solid var(--line);
+  border-radius: var(--r-pop);
+}
+
+/* A dialog that shows key material: the red edge says so before the text is read. */
+.danger-panel {
+  border-color: var(--danger);
+  background: var(--danger-bg);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-2);
+}
+
+.inline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-2);
+}
+
+.muted {
+  color: var(--fg-2);
+}
+
+.hint {
+  color: var(--fg-2);
+  font-size: var(--fs-note);
+}
+
+.field-error {
+  color: var(--danger);
+  font-size: var(--fs-note);
+}
+
+/* Notices: something the user must read. The words carry it, the colour marks the kind. */
+.notice {
+  padding: var(--s-3) var(--s-4);
+  display: grid;
+  gap: var(--s-2);
+  background: var(--surface-panel);
+  border: 1px solid var(--line-2);
+  border-left: 3px solid var(--fg-3);
+  border-radius: var(--r);
+}
+
+.notice.warning {
+  background: var(--warn-bg);
+  border-color: var(--warn-bg);
+  border-left-color: var(--warn);
+}
+
+.notice.error {
+  background: var(--danger-bg);
+  border-color: var(--danger-bg);
+  border-left-color: var(--danger);
+}
+
+/* Stays in view wherever the content is scrolled (e.g. down to DISARM). */
+.notice.alarm {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  border-color: var(--danger);
+  font-size: var(--fs-strong);
+  box-shadow: var(--shadow);
+}
+
+/* Forms */
+.form {
+  display: grid;
+  gap: var(--s-2);
+  max-width: 520px;
+}
+
+.form > label,
+.field > label,
+.key-field > label,
+.token-bar > label {
+  margin-top: var(--s-2);
+  color: var(--fg-2);
+  font-size: var(--fs-note);
+  font-weight: 500;
+}
+
+label.checkbox {
+  margin-top: var(--s-1);
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  color: var(--fg);
+  font-size: var(--fs-base);
+  font-weight: 400;
+}
+
+.field,
+.key-field {
+  display: grid;
+  gap: var(--s-2);
+}
+
+/* A number with its unit: as wide as a number needs, not as wide as the form. */
+.settings-number {
+  width: 220px;
+}
+
+/* A field with buttons next to it: the field takes the room that is left, on one line. */
+.key-field .inline {
+  flex-wrap: nowrap;
+}
+
+.key-field .inline .k-input {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+select.k-input {
+  appearance: auto;
+  padding: 0 var(--s-2);
+}
+
+input[type='radio'] {
+  width: var(--s-4);
+  height: var(--s-4);
+  margin: 0;
+  accent-color: var(--fg);
+}
+
+fieldset {
+  min-width: 0;
+  margin: 0;
+  padding: var(--s-3) var(--s-4) var(--s-4);
+  display: grid;
+  gap: var(--s-2);
+  background: var(--surface-panel);
+  border: 1px solid var(--line);
+  border-radius: var(--r-pop);
+}
+
+legend {
+  padding: 0 var(--s-1);
+  font-size: var(--fs-strong);
+  font-weight: 600;
+}
+
+/* Tables: the wrapper scrolls, the page never does sideways. */
+.table-wrap {
+  min-width: 0;
+  overflow: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-2) transparent;
+}
+
+table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+caption {
+  padding-bottom: var(--s-2);
+  color: var(--fg-2);
+  font-size: var(--fs-note);
+  text-align: left;
+}
+
+th {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  height: var(--h-head);
+  padding: 0 var(--s-3);
+  background: var(--surface-panel);
+  color: var(--fg-2);
+  font-size: var(--fs-control);
+  font-weight: 500;
+  text-align: left;
+  white-space: nowrap;
+}
+
+th:first-child {
+  border-radius: var(--r-bar) 0 0 var(--r-bar);
+}
+
+th:last-child {
+  border-radius: 0 var(--r-bar) var(--r-bar) 0;
+}
+
+td {
+  padding: var(--s-3);
+  border-bottom: 1px solid var(--line);
+  vertical-align: middle;
+}
+
+tbody tr:hover td {
+  background: var(--surface-row);
+}
+
+td.amount,
+th.amount {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+}
+
+/* A row that cannot buy as set: said in words in the row, marked on its edge. */
+tr.row-error td:first-child {
+  box-shadow: inset 3px 0 0 var(--danger);
+}
+
+tr.row-ready td:first-child {
+  box-shadow: inset 3px 0 0 var(--ok);
+}
+
+code.address {
+  color: var(--fg-2);
+  font: inherit;
+  font-size: var(--fs-note);
+  font-variant-numeric: tabular-nums;
+  word-break: break-all;
+}
+
+.amount-input {
+  width: 132px;
+}
+
+table.connections td {
+  overflow-wrap: break-word;
+}
+
+table.detections td {
+  white-space: nowrap;
+}
+
+table.detections td.danger {
+  color: var(--danger);
+}
+
+.qr-box {
+  margin-top: var(--s-2);
+}
+
+svg.qr {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  border-radius: var(--r-control);
+}
+
+svg.qr .qr-paper {
+  fill: var(--qr-paper);
+}
+
+svg.qr .qr-ink {
+  fill: var(--qr-ink);
+}
+
+/* Fleet summary bar */
+dl.summary {
+  margin: 0;
+  padding: var(--s-3) var(--s-4);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-2) var(--s-8);
+  background: var(--surface-panel);
+  border-radius: var(--r-bar);
+}
+
+dl.summary div {
+  display: grid;
+  gap: var(--s-0);
+}
+
+dl.summary dt {
+  color: var(--fg-3);
+  font-size: var(--fs-small);
+}
+
+dl.summary dd {
+  margin: 0;
+  font-size: var(--fs-strong);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.token-bar {
+  display: grid;
+  gap: var(--s-2);
+}
+
+.token-bar .k-input {
+  width: min(520px, 100%);
+}
+
+/* Buy and watch panels */
+.buy-panel,
+.watch-panel {
+  display: grid;
+  gap: var(--s-3);
+  min-width: 0;
+}
+
+.buy-panel {
+  padding: var(--s-4);
+  background: var(--surface-panel);
+  border: 1px solid var(--line);
+  border-radius: var(--r-pop);
+}
+
+.buy-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-2) var(--s-3);
+}
+
+.progress-bar {
+  display: grid;
+  gap: var(--s-2);
+}
+
+.watch-panel .field .k-input {
+  max-width: 520px;
+}
+
+.reason {
+  margin-top: var(--s-1);
+  min-width: 176px;
+  max-width: 256px;
+  color: var(--fg-2);
+  font-size: var(--fs-small);
+  white-space: normal;
+}
+
+.connection {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+}
+
+.connection.ok strong {
+  color: var(--ok);
+}
+
+.connection.wait strong {
+  color: var(--warn);
+}
+
+.connection.bad strong {
+  color: var(--danger);
+}
+
+/* Start screen */
+.hero {
+  padding: var(--s-8);
+  display: grid;
+  gap: var(--s-4);
+  justify-items: start;
+}
+
+.hero p {
+  color: var(--fg-2);
+  font-size: var(--fs-strong);
+}
+
+/* STOP is the one control that must be found without reading. */
+.k-btn.stop {
+  min-width: 96px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}

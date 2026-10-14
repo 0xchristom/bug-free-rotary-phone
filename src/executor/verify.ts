@@ -13,7 +13,7 @@
  * A sell (BUNNDLY-60) is checked the other way round: the token balance must have fallen
  * by `totalInputAmount` (what Jupiter says left the wallet) and the SOL balance must have
  * grown. Only "grown": the docs do not say how the proceeds reach the wallet, and fees and
- * rent move the exact number (D-043). The statuses are the same as for a buy.
+ * rent move the exact number (D-044). The statuses are the same as for a buy.
  */
 import type { Side } from './executor.ts';
 import type { LimiterClock } from './limiter.ts';

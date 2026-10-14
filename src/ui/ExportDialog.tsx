@@ -1,7 +1,8 @@
-import { useId, useState, type SyntheticEvent } from 'react';
+import { useEffect, useId, useRef, useState, type SyntheticEvent } from 'react';
 import { toUserMessage } from '../core/errors.ts';
 import { downloadTextFile, type StorageEnv } from '../storage/keystore-file.ts';
 import { useVault } from './vault-state.ts';
+import { Button, Checkbox, Input } from './kit/index.ts';
 
 export interface ExportDialogProps {
   readonly storage: StorageEnv;
@@ -25,6 +26,16 @@ export function ExportDialog({ storage, onClose }: ExportDialogProps) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [doneFile, setDoneFile] = useState<string | null>(null);
+  const dialog = useRef<HTMLElement>(null);
+
+  // Focus moves into the dialog, so Escape reaches it; on close it goes back to the opener.
+  useEffect(() => {
+    const opener = document.activeElement;
+    dialog.current?.focus();
+    return () => {
+      if (opener instanceof HTMLElement && opener.isConnected) opener.focus();
+    };
+  }, []);
 
   const submit = async (event: SyntheticEvent): Promise<void> => {
     event.preventDefault();
@@ -46,7 +57,20 @@ export function ExportDialog({ storage, onClose }: ExportDialogProps) {
   };
 
   return (
-    <section className="dialog notice error" role="dialog" aria-labelledby={`${ids}-title`}>
+    // An inline dialog on purpose: the rest of the page stays usable while it is open.
+    <section
+      ref={dialog}
+      className="panel danger-panel"
+      role="dialog"
+      aria-labelledby={`${ids}-title`}
+      tabIndex={-1}
+      onKeyDown={(event) => {
+        if (event.key !== 'Escape') return;
+        event.stopPropagation();
+        // Escape is Cancel: it does not close the dialog while the password is checked.
+        if (!busy) onClose();
+      }}
+    >
       <h3 id={`${ids}-title`}>Plain export: recovery phrase and private keys</h3>
       <p>
         The file will contain the recovery phrase and the private keys of all wallets in plain text.
@@ -59,25 +83,24 @@ export function ExportDialog({ storage, onClose }: ExportDialogProps) {
             Downloaded {doneFile}. Check the “Downloads” folder and move it to a safe place.
           </p>
           <div className="actions">
-            <button type="button" onClick={onClose}>
+            <Button variant="ghost" onClick={onClose}>
               Close
-            </button>
+            </Button>
           </div>
         </>
       ) : (
         <form className="form" onSubmit={(e) => void submit(e)} noValidate>
           <label className="checkbox">
-            <input
-              type="checkbox"
+            <Checkbox
               checked={confirmed}
-              onChange={(e) => {
-                setConfirmed(e.target.checked);
+              onChange={(checked) => {
+                setConfirmed(checked);
               }}
             />
             {CONFIRM_LABEL}
           </label>
           <label htmlFor={`${ids}-pw`}>Fleet password (type it again)</label>
-          <input
+          <Input
             id={`${ids}-pw`}
             type="password"
             value={password}
@@ -110,16 +133,12 @@ export function ExportDialog({ storage, onClose }: ExportDialogProps) {
             </p>
           )}
           <div className="actions">
-            <button
-              type="submit"
-              className="danger"
-              disabled={!confirmed || password === '' || busy}
-            >
+            <Button type="submit" variant="danger" disabled={!confirmed || password === '' || busy}>
               Download the plain export
-            </button>
-            <button type="button" onClick={onClose} disabled={busy}>
+            </Button>
+            <Button variant="ghost" onClick={onClose} disabled={busy}>
               Cancel
-            </button>
+            </Button>
           </div>
         </form>
       )}

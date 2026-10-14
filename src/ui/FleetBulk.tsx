@@ -1,6 +1,7 @@
 import { useId, useState, type SyntheticEvent } from 'react';
 import { parsePercent, type FleetSummary } from './fleet-math.ts';
 import { formatSol, formatUnits, parseSolAmount } from './sol.ts';
+import { Button, Input } from './kit/index.ts';
 
 export interface FleetBulkProps {
   /** Sets the same max spend on every wallet. */
@@ -50,49 +51,45 @@ export function FleetBulk({ onAmount, onPercent, onAllActive, unknownBalances }:
       <legend>Bulk actions</legend>
       <form className="inline" onSubmit={applyAmount}>
         <label htmlFor={`${ids}-amount`}>Max spend for all (SOL)</label>
-        <input
+        <Input
           id={`${ids}-amount`}
           className="amount-input"
-          type="text"
           inputMode="decimal"
           value={amount}
           onChange={(e) => {
             setAmount(e.target.value);
           }}
         />
-        <button type="submit">Set amount</button>
+        <Button type="submit">Set amount</Button>
       </form>
       <form className="inline" onSubmit={applyPercent}>
         <label htmlFor={`${ids}-percent`}>Max spend as % of balance</label>
-        <input
+        <Input
           id={`${ids}-percent`}
           className="amount-input"
-          type="text"
           inputMode="decimal"
           value={percent}
           onChange={(e) => {
             setPercent(e.target.value);
           }}
         />
-        <button type="submit">Set percent</button>
+        <Button type="submit">Set percent</Button>
       </form>
       <div className="inline">
-        <button
-          type="button"
+        <Button
           onClick={() => {
             onAllActive(true);
           }}
         >
           Select all
-        </button>
-        <button
-          type="button"
+        </Button>
+        <Button
           onClick={() => {
             onAllActive(false);
           }}
         >
           Deselect all
-        </button>
+        </Button>
       </div>
       {message && (
         <p className="field-error" role="status">
