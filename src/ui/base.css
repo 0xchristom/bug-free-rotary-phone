@@ -839,18 +839,34 @@ dl.summary dd {
 }
 
 /* Dashboard (BUNNDLY-73, mockup v2): edge-to-edge strips, top to bottom: target, tabs,
-   toolbar, table, summary. The content area has no padding of its own here. */
+   toolbar, table, summary. The content area has no padding of its own here, and only the
+   table scrolls: the strips and the summary stay on screen. */
 .content.dash-content {
   padding: 0;
   gap: 0;
+  overflow: hidden;
 }
 
 .screen.dash {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
   gap: 0;
 }
 
 .dash .wallets-block {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
   gap: 0;
+}
+
+/* Only the table gives up height on a short window; the strips keep theirs. */
+.screen.dash > :not(.wallets-block),
+.dash .wallets-block > :not(.wallets-wrap) {
+  flex: none;
 }
 
 .dash .tabsrow {
@@ -862,7 +878,12 @@ dl.summary dd {
 }
 
 .dash .wallets-wrap {
+  flex: 1 1 auto;
+  min-height: 0;
   margin: 0 var(--s-4);
+  overflow: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-2) transparent;
 }
 
 .dash table.wallets th {

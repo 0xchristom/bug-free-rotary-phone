@@ -262,18 +262,20 @@ export function CommandBar({
           )
         )}
       </div>
+      {/* Out of the notes row, so an empty row takes no height (it is absolutely placed). */}
+      {check.kind !== 'error' && (
+        <p className="sr-only" id={helpId}>
+          {target?.kind.kind === 'wallet'
+            ? 'Arm watches this wallet and buys every new token it creates.'
+            : target
+              ? 'Buy buys this token with the selected wallets.'
+              : 'A token mint to buy now, or a creator wallet to watch. Not saved in the fleet file.'}
+        </p>
+      )}
       <div className="target-notes">
-        {check.kind === 'error' ? (
+        {check.kind === 'error' && (
           <p className="field-error" id={helpId} role="alert">
             {check.message}
-          </p>
-        ) : (
-          <p className="sr-only" id={helpId}>
-            {target?.kind.kind === 'wallet'
-              ? 'Arm watches this wallet and buys every new token it creates.'
-              : target
-                ? 'Buy buys this token with the selected wallets.'
-                : 'A token mint to buy now, or a creator wallet to watch. Not saved in the fleet file.'}
           </p>
         )}
         {why && <p className="muted cmd-why">{why}</p>}

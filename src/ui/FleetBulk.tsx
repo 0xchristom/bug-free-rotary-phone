@@ -164,7 +164,7 @@ export function FleetSummaryBar({
       </div>
       {readAt !== undefined && (
         <div>
-          <dt>Balances</dt>
+          <dt>Last read</dt>
           <dd className="muted">{readAt}</dd>
         </div>
       )}
