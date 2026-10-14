@@ -1,7 +1,6 @@
 // @vitest-environment jsdom
 /** "Test connections" on the settings screen (BUNNDLY-16), real vault handler, mocked net. */
 import { cleanup, render, screen, within } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { defaultFleetSettings } from '../../src/core/index.ts';
 import { App } from '../../src/ui/App.tsx';
@@ -16,6 +15,11 @@ import {
   type FetchReply,
 } from '../helpers/net-fakes.ts';
 import { mockStorage } from './fakes.ts';
+import { setupUser } from './user.ts';
+
+// The key derivation is not the subject here: the fast stand-in keeps the key bound to
+// the password, the salt and the cost (tests/helpers/fast-kdf.ts, BUNNDLY-74).
+vi.mock('@noble/hashes/scrypt.js', () => import('../helpers/fast-kdf.ts'));
 
 const HELIUS = 'heliusKeyUiConn123';
 const JUPITER = 'jupiterKeyUiConn456';
@@ -70,7 +74,7 @@ async function setup(
     onEvent: (l) => handler.onEvent(l),
   } as VaultClient;
   render(<App vault={client} storage={mockStorage().env} statusPollMs={60_000} />);
-  const user = userEvent.setup();
+  const user = setupUser();
   const nav = await screen.findByRole('navigation', {}, { timeout: 10_000 });
   await user.click(within(nav).getByRole('button', { name: 'Settings' }));
   await user.click(await screen.findByRole('button', { name: 'Test connections' }));
