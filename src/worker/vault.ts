@@ -1909,9 +1909,11 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
         return status();
       }
       case 'stop': {
-        // STOP stops only the named group; the others go on.
+        // STOP stops only the named group; the others go on. It disarms the group's watcher
+        // first, so no detection starts a buy after it (BUNNDLY-87, mockup v2).
         const id = unlocked === null ? null : groupFor(unlocked, request.group).id;
         const run = id === null ? undefined : groupRuns.get(id);
+        run?.watch?.disarm();
         if (run?.buy) {
           run.buy.status = { ...run.buy.status, accepting: false };
           run.buy.run.stop();
