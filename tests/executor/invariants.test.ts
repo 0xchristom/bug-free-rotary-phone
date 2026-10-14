@@ -5,6 +5,8 @@
  * signature, STOP at a random moment). The fake chain is the truth the invariants use.
  * Wallet groups (BUNNDLY-68): two runs at once on the limiters of one plan, as the vault
  * runs them; STOP stops only the first.
+ * Stairs (BUNNDLY-61): steps at fixed times, now and then a pause; no wallet asks before
+ * its step and nothing is asked while the run is paused.
  *
  * `npm test` runs a fast set of seeds; `npm run test:sim` (`--mode sim`) the long one.
  */
@@ -42,6 +44,9 @@ const FIRST_SELL_SEED = 100_001;
 /** Two groups at once (BUNNDLY-68), on top of the runs above: their own seeds. */
 const GROUP_SEEDS = LONG ? 1_000 : 10;
 const FIRST_GROUP_SEED = 200_001;
+/** Stairs runs (BUNNDLY-61), on top of the runs above: their own seeds. */
+const STAIRS_SEEDS = LONG ? 1_000 : 10;
+const FIRST_STAIRS_SEED = 300_001;
 const MINT = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
 /** The second group's mint (any token mint other than MINT). */
 const MINT_2 = 'Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB';
@@ -83,6 +88,26 @@ export function scenario(seed: number): Scenario {
   };
 }
 
+/** Stairs of a run: a step every `intervalMs` with `perStep` wallets, maybe one pause. */
+export interface StairsPlan {
+  readonly intervalMs: number;
+  readonly perStep: number;
+  /** ms after the start and how long, or null for no pause. */
+  readonly pause: { readonly at: number; readonly forMs: number } | null;
+}
+
+export function stairsPlan(seed: number): StairsPlan {
+  const random = seeded(seed * 104_729);
+  return {
+    intervalMs: 1_000 + Math.floor(random() * 19_000),
+    perStep: 1 + Math.floor(random() * 20),
+    pause:
+      random() < 0.6
+        ? { at: Math.floor(random() * 60_000), forMs: 1_000 + Math.floor(random() * 60_000) }
+        : null,
+  };
+}
+
 export interface SimResult {
   /** Broken invariants; empty when all hold. */
   readonly broken: string[];
@@ -95,18 +120,22 @@ export interface SimResult {
   readonly durationMs: number;
   /** Two groups: some 60 s window held the full budget with /order of both groups. */
   readonly sharedFullWindow: boolean;
+  /** Stairs: the run really was paused for a while. */
+  readonly paused: boolean;
 }
 
 /**
  * Runs one scenario and checks the invariants against the fake chain. For a sell,
  * `maxSpend` is the planned token amount and `spent` on the chain is the tokens sold.
  * `groups: 2`: the first half of the wallets buys MINT, the second half MINT_2, both runs
- * at once on one pair of limiters; STOP stops the first group only.
+ * at once on one pair of limiters; STOP stops the first group only. `stairs`: one group
+ * in steps, paused as the plan says.
  */
 export async function simulate(
   s: Scenario,
   side: Side = 'buy',
   groups: 1 | 2 = 1,
+  stairs: StairsPlan | null = null,
 ): Promise<SimResult> {
   const selling = side === 'sell';
   const random = seeded(s.seed);
@@ -192,6 +221,9 @@ export async function simulate(
         noRouteWindowMs: 20_000,
         noRouteBackoffMinMs: 500,
         noRouteBackoffMaxMs: 2_000,
+        ...(stairs === null
+          ? {}
+          : { stairs: { intervalMs: stairs.intervalMs, perStep: stairs.perStep } }),
       },
     ),
   );
@@ -201,13 +233,43 @@ export async function simulate(
       summaries[i] = r;
     });
   });
-  let stoppedAt: number | null = null;
+  const marks: { stoppedAt: number | null; pausedFrom: number | null; pausedTo: number | null } = {
+    stoppedAt: null,
+    pausedFrom: null,
+    pausedTo: null,
+  };
+  const actions: { at: number; act: () => void }[] = [];
   if (s.stopAt !== null) {
-    await clock.runUntil(T0 + s.stopAt);
-    runs[0]?.stop();
-    stoppedAt = clock.now();
+    actions.push({
+      at: s.stopAt,
+      act: () => {
+        runs[0]?.stop();
+        marks.stoppedAt = clock.now();
+      },
+    });
+  }
+  const pause = stairs?.pause ?? null;
+  if (pause !== null) {
+    actions.push({
+      at: pause.at,
+      act: () => {
+        if (runs[0]?.pause() === true) marks.pausedFrom = clock.now();
+      },
+    });
+    actions.push({
+      at: pause.at + pause.forMs,
+      act: () => {
+        if (marks.pausedFrom !== null && runs[0]?.resume() === true) marks.pausedTo = clock.now();
+      },
+    });
+  }
+  actions.sort((a, b) => a.at - b.at);
+  for (const action of actions) {
+    await clock.runUntil(T0 + action.at);
+    action.act();
   }
   await clock.runUntil();
+  const { stoppedAt } = marks;
 
   const broken: string[] = [];
   const finished = summaries.filter((r): r is RunSummary => r !== null);
@@ -220,6 +282,7 @@ export async function simulate(
       landedWithError: 0,
       durationMs: 0,
       sharedFullWindow: false,
+      paused: false,
     };
   }
   const done = { wallets: finished.flatMap((r) => r.wallets) };
@@ -281,6 +344,31 @@ export async function simulate(
     if (after.length > 0) broken.push(`${String(after.length)} /order after STOP`);
   }
   if (jupiter.maxOpenPerWallet > 1) broken.push('two calls in flight for one wallet');
+  if (stairs !== null) {
+    // Worked out apart from the executor: step k is due at k intervals after the start;
+    // a step not due before the pause moves by the whole pause (to the end if never resumed).
+    const { pausedFrom, pausedTo } = marks;
+    const shift = pausedFrom === null ? 0 : (pausedTo ?? Infinity) - pausedFrom;
+    const dueAt = (k: number): number => {
+      const at = T0 + k * stairs.intervalMs;
+      return pausedFrom === null || at <= pausedFrom ? at : at + shift;
+    };
+    const firsts = [...new Set(orderCalls.map((c) => c.taker))].map(
+      (taker) => orderCalls.find((c) => c.taker === taker)?.start ?? 0,
+    );
+    firsts.forEach((at, i) => {
+      let due = 0;
+      while (due * stairs.perStep < s.wallets && dueAt(due) <= at) due++;
+      if (i + 1 > due * stairs.perStep) {
+        broken.push(`wallet ${String(i + 1)} asked at ${String(at - T0)} before its step`);
+      }
+    });
+    if (pausedFrom !== null) {
+      const end = pausedTo ?? Infinity;
+      const during = orderCalls.filter((c) => c.start > pausedFrom && c.start < end);
+      if (during.length > 0) broken.push(`${String(during.length)} /order while paused`);
+    }
+  }
   // Every /order is for this wallet's planned amount, in the direction of the run.
   const planOf = new Map(wallets.map((w) => [w.address, w.maxSpend]));
   for (const r of jupiter.orderRequests()) {
@@ -301,6 +389,7 @@ export async function simulate(
     landedWithError: chain.landed.filter((l) => !l.ok).length,
     durationMs: clock.now() - T0,
     sharedFullWindow,
+    paused: marks.pausedFrom !== null,
   };
 }
 
@@ -437,5 +526,31 @@ describe(`two wallet groups at once (${String(GROUP_SEEDS)} seeds${LONG ? ', lon
     expect(results).toHaveLength(GROUP_SEEDS);
     expect(results.some((r) => r.sharedFullWindow)).toBe(true);
     expect(results.reduce((n, r) => n + r.executes, 0)).toBeGreaterThan(GROUP_SEEDS * 20);
+  });
+});
+
+describe(`Stairs (${String(STAIRS_SEEDS)} seeds${LONG ? ', long set' : ''})`, () => {
+  const seeds = Array.from({ length: STAIRS_SEEDS }, (_, i) => FIRST_STAIRS_SEED + i);
+
+  const results: SimResult[] = [];
+
+  it.each(seeds)(
+    'stairs seed %i',
+    async (seed) => {
+      const s = scenario(seed);
+      const plan = stairsPlan(seed);
+      const result = await simulate(s, 'buy', 1, plan);
+      results.push(result);
+      expect(result.broken, JSON.stringify({ ...s, ...plan })).toEqual([]);
+    },
+    60_000,
+  );
+
+  it('the Stairs runs were paused, stopped and confirmed buys (not a vacuous pass)', () => {
+    expect(results).toHaveLength(STAIRS_SEEDS);
+    expect(results.some((r) => r.paused)).toBe(true);
+    expect(results.some((r) => (r.outcomes['SKIPPED:STOPPED'] ?? 0) > 0)).toBe(true);
+    expect(results.reduce((n, r) => n + (r.outcomes.CONFIRMED ?? 0), 0)).toBeGreaterThan(0);
+    expect(results.reduce((n, r) => n + r.executes, 0)).toBeGreaterThan(STAIRS_SEEDS * 20);
   });
 });

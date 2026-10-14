@@ -38,7 +38,12 @@ export {
   assertTransition,
 } from './states.ts';
 export type { FailReason, SkipReason, UnknownReason, WalletReason, WalletState } from './states.ts';
-export { aboveCeiling, startRun } from './executor.ts';
+export {
+  STAIRS_INTERVAL_MAX_MS,
+  STAIRS_INTERVAL_MIN_MS,
+  aboveCeiling,
+  startRun,
+} from './executor.ts';
 export type {
   ExecutorDeps,
   ExecutorEvent,
@@ -50,6 +55,8 @@ export type {
   RunPhase,
   RunSummary,
   Side,
+  StairsOptions,
+  StairsProgress,
   WalletEvent,
   WalletQuote,
   WalletResult,

@@ -4,7 +4,7 @@
  * Only the worker's message port is skipped: the client calls the handler directly.
  */
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
-import userEvent, { type UserEvent } from '@testing-library/user-event';
+import type { UserEvent } from '@testing-library/user-event';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { ERROR_MESSAGES } from '../../src/core/errors.ts';
 import {
@@ -22,6 +22,11 @@ import { App } from '../../src/ui/App.tsx';
 import { createVaultHandler, type VaultHandler } from '../../src/worker/vault.ts';
 import type { VaultClient } from '../../src/worker/vault-client.ts';
 import { mockStorage } from './fakes.ts';
+import { setupUser } from './user.ts';
+
+// The key derivation is not the subject here: the fast stand-in keeps the key bound to
+// the password, the salt and the cost (tests/helpers/fast-kdf.ts, BUNNDLY-74).
+vi.mock('@noble/hashes/scrypt.js', () => import('../helpers/fast-kdf.ts'));
 
 const PASSWORD = 'zielony Kot, 7 krzeseł; drabina';
 const MNEMONIC = `${'abandon '.repeat(11)}about`;
@@ -71,7 +76,7 @@ function setup(fileText = fixtureText) {
   const storage = mockStorage();
   storage.offerFile({ name: FILE_NAME, text: fileText });
   render(<App vault={realClient(handler)} storage={storage.env} statusPollMs={60_000} />);
-  return { handler, storage, user: userEvent.setup() };
+  return { handler, storage, user: setupUser() };
 }
 
 async function openPreview(user: UserEvent): Promise<void> {
@@ -341,6 +346,13 @@ describe('add wallets', () => {
     const { handler, user } = await unlocked();
     await createWallets(user, '1');
     await screen.findByText(/is not saved yet/u);
+    // Typing has no pause per key (setupUser): wait until the app guards the unsaved file,
+    // or the click can outrun the effect that reports it (as in BUNNDLY-64).
+    await waitFor(() => {
+      const pending = new Event('beforeunload', { cancelable: true });
+      window.dispatchEvent(pending);
+      expect(pending.defaultPrevented).toBe(true);
+    });
 
     const confirm = vi.spyOn(window, 'confirm').mockReturnValueOnce(false);
     await user.click(screen.getByRole('button', { name: 'Lock' }));

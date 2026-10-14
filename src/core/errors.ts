@@ -40,6 +40,7 @@ export const ERROR_MESSAGES = {
   GROUP_RUNNING:
     'This group is buying, selling or armed: its wallets stay in it until that ends. Wait for it, press STOP or DISARM.',
   INVALID_MINT_ADDRESS: 'This is not a valid token mint address (base58, 32–44 characters).',
+  INVALID_STAIRS: 'Stairs needs a step every 1 second to 24 hours and at least 1 wallet per step.',
   INVALID_CREATOR_ADDRESS:
     'This is not a valid creator wallet address (base58, 32 bytes, not the SOL mint).',
   INVALID_TARGET_ADDRESS: 'This is not a valid Solana address (base58, 32 bytes).',
@@ -62,6 +63,9 @@ export const ERROR_MESSAGES = {
   STORAGE_WRITE_FAILED: 'The fleet file could not be saved. Try again or choose another folder.',
   STORAGE_READ_FAILED: 'The file could not be read. Try again.',
   STORAGE_FILE_TOO_LARGE: 'The file is too large (over 1 MB). This is not a Bunndly fleet file.',
+  REMEMBER_UNAVAILABLE:
+    'This browser does not let the page keep data (for example in a private window). The fleet cannot be remembered on this device.',
+  NO_REMEMBERED_FLEET: 'No fleet is remembered on this device. Open the fleet file.',
 } as const satisfies Record<string, string>;
 
 export type ErrorCode = keyof typeof ERROR_MESSAGES;

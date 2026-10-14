@@ -1049,3 +1049,54 @@ Rejestr decyzji i rozbieżności z dokumentacją zewnętrzną. Nowe wpisy dopisu
   - Postęp w tabeli dalej pokazuje najnowszy przebieg (D-032). Gdy dwie grupy kupują naraz, wiersze starszego przebiegu wracają do stanu spoczynku, a jego stan widać na zakładce grupy.
   - Domyślna grupa floty sprzed grup nazywa się „All wallets” (D-046) i po pierwszym podziale zostaje pod tą nazwą, dopóki właściciel jej nie zmieni.
   - Odrzucone: komendy w **All** dla wszystkich grup naraz (jedno kliknięcie uruchamiałoby kilka grup z jednym celem) i usuwanie grupy razem z jej portfelami (portfel musi należeć do grupy, D-046).
+
+## D-050: Parametry handlu w tabeli (etap 2): zapis od razu, blokada w trakcie akcji, „Edit selected”
+
+- Data: 2026-10-14
+- Zadanie: BUNNDLY-71
+- Decyzja:
+  - **Zapis od razu:** kwota w wierszu zapisuje się w sejfie (`saveSettings` z `maxSpend` i `trade`) po Enter albo po wyjściu z pola i przycisku jednostki. Popover „Trade settings” (przycisk edycji w wierszu i „Edit selected” nad tabelą, układ z makiety `fleet-dashboard.html`) zapisuje przyciskiem „Apply” jeden portfel albo wszystkie zaznaczone jednym żądaniem. Szkice kwot i „Save table changes” dla kwot zniknęły; przycisk zapisuje już tylko zaznaczenie (**decyzja tymczasowa:** zaznaczenie zostaje szkicem, jak dotąd). Plik floty nadal zapisuje się osobnym kliknięciem (D-017).
+  - **Kolejka zapisów:** zapisy idą po kolei, każdy z ustawień, które zostawił poprzedni. Dwie szybkie zmiany nie nadpisują się nawzajem.
+  - **Wartość domyślna:** puste pole kwoty w wierszu to wartość domyślna floty (wpis znika). W Popoverze puste pole zostawia obecną wartość każdego portfela (jak w makiecie), a słowo „Default” przywraca wartość floty. „Auto” w polu slippage to `null` (D-045). Kwota w SOL usuwa procent i odwrotnie.
+  - **Blokada:** pole kwoty i Popover są wyłączone dla portfeli z trwającego zakupu albo sprzedaży swojej grupy (wiersze przebiegu w `buyView` i `buy` grupy w statusie) i dla wszystkich portfeli grupy z uzbrojonym watcherem. Podpowiedź: „Can be changed after the run finishes or after STOP.”. Odpowiedź `WALLET_IN_RUN` z workera przywraca zapisaną wartość i pokazuje tę samą podpowiedź.
+  - **Kolumny** jak w makiecie: Priority fee i Slippage za kwotą, każda jako dwie plakietki (kupno zielona ze strzałką do środka, sprzedaż czerwona ze strzałką na zewnątrz; `title` mówi to samo). Opłata priorytetowa jest tylko do odczytu, bo na drodze Jupitera nie jest wysyłana (D-045); pola w Popoverze i w Ustawieniach są wyłączone. Części sprzedaży nie ma w makiecie: nie ma kolumny, jest pole „Sell part” w Popoverze pod siatką.
+  - **Kwota w wierszu zostaje polem z przyciskiem jednostki**, choć makieta pokazuje w tej kolumnie sam tekst: polecenie Krystiana z 14.10.2026 („modyfikowalne pole żeby móc wpisać nową wartość cały czas”) wygrywa z makietą (potwierdził Andy 14.10.2026). Pole wygląda jak `.amt` z makiety: znak SOL i sama liczba, a ramka pola i przycisku pojawia się dopiero po najechaniu albo przy fokusie.
+  - **„Max spend for all” i „% of balance”** (dawne akcje zbiorcze, BUNNDLY-14) zastępuje „Edit selected” z kwotą w SOL albo w %. Procent jest teraz parametrem portfela liczonym na starcie przebiegu (D-045), a nie kwotą wyliczoną z salda w chwili kliknięcia.
+  - **Wartości domyślne floty** w Ustawieniach („Trade defaults”) zapisuje „Save settings” razem z resztą ustawień. Puste pole slippage oznacza Auto, a pusta kwota oznacza brak kwoty domyślnej.
+  - **Gotowość w pasku komend (D-048):** BUY i ARM liczą jako gotowy zaznaczony portfel z kwotą kupna, własną albo domyślną, w SOL albo w %, a nie tylko z wpisem `maxSpend`. Kwota do wydania w podsumowaniu i w potwierdzeniu liczy procent z ostatniego odczytu salda. Kwoty zapisują się od razu, więc nie ma już blokady „najpierw zapisz max spend”.
+- Konsekwencje / alternatywy:
+  - Każda zmiana kwoty daje nowy tekst pliku do zapisania; „Create wallets” czeka na zapis pliku jak dotąd.
+  - Odrzucone: zapis kwot przyciskiem „Save table changes” (zadanie wymaga zapisu po Enter) i blokada całej tabeli w trakcie przebiegu (portfele spoza przebiegu i spoza uzbrojonej grupy wolno zmieniać, D-046).
+
+## D-051: Zapamiętana flota i okno bez hasła: wszystko w workerze, klucz pliku jako nieeksportowalny CryptoKey
+
+- Data: 2026-10-14
+- Zadanie: BUNNDLY-52
+- Decyzja:
+  - **Co i gdzie:** IndexedDB strony (baza `bunndly`, magazyn `remember`) ma trzy rekordy: `account` (tekst zaszyfrowanego pliku floty, ten sam co na dysk, i `fileId` = nazwa floty i czas utworzenia), `session` (okno bez hasła) i `prefs` (czy pamiętać i jak długo okno). Czyta je i zapisuje **wyłącznie worker** (`src/worker/remember.ts`, `src/storage/remember-idb.ts`). Do interfejsu trafia tylko nazwa floty, liczba portfeli i ustawienia (`remembered`).
+  - **Wariant B okna:** rekord `session` trzyma klucz pliku floty z sesji (już dziś `extractable: false`, użycia `encrypt` i `decrypt`) jako `CryptoKey` oraz znacznik AES-GCM nad pustym tekstem z danymi uwierzytelnionymi `{v, fileId, expiresAt}`. Zmieniony czas wygaśnięcia albo rekord innego pliku nie przechodzi znacznika i rekord znika. Wznowienie otwiera plik tym kluczem bez hasła i bez scrypt (`openKeystoreWithKey`). Okno z limitem liczy się od ostatniej aktywności, tak jak automatyczna blokada (polecenie Andy'ego z 14.10.2026): aktywność przy otwartej flocie zapisuje rekord od nowa z `expiresAt` = teraz + okno, najwyżej raz na minutę, w kolejce workera po bieżącym żądaniu. Wariant A z zadania (klucz opakowujący i zaszyfrowane nim surowe bajty klucza ze scrypt) odrzucony po dowodzie w Chromium z 14.10.2026 (komentarz w BUNNDLY-52). Właściwości są takie same, ale A wymaga wydania surowych bajtów klucza z `crypto.ts`, a kopia profilu daje w A te bajty na zawsze; w B tylko możliwość użycia klucza w tej przeglądarce. Andy potwierdził B, a Krystian brzmienie SPEC 6.9 („Tak”, 14.10.2026).
+  - **Kto usuwa rekord okna:** Lock, „Forget this device”, wyłączenie pamiętania, otwarcie innego pliku, upływ okna (przy wznowieniu) i każdy błąd odszyfrowania. Automatyczna blokada usuwa okno ograniczone czasem. Okna bez limitu (polecenie Krystiana: „wyłączenie auto-lock w ustawieniach do ponownego włączenia”, wariant „Window without a limit”) automatyczna blokada nie usuwa: zeruje tylko klucze w pamięci workera. Potwierdził to Andy 14.10.2026, a Ustawienia pokazują wtedy ostrzeżenie (SPEC 6.9). Zmiany hasła aplikacja nie ma, więc ten przypadek z zadania nie występuje.
+  - **Okno:** 15 min, 1 h, 2 h albo bez limitu, w Ustawieniach („This device”). **Decyzja tymczasowa (14.10.2026):** domyślnie 15 min — do potwierdzenia przez Krystiana. Pamiętanie jest domyślnie włączone (Krystian, 12.10.2026); opcja jest przy tworzeniu floty, przy otwieraniu pliku i w Ustawieniach.
+  - **Spójność z plikiem na dysku:** każdy zapis, który daje nowy tekst pliku (ustawienia, sieć, nowe portfele), aktualizuje też kopię w IndexedDB, jeśli to ta sama flota. Ostrzeżenie o niezapisanym pliku na dysku działa jak dotąd.
+  - **Przeglądarka bez IndexedDB** (np. okno prywatne odrzuca bazę): pierwszy błąd wyłącza funkcję, opcja jest wyłączona z wyjaśnieniem, reszta działa jak dotąd (`REMEMBER_UNAVAILABLE`).
+  - Reguła ESLint `no-restricted-globals` dla `indexedDB` zostaje; jedyne dozwolone użycie ma wyłączenie w dwóch liniach `remember-idb.ts` z odsyłaczem do tej decyzji.
+- Konsekwencje / alternatywy:
+  - `prefs` zostaje w IndexedDB także przy wyłączonym pamiętaniu (`{remember: false, windowMs}`), żeby wybór przetrwał odświeżenie. Nie ma w nim danych floty.
+  - Kod uruchomiony na stronie w czasie okna może otworzyć flotę bez hasła (SPEC 6.9). Bez okna kopia profilu daje tylko szyfrogram, jak plik na dysku.
+  - Odrzucone: zapis czegokolwiek w `localStorage` albo `sessionStorage`, zapis z wątku interfejsu i trzymanie surowych bajtów klucza (wariant A).
+
+## D-052: Stairs w silniku i w workerze: kroki o stałych godzinach, pauza bez zmiany kroków już rozpoczętych
+
+- Data: 2026-10-14
+- Zadanie: BUNNDLY-61 (PR 1: harmonogram; ekran w PR 2)
+- Decyzja:
+  - **Krok:** stała liczba portfeli (`perStep`, co najmniej 1) w stałym odstępie (`intervalMs`, 1 s do 24 h, liczba całkowita ms); potwierdzone przez Krystiana („tak”, komentarz Andy'ego w BUNNDLY-61). Złe parametry worker odrzuca kodem `INVALID_STAIRS` przed jakimkolwiek zapytaniem; executor odrzuca je też sam (`RangeError`), bo `perStep` 0 budowałby kroki bez końca.
+  - **Godziny kroków są bezwzględne:** krok k zaczyna się w chwili startu przebiegu + k × odstęp. Długi krok (ponowienia, wolne `/execute`) nie przesuwa następnych. W trybie B start liczy się od wykrycia, tak jak dotąd (`triggeredAt`).
+  - **Kroki budowane z portfeli gotowych do zakupu:** portfel pominięty przed `/order` (brak salda, brak odczytu, brak tokenów) nie zajmuje miejsca w kroku.
+  - **Stan `SCHEDULED`** (między `IDLE` a `QUEUED`): portfel czeka na swój krok, zdarzenie niesie `scheduledAt`. Wznowienie po pauzie wysyła `SCHEDULED` jeszcze raz z nową godziną.
+  - **Pauza** (`pauseStairs`, `resumeStairs`, z grupą jak `stop`): wstrzymuje następne kroki i każde nowe `/order`, także portfeli już w kolejce. Transakcje wysłane kończą się normalnie. Wznowienie przesuwa wszystkie kroki jeszcze nierozpoczęte o czas pauzy. Pauza przebiegu Immediate albo po starcie ostatniego kroku nic nie zmienia. Nazwy różnią się od `resume` z BUNNDLY-52 (wznowienie zapamiętanej sesji).
+  - **STOP** pomija portfele z kroków jeszcze nierozpoczętych jako `SKIPPED:STOPPED`, bez zapytań.
+  - **Grupy:** harmonogram dotyczy jednej grupy (polecenie Andy'ego); pauza i STOP jednej grupy nie zmieniają kroków innej. Limiter `/order` jest nadal wspólny dla planu, więc krok większy niż budżet okna czeka na limiter jak przy Immediate.
+- Konsekwencje / alternatywy:
+  - Odrzucone: kroki liczone od końca poprzedniego kroku (jeden wolny portfel opóźniałby całą flotę) i kroki budowane ze wszystkich zaznaczonych portfeli (pominięte dawałyby puste kroki).
+  - Przełącznik Immediate / Stairs na pasku komend robi Mark w BUNNDLY-73; ekran postępu kroków, pauza i wznowienie w UI to PR 2 tego zadania.

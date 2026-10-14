@@ -9,7 +9,8 @@
  * `vi.mock('@noble/hashes/scrypt.js', () => import('../helpers/fast-kdf.ts'))`.
  * The key still depends on the password, the salt and the cost, so a wrong password or a
  * changed salt fails AES-GCM exactly as before. Real scrypt stays under test in
- * `tests/core/keystore/**` and, through the whole worker, in `tests/worker/vault.test.ts`.
+ * `tests/core/keystore/**` and, through the whole worker, in `tests/worker/real-kdf.test.ts`
+ * (BUNNDLY-74).
  */
 import { sha256 } from '@noble/hashes/sha2.js';
 

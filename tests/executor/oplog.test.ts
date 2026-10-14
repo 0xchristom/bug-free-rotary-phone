@@ -93,6 +93,7 @@ describe('log entries', () => {
       wallets: 1,
       counts: {
         IDLE: 0,
+        SCHEDULED: 0,
         QUEUED: 0,
         QUOTING: 0,
         SIGNING: 0,
@@ -136,6 +137,7 @@ describe('network (BUNNDLY-44)', () => {
       wallets: 1,
       counts: {
         IDLE: 0,
+        SCHEDULED: 0,
         QUEUED: 1,
         QUOTING: 0,
         SIGNING: 0,

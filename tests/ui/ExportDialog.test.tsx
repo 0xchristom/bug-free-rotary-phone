@@ -1,12 +1,17 @@
 // @vitest-environment jsdom
 /** Plain export dialog (BUNNDLY-11) against the real vault handler. */
 import { cleanup, render, screen, within } from '@testing-library/react';
-import userEvent, { type UserEvent } from '@testing-library/user-event';
+import type { UserEvent } from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { App } from '../../src/ui/App.tsx';
 import { createVaultHandler } from '../../src/worker/vault.ts';
 import type { VaultClient } from '../../src/worker/vault-client.ts';
 import { mockStorage } from './fakes.ts';
+import { setupUser } from './user.ts';
+
+// The key derivation is not the subject here: the fast stand-in keeps the key bound to
+// the password, the salt and the cost (tests/helpers/fast-kdf.ts, BUNNDLY-74).
+vi.mock('@noble/hashes/scrypt.js', () => import('../helpers/fast-kdf.ts'));
 
 const PASSWORD = 'zielony Kot, 7 krzeseł; drabina';
 const MNEMONIC = `${'abandon '.repeat(11)}about`;
@@ -46,7 +51,7 @@ async function fleetScreen() {
   render(
     <App vault={clientOf(handler)} storage={env} statusPollMs={60_000} balanceRefreshMs={60_000} />,
   );
-  const user = userEvent.setup();
+  const user = setupUser();
   await user.click(
     await screen.findByRole(
       'button',
@@ -137,7 +142,7 @@ describe('wizard', () => {
     const handler = createVaultHandler();
     const storage = mockStorage();
     render(<App vault={clientOf(handler)} storage={storage.env} statusPollMs={60_000} />);
-    const user = userEvent.setup();
+    const user = setupUser();
     await user.click(await screen.findByRole('button', { name: 'Create a new fleet' }));
     await user.type(screen.getByLabelText('Fleet name'), 'Nowa');
     await user.type(screen.getByLabelText('Password'), PASSWORD);

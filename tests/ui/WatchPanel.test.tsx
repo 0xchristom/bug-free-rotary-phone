@@ -532,6 +532,7 @@ describe('detections and progress', () => {
       wallets: 3,
       counts: {
         IDLE: 3,
+        SCHEDULED: 0,
         QUEUED: 0,
         QUOTING: 0,
         SIGNING: 0,
