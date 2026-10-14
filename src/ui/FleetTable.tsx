@@ -1,4 +1,13 @@
-import { memo, useCallback, useId, useMemo, useState, type ReactNode } from 'react';
+import {
+  memo,
+  useCallback,
+  useId,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
 import { addressUrl, transactionUrl, type Explorer, type Network } from '../core/network.ts';
 import { walletTrade, type TradeSettingsV1 } from '../core/trade.ts';
 import {
@@ -9,7 +18,9 @@ import {
   type WalletState,
 } from '../executor/states.ts';
 import { VERIFY_MESSAGES, type VerifyStatus } from '../executor/verify.ts';
+import type { FeedState } from '../chain/balance-stream.ts';
 import { AddressQr } from './AddressQr.tsx';
+import { FEED_LABELS } from './shell-status.ts';
 import { rowState, type RowState } from './fleet-math.ts';
 import { shortAddress } from './short-address.ts';
 import { formatSol, formatUnits } from './sol.ts';
@@ -225,6 +236,20 @@ function Pair({
 const FleetRow = memo(function FleetRow(p: RowProps) {
   p.probe?.(p.index);
   const [qrOpen, setQrOpen] = useState(false);
+  // A changed balance flashes its cell once (BUNNDLY-57); the first value does not. Done
+  // on the element, so the row still renders once per change; CSS turns the animation off
+  // with prefers-reduced-motion.
+  const balanceRef = useRef<HTMLSpanElement>(null);
+  const shownBalance = useRef(p.balance);
+  useLayoutEffect(() => {
+    const before = shownBalance.current;
+    shownBalance.current = p.balance;
+    const el = balanceRef.current;
+    if (el === null || before === null || p.balance === null || before === p.balance) return;
+    el.classList.remove('bal-flash');
+    el.getBoundingClientRect(); // a reflow restarts the animation of a quick second change
+    el.classList.add('bal-flash');
+  }, [p.balance]);
   const { index, onTrade } = p;
   const save = useCallback((patch: WalletPatch) => onTrade(index, patch), [index, onTrade]);
   const maxSpend = p.spend;
@@ -323,7 +348,7 @@ const FleetRow = memo(function FleetRow(p: RowProps) {
         {p.balance === null ? (
           NONE
         ) : (
-          <span className="bal">
+          <span ref={balanceRef} className="bal">
             <SolIcon />
             {formatSol(p.balance)}
           </span>
@@ -465,7 +490,14 @@ export interface FleetTableProps {
   readonly groupNames?: ReadonlyMap<number, string> | undefined;
   /** Wallets of running groups, with why their amount and row buy are off. */
   readonly frozen?: ReadonlyMap<number, string>;
+  /** Live or polling balances (BUNNDLY-57), said above the balance column. */
+  readonly feed?: FeedState | null;
 }
+
+const FEED_TITLES: Readonly<Record<FeedState, string>> = {
+  live: 'Balances change as soon as the network confirms a transfer.',
+  polling: 'Balances are read every few seconds: the live connection is not up.',
+};
 
 /** A column header that sorts the table; `aria-sort` says how it is sorted now. */
 function SortHeader({
@@ -474,6 +506,7 @@ function SortHeader({
   sortKey,
   sort,
   onSort,
+  note,
 }: {
   readonly label: string;
   /** Accessible name of the column when it differs from the visible label. */
@@ -481,6 +514,8 @@ function SortHeader({
   readonly sortKey: SortKey;
   readonly sort: Sort;
   readonly onSort: (key: SortKey) => void;
+  /** Shown next to the sort button, outside it (the column's name stays `name`). */
+  readonly note?: ReactNode;
 }) {
   const active = sort.key === sortKey;
   return (
@@ -499,6 +534,7 @@ function SortHeader({
         {label}
         <SortIcon />
       </button>
+      {note}
     </th>
   );
 }
@@ -667,6 +703,13 @@ export function FleetTable(t: FleetTableProps) {
                 sortKey="balance"
                 sort={sort}
                 onSort={onSort}
+                note={
+                  t.feed ? (
+                    <span className="feed-tag" data-feed={t.feed} title={FEED_TITLES[t.feed]}>
+                      {FEED_LABELS[t.feed]}
+                    </span>
+                  ) : null
+                }
               />
               <SortHeader
                 label="Buy amount"

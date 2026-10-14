@@ -66,7 +66,8 @@ async function setup() {
   });
   const events: ExecutorEvent[] = [];
   h.onEvent((e) => {
-    if (e.kind !== 'watch') events.push(e);
+    // Watcher and live balance events are not the executor's (BUNNDLY-57)
+    if (e.kind !== 'watch' && e.kind !== 'balance') events.push(e);
   });
   await h.handle({
     type: 'create',

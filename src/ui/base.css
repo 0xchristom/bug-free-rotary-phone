@@ -609,6 +609,42 @@ table.wallets tr.unsel td:not(.c-check, .c-acts) {
   font-variant-numeric: tabular-nums;
 }
 
+/* A balance that just changed (BUNNDLY-57): one short flash, none with reduced motion. */
+.bal-flash {
+  border-radius: var(--r-chip);
+  animation: bal-flash 1.2s ease-out;
+}
+
+@keyframes bal-flash {
+  from {
+    background: var(--ok-bg);
+    box-shadow: 0 0 0 4px var(--ok-bg);
+  }
+  to {
+    background: transparent;
+    box-shadow: 0 0 0 4px transparent;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bal-flash {
+    animation: none;
+  }
+}
+
+/* Live or polling, next to the balance column header (BUNNDLY-57). */
+.feed-tag {
+  margin-left: var(--s-2);
+  font-size: var(--fs-caption);
+  font-weight: 500;
+  text-transform: none;
+  color: var(--warn);
+}
+
+.feed-tag[data-feed='live'] {
+  color: var(--ok);
+}
+
 .cap {
   max-width: 240px;
   margin-top: var(--s-0);
