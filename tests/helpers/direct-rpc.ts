@@ -17,14 +17,19 @@ export const CASE = devnet.cases[0] as (typeof devnet.cases)[number];
 export const CASE_LAMPORTS = 2_000_000n;
 /** Tokens the captured buyer got: post − pre balance in the transaction meta. */
 export const CASE_TOKENS = 3_570_451_702_257n - 1_794_848_238_309n;
-/** Real rent of a 165-byte account (getMinimumBalanceForRentExemption on devnet). */
-export const RENT_165 = 2_039_280n;
+/**
+ * Rent of a 165-byte account on devnet: getMinimumBalanceForRentExemption(165) from
+ * api.devnet.solana.com, read 2026-10-14 22:35 UTC (D-053 has the same number).
+ */
+export const RENT_165 = 1_488_440n;
+/** The same on mainnet, the number a hard-coded constant would carry. */
+export const MAINNET_RENT_165 = 2_039_280n;
 
 export interface FakeChain {
   genesis: string;
   /** Lamports of every address asked about. */
   balance: bigint;
-  /** Rent the RPC answers for any size; null: the real value for 165 bytes. */
+  /** Rent the RPC answers for any size; null: devnet's value for 165 bytes. */
   rent: bigint | null;
   /** The wallet's token account exists (no rent to pay). */
   tokenAccountExists: boolean;

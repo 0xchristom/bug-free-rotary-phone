@@ -80,7 +80,7 @@ export function buyRouteOf(network: Network): BuyRoute | null {
 
 /** One sentence for the UI where buying is switched off on the network. */
 export const NO_BUY_ROUTE_MESSAGE =
-  'Buying and the watcher are off on Devnet: Jupiter works on Mainnet only.';
+  'Buying and the watcher are off on this network: it has no buy route.';
 
 export function heliusHost(network: Network): string {
   return CONFIG[network].heliusHost;

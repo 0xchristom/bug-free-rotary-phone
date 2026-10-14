@@ -18,6 +18,7 @@ import {
   CASE,
   CASE_LAMPORTS,
   CASE_TOKENS,
+  MAINNET_RENT_165,
   RENT_165,
   fakeDirectRpc,
   type FakeChain,
@@ -96,8 +97,9 @@ describe('getOrder', () => {
   });
 
   it('balance = amount + token account rent + wrapped SOL rent + fees + reserve builds; 1 lamport less does not', async () => {
-    const need = CASE_LAMPORTS + RENT_165 + RENT_165 + FEES + RESERVE; // 16 085 560
-    expect(need).toBe(16_085_560n);
+    // 2 000 000 + 1 488 440 + 1 488 440 + 7 000 + 10 000 000, added by hand.
+    const need = CASE_LAMPORTS + RENT_165 + RENT_165 + FEES + RESERVE;
+    expect(need).toBe(14_983_880n);
     const enough = await order(setup({ balance: need }).route);
     expect(enough.transaction).not.toBeNull();
     const short = await order(setup({ balance: need - 1n }).route);
@@ -105,9 +107,9 @@ describe('getOrder', () => {
     expect(short.buildError?.reason).toBe('INSUFFICIENT_FUNDS');
   });
 
-  it('the rent comes from the chain: a higher rent than the usual 2 039 280 refuses the same balance', async () => {
+  it('the rent comes from the chain: where it is the mainnet 2 039 280, the devnet-sized balance is refused', async () => {
     const usual = CASE_LAMPORTS + RENT_165 + RENT_165 + FEES + RESERVE;
-    const { route, fake } = setup({ balance: usual, rent: 2_500_000n });
+    const { route, fake } = setup({ balance: usual, rent: MAINNET_RENT_165 });
     const o = await order(route);
     expect(o.buildError?.reason).toBe('INSUFFICIENT_FUNDS');
     expect(fake.count('getMinimumBalanceForRentExemption')).toBeGreaterThan(0);

@@ -933,7 +933,7 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
     return url === null ? null : createTransport(url);
   };
 
-  /** Buying needs a route on the fleet's network; devnet has none yet (D-041). */
+  /** Buying needs a route on the fleet's network (D-041); devnet buys directly since BUNNDLY-48. */
   const requireBuyRoute = (vault: UnlockedVault): void => {
     if (buyRouteOf(networkOf(vault)) === null) throw new AppError('NO_BUY_ROUTE_ON_NETWORK');
   };
