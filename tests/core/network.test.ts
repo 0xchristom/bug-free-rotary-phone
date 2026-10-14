@@ -30,12 +30,12 @@ const SIG = '5'.repeat(88);
 const ADDRESS = '6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P';
 
 describe('addresses per network', () => {
-  it('mainnet: Helius HTTP and WebSocket, public RPC', () => {
+  it('mainnet: Helius HTTP and WebSocket, no public RPC (403 to a page, D-057)', () => {
     expect(heliusRpcUrl('mainnet', 'abc-123')).toBe(
       'https://mainnet.helius-rpc.com/?api-key=abc-123',
     );
     expect(heliusWsUrl('mainnet', 'abc-123')).toBe('wss://mainnet.helius-rpc.com/?api-key=abc-123');
-    expect(publicRpcUrl('mainnet')).toBe('https://api.mainnet.solana.com');
+    expect(publicRpcUrl('mainnet')).toBeNull();
   });
 
   it('devnet: Helius HTTP and WebSocket, public RPC', () => {

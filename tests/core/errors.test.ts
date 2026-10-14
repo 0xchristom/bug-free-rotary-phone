@@ -30,6 +30,7 @@ describe('ERROR_MESSAGES', () => {
         'NO_BUY_ROUTE_ON_NETWORK',
         'INVALID_SETTINGS',
         'RPC_UNAVAILABLE',
+        'PUBLIC_RPC_REFUSED',
         'NOT_A_TOKEN_MINT',
         'INVALID_TARGET_ADDRESS',
         'TARGET_IS_TOKEN_ACCOUNT',

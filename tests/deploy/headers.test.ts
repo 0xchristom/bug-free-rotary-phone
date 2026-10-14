@@ -46,7 +46,6 @@ describe('public/_headers', () => {
         'https://*.helius-rpc.com',
         'wss://*.helius-rpc.com',
         'https://api.jup.ag',
-        'https://api.mainnet.solana.com',
         'https://api.devnet.solana.com',
       ],
       'worker-src': ["'self'"],
