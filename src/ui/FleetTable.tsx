@@ -40,6 +40,7 @@ import type { BuyRow } from './use-buy.ts';
 import {
   DEFAULT_SORT,
   WALLET_FILTERS,
+  filled,
   matchesFilter,
   matchesSearch,
   nextSort,
@@ -54,6 +55,7 @@ import {
   Avatar,
   Checkbox,
   Chip,
+  ClockIcon,
   CopyIcon,
   ExternalIcon,
   IconButton,
@@ -160,9 +162,11 @@ function stateLabel(row: BuyRow, side: Side): string {
   if (row.state === 'UNKNOWN' && row.reason?.code === 'EXECUTE_NO_ANSWER') {
     return 'Checking the chain';
   }
-  if (row.state === 'SKIPPED' && row.reason?.code === 'DRY_RUN') return 'DRY-RUN';
+  if (row.state === 'SKIPPED' && row.reason?.code === 'DRY_RUN') return 'Simulated';
   if (row.state === 'SKIPPED' && row.reason?.code === 'STOPPED') return 'Stopped';
   if (row.state === 'CONFIRMED' && side === 'sell') return 'Sold';
+  // "Filled" exactly when the Filled tab counts the row: the chain read agreed (BUNNDLY-94)
+  if (side === 'buy' && filled(row)) return 'Filled';
   if (retrying(row)) return 'Retrying';
   return STATE_LABELS[row.state];
 }
@@ -215,12 +219,12 @@ function idleStatus(
   if (maxSpend === null || maxSpend === 0n) return { text: 'No amount', tone: 'muted' };
   if (balance === null) return { text: 'No balance yet', tone: 'muted' };
   if (state.reserveTooLow) return { text: 'Low reserve', tone: 'danger' };
-  return { text: 'Ready', tone: 'ok' };
+  return { text: 'Idle', tone: 'ok' };
 }
 
 /**
  * The wallet's last message under its state: why it ended as it did, or what the chain
- * check found after a buy. DRY-RUN says it in the chip already.
+ * check found after a buy. DRY-RUN says it in the chip already ("Simulated").
  */
 function lastMessage(buy: BuyRow | null): { readonly text: string; readonly title: string } | null {
   if (buy === null) return null;
@@ -476,7 +480,11 @@ const FleetRow = memo(function FleetRow(p: RowProps) {
         ) : p.buy === null ? (
           <Chip tone={idle.tone}>{idle.text}</Chip>
         ) : (
-          <Chip tone={stateTone(p.buy)} dot={stateTone(p.buy) === 'run'}>
+          <Chip
+            tone={stateTone(p.buy)}
+            dot={stateTone(p.buy) === 'run' && p.buy.state !== 'SCHEDULED'}
+            icon={p.buy.state === 'SCHEDULED' ? <ClockIcon /> : undefined}
+          >
             {stateLabel(p.buy, p.side)}
           </Chip>
         )}
