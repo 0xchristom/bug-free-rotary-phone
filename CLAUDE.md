@@ -49,6 +49,9 @@ CI w GitHub Actions działa tylko ręcznie (D-012). Bramką jakości są lokalne
 | zmiana widoczna na ekranie                                       | build produkcyjny i `npm run preview` (z nagłówkami CSP), Chromium, 1280 i 1920 px, 0 naruszeń CSP; wersji mobilnej nie ma i nie jest testowana |
 | tylko dokumenty                                                  | `npm run format:check` i sprawdzenie, że dokument nie kłamie o stanie                                                                           |
 
+- **Jeden pełny przebieg na PR.** Pełną komendę puszcza autor na dokładnie tym headzie, który oddaje; liczby (testy, czas, hash) w przekazaniu. Andy przy odbiorze puszcza na tym samym headzie `npm ci`, `lint`, `typecheck`, `build` (zawsze na dokładnie tym headzie, który idzie do squasha) i testy plików, których dotyczy zmiana, oraz `test:sim` przy zmianach w `src/executor/**`, `src/jupiter/**` i `src/worker/**`. Pełny `npm test` u Andy'ego tylko wtedy, gdy head różni się od przebiegu autora.
+- **Mutacje przy odbiorze**: kilka celowanych, na ścieżkach pieniędzy i w workerze, każda na jednym pliku testów. Zmiana tylko w UI: mutacje autora wystarczą.
+- **PR od świeżego `main`, bez stosów.** Gałąź nie stoi na innej otwartej gałęzi; potrzebny kod czeka na merge.
 - **Dwie liczby, nie jedna:** liczba testów i czas, porównane z poprzednim przebiegiem. Wzrost liczby jest normalny. Spadek liczby albo dużo krótszy czas znaczy, że przebieg nie doszedł do końca; jego wyniku nie cytujesz.
 - **Jeden ciężki przebieg naraz** na maszynie (pełne testy, symulacja, build). Dwa równoległe dają fałszywe czerwone. Długi przebieg w tle ma limit czasu.
 
