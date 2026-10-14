@@ -5,7 +5,12 @@ import type { VaultPreview } from '../../worker/protocol.ts';
 import { useVault } from '../vault-state.ts';
 import { Button, Chip, Input, ProgressBar } from '../kit/index.ts';
 import { RememberOption } from '../remember-ui.tsx';
-import { rememberChoice, useRememberedView } from '../remember-view.ts';
+import {
+  confirmReplace,
+  REPLACE_KEPT,
+  rememberChoice,
+  useRememberedView,
+} from '../remember-view.ts';
 
 type Phase =
   | { readonly kind: 'pick'; readonly picking: boolean }
@@ -73,6 +78,11 @@ export function OpenScreen({ storage, onBack, onUnlocked }: OpenScreenProps) {
     setPassword(''); // cleared after every attempt, successful or not
     setProblem(null);
     const current = phase;
+    // The worker replaces (or forgets) the remembered fleet: ask while it has unsaved changes.
+    if (!(await confirmReplace(client, 'open'))) {
+      setProblem({ kind: 'error', message: REPLACE_KEPT });
+      return;
+    }
     setPhase({ ...current, unlocking: 0 });
     try {
       await client.request(

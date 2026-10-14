@@ -14,7 +14,12 @@ import { reportSaved } from '../use-pending-file.ts';
 import { useVault } from '../vault-state.ts';
 import { Button, Checkbox, Input, ProgressBar } from '../kit/index.ts';
 import { RememberOption } from '../remember-ui.tsx';
-import { rememberChoice, useRememberedView } from '../remember-view.ts';
+import {
+  confirmReplace,
+  REPLACE_KEPT,
+  rememberChoice,
+  useRememberedView,
+} from '../remember-view.ts';
 
 export const DEFAULT_WALLET_COUNT = 30;
 const MAX_WALLETS = 100;
@@ -171,6 +176,13 @@ export function WizardScreen({ storage, onBack, onDone, onUnsavedChange }: Wizar
     }
     setTouched(new Set());
     setSubmitted(false);
+    setError(null);
+    // The worker replaces (or forgets) the remembered fleet: ask while it has unsaved changes.
+    // Asked before the form is cleared, so "No" leaves it as typed.
+    if (!(await confirmReplace(client, 'create'))) {
+      setError(REPLACE_KEPT);
+      return;
+    }
     const secret = { password, mnemonic: importMnemonic ? mnemonic : undefined };
     // Clear the secrets from the form right away; only the worker keeps them.
     setPassword('');
