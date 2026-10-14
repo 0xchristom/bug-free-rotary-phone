@@ -947,3 +947,23 @@ Rejestr decyzji i rozbieżności z dokumentacją zewnętrzną. Nowe wpisy dopisu
   - Nowe komunikaty (`NO_TOKENS`, `NO_WALLETS_TO_SELL`, komunikaty kontroli sprzedaży) są po angielsku, jak reszta interfejsu (D-042).
   - Kolumna `side` przesuwa `network` o jedną pozycję w CSV.
   - Sprzedaż drogą bezpośrednią (BUNNDLY-63) dojdzie jako kolejna droga, nie jako zmiana tego przebiegu.
+
+## D-045: Parametry handlu na portfel (etap 1, silnik)
+
+- Data: 2026-10-14
+- Zadanie: BUNNDLY-58
+- Źródła (odczyt 2026-10-14):
+  - <https://developers.jup.ag/docs/openapi-spec/swap/v2/swap.yaml>, GET `/order`: `slippageBps` to liczba całkowita 0–10000; bez niej slippage dobiera Jupiter. Jest też `priorityFeeLamports` („Setting this overrides the automatic optimisation”) i `broadcastFeeType` (`maxCap` / `exactFee`).
+  - <https://developers.jup.ag/docs/swap/order-and-execute.md>: nie wymienia `priorityFeeLamports`; macierz wpływu na routing nie obejmuje opłaty ani slippage, jest tylko zdanie, że parametry opcjonalne mogą zawęzić routery.
+  - **Rozbieżność z zadaniem:** zadanie zakładało, że `/order` nie ma parametru opłaty priorytetowej. Specyfikacja OpenAPI go ma.
+- Decyzja:
+  - **Format:** w zaszyfrowanych ustawieniach floty dochodzi opcjonalne `trade` z `fleet` (wartości domyślne floty) i `wallets` (własne wartości portfeli). Brak pola we wpisie portfela oznacza wartość domyślną floty, `null` oznacza „Auto”. Opłaty zapisuję jako lamporty w tekście, slippage w punktach bazowych (10–10000, czyli 0,1–100%). Kwota kupna w SOL zostaje w `maxSpend`; procent salda to `buyPercent`. Oba naraz dla jednego portfela są niedozwolone.
+  - **Zgodność:** plik bez `trade` czyta się jako wartości domyślne (brak domyślnej kwoty, sprzedaż 100%, wszędzie Auto). Domyślne `trade` nie jest zapisywane, więc taki plik otwiera się też w wersji sprzed zmiany. Wartości spoza zakresu w pliku są zastępowane domyślnymi i zgłaszane w `resetTradeFields`, jak w D-019. Kształt (klucze, indeksy portfeli) pozostaje ścisły. **Decyzja tymczasowa:** bez podbicia `KEYSTORE_VERSION`, tak jak przy `network` w D-041.
+  - **Kwota procentowa:** `min(floor(saldo × p / 100), saldo − MIN_RESERVE)` z ostatniego odczytu salda w chwili startu (`src/executor/buy-plan.ts`). Kwota 0 daje `SKIPPED: INSUFFICIENT_SOL` bez zapytania.
+  - **Sejf trzyma plan przebiegu po obu stronach:** przy podpisie kupna limitem jest kwota portfela zamrożona na starcie przebiegu, a nie bieżące ustawienia. W trakcie przebiegu `saveSettings`, który zmienia parametry portfela biorącego w nim udział (także przez wartość domyślną, z której portfel korzysta), kończy się `WALLET_IN_RUN` (**decyzja tymczasowa** co do kodu). Zmiany innych portfeli przechodzą.
+  - **Slippage** trafia do `/order` jako `slippageBps` tylko wtedy, gdy nie jest Auto. Kupno bierze wartość kupna, sprzedaż wartość sprzedaży. Sprzedaż bez `percent` w żądaniu bierze część z ustawień portfela.
+  - **Opłata priorytetowa** jest zapisywana i walidowana (1 lamport–0,1 SOL), ale na drodze Jupitera nie trafia do `/order`. **Decyzja tymczasowa** do czasu sprawdzenia na prawdziwym API, czy ustawiona opłata zmienia router albo wyłącza darmowy gas.
+  - `saveSettings` bez `trade` zostawia zapisane parametry handlu. Dzięki temu ekrany, które ich nie znają, niczego nie kasują.
+- Konsekwencje / alternatywy:
+  - Odrzucone: kwota w SOL przeniesiona z `maxSpend` do `trade`. Wymagałoby to migracji, a pliki sprzed zmiany kupowałyby inaczej niż dotąd.
+  - Etap 2 (pola w tabeli, „Set for selected”, ustawienia domyślne na ekranie) korzysta z tych pól bez zmiany formatu.
