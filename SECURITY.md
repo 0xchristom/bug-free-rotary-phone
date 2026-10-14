@@ -64,7 +64,7 @@ Na życzenie użytkownika przeglądarka przechowuje w IndexedDB zaszyfrowany pli
 
 Na życzenie użytkownika przeglądarka może przez wybrany czas (15 min, 1 h lub 2 h, domyślnie 15 min) otwierać konto po odświeżeniu strony bez hasła. Przechowuje wtedy w IndexedDB klucz pliku konta jako nieeksportowalny klucz WebCrypto; nie przechowuje hasła, mnemonika ani kluczy prywatnych. Skutek: w tym czasie kod uruchomiony na tej stronie albo osoba z dostępem do profilu przeglądarki może otworzyć konto bez hasła. Lock, automatyczna blokada i „Forget this device” natychmiast usuwają ten zapis.
 
-Okno bez limitu czasu (decyzja tymczasowa z 14.10.2026, SPEC 6.9) trwa do Lock albo „Forget this device”. Wszystkie zapisy w IndexedDB robi wyłącznie worker (D-051).
+Wyjątek dotyczy okna bez limitu czasu (SPEC 6.9). Użytkownik może w Ustawieniach wybrać okno bez limitu czasu: wtedy rekord zostaje do Lock, »Forget this device«, otwarcia innego pliku albo błędu odszyfrowania, a każdy, kto ma dostęp do tego profilu przeglądarki, otwiera konto bez hasła. Ustawienia pokazują to ostrzeżenie przy wyborze tej opcji. Wszystkie zapisy w IndexedDB robi wyłącznie worker (D-051).
 
 ### Wersja hostowana
 

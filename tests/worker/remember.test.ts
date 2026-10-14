@@ -319,7 +319,8 @@ describe('passwordless window', () => {
     t += 10 * MINUTE;
     expect(h.checkAutoLock()).toBe(true);
     await call(h, { type: 'remembered' });
-    expect((await session(store))?.expiresAt).toBeNull();
+    expect(h.inspect().unlocked).toBeNull(); // the keys left the worker's memory
+    expect((await session(store))?.expiresAt).toBeNull(); // the record stays
 
     t += 30 * 24 * 60 * MINUTE;
     const next = vault(store);

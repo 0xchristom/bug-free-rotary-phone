@@ -201,7 +201,7 @@ Moduły `core`, `executor` i `jupiter` piszemy tak, by dało się je testować w
 9. **Zapamiętana flota i okno bez hasła** (BUNNDLY-52, D-051, zgoda Krystiana 12.10 i 14.10.2026):
    - Na życzenie użytkownika przeglądarka przechowuje w IndexedDB zaszyfrowany plik konta (ten sam szyfrogram co plik na dysku). Nie przechowuje hasła ani niczego jawnego: po powrocie na stronę konto odblokowuje się hasłem. Skutek: kto ma dostęp do profilu przeglądarki, ma dostęp do szyfrogramu, tak samo jak do pliku na dysku; ochroną jest hasło i scrypt. Użytkownik może w każdej chwili usunąć zapis z urządzenia.
    - Na życzenie użytkownika przeglądarka może przez wybrany czas (15 min, 1 h lub 2 h, domyślnie 15 min) otwierać konto po odświeżeniu strony bez hasła. Przechowuje wtedy w IndexedDB klucz pliku konta jako nieeksportowalny klucz WebCrypto; nie przechowuje hasła, mnemonika ani kluczy prywatnych. Skutek: w tym czasie kod uruchomiony na tej stronie albo osoba z dostępem do profilu przeglądarki może otworzyć konto bez hasła. Lock, automatyczna blokada i „Forget this device” natychmiast usuwają ten zapis.
-   - Decyzja tymczasowa (14.10.2026): na polecenie Krystiana można też wybrać okno bez limitu czasu. Trwa ono do Lock albo „Forget this device”, a automatyczna blokada go nie usuwa — do potwierdzenia brzmienia przez Andy'ego.
+   - Użytkownik może w Ustawieniach wybrać okno bez limitu czasu: wtedy rekord zostaje do Lock, »Forget this device«, otwarcia innego pliku albo błędu odszyfrowania, a każdy, kto ma dostęp do tego profilu przeglądarki, otwiera konto bez hasła. Ustawienia pokazują to ostrzeżenie przy wyborze tej opcji.
 
 ---
 

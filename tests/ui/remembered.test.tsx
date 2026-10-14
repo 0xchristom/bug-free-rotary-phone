@@ -164,15 +164,20 @@ describe('Settings, This device', () => {
       'Open without the password after a refresh for',
     );
     expect(select.selectedOptions[0]?.textContent).toBe('15 minutes');
+    expect(screen.queryByText(/^No time limit:/u)).toBeNull();
 
     await user.selectOptions(select, 'No time limit');
     await waitFor(async () => {
       expect((await store.get('session'))?.expiresAt).toBeNull();
     });
+    expect((await screen.findByText(/^No time limit:/u)).textContent).toBe(
+      'No time limit: the fleet opens without the password until you Lock, forget this device, open another fleet file or the file fails to decrypt. The auto-lock does not end it. Anyone with access to this browser profile can open the fleet without the password.',
+    );
     await user.selectOptions(select, '2 hours');
     await waitFor(async () => {
       expect(await store.get('prefs')).toEqual({ remember: true, windowMs: 120 * MINUTE });
     });
+    expect(screen.queryByText(/^No time limit:/u)).toBeNull();
 
     await user.click(screen.getByRole('checkbox', { name: 'Remember this fleet on this device' }));
     await waitFor(() => {

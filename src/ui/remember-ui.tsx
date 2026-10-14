@@ -17,6 +17,9 @@ export interface RememberOptionProps {
   readonly disabled?: boolean;
 }
 
+const NO_LIMIT_WARNING =
+  'No time limit: the fleet opens without the password until you Lock, forget this device, open another fleet file or the file fails to decrypt. The auto-lock does not end it. Anyone with access to this browser profile can open the fleet without the password.';
+
 const FORGET_CONFIRM_SETTINGS =
   'Forget this fleet on this device? The fleet file on your disk stays as it is. Next time you open the fleet from that file.';
 
@@ -83,6 +86,11 @@ export function DeviceSettings() {
         Meanwhile anyone using this browser profile, or code running on this page, can open the
         fleet without the password. Lock ends it at once, and the auto-lock ends a timed window.
       </p>
+      {remember && !unavailable && windowMs === null && (
+        <p className="notice warning" role="status">
+          {NO_LIMIT_WARNING}
+        </p>
+      )}
       {problem && (
         <p className="notice error" role="alert">
           {problem}
