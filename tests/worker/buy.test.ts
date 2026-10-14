@@ -239,7 +239,8 @@ describe('selected wallets and the target (BUNNDLY-59)', () => {
   it('a malformed wallet list is refused before anything is read or sent', async () => {
     const { h, jupiter } = await setup({ walletCount: 3 });
     const before = rpcReads.length;
-    for (const wallets of [[3], [0, 0], [-1], ['0'], [0.5], null, undefined, '0,1']) {
+    // absent is allowed: the group's active wallets buy (D-048)
+    for (const wallets of [[3], [0, 0], [-1], ['0'], [0.5], null, '0,1']) {
       expect(
         await codeOf(h.handle({ type: 'startBuy', mint: USDC, wallets })),
         JSON.stringify(wallets),

@@ -19,6 +19,7 @@ import { FakeClock } from '../helpers/fake-clock.ts';
 import { FakeJupiter } from '../helpers/fake-jupiter.ts';
 import { FakeSocket } from '../helpers/fake-socket.ts';
 import { launch, signatureOf } from '../helpers/launch-fixtures.ts';
+import { MINT_ACCOUNT } from '../helpers/mint-account.ts';
 import { USDC, buildTransaction, orderFor } from '../helpers/tx-fakes.ts';
 
 vi.setConfig({ testTimeout: 60_000 });
@@ -60,14 +61,19 @@ async function setup(
       case 'getMultipleAccounts':
         return {
           context: { slot: 1 },
-          value: (params[0] as string[]).map(() => ({
-            lamports: 1_000_000_000,
-            owner: '11111111111111111111111111111111',
-            data: ['', 'base64'],
-            executable: false,
-            rentEpoch: 0,
-            space: 0,
-          })),
+          // the mints the tests buy are token mints to the target check (BUNNDLY-59)
+          value: (params[0] as string[]).map((address) =>
+            address === USDC || address === MINT
+              ? MINT_ACCOUNT
+              : {
+                  lamports: 1_000_000_000,
+                  owner: '11111111111111111111111111111111',
+                  data: ['', 'base64'],
+                  executable: false,
+                  rentEpoch: 0,
+                  space: 0,
+                },
+          ),
         };
       case 'getSignaturesForAddress':
         return [];
@@ -164,13 +170,21 @@ async function setup(
     await clock.settle();
     return result;
   };
+  // The worker checks each mint once per session (BUNNDLY-59): here, before the buys, so
+  // a buy below costs no extra RPC time.
+  await withRpc(h.handle({ type: 'classifyTarget', address: USDC }));
+  await withRpc(h.handle({ type: 'classifyTarget', address: MINT }));
   const startBuy = async (id: string, mint = USDC) => {
     await withRpc(h.handle({ type: 'refreshBalances' }));
     await h.handle({ type: 'startBuy', group: id, mint });
     await clock.runUntil(clock.now() + SPREAD_MS);
   };
   const arm = async (id: string) => {
-    await withRpc(h.handle({ type: 'arm', group: id, creator: CREATOR }));
+    // two reads: what the creator address is (BUNNDLY-59), then the balances
+    const armed = h.handle({ type: 'arm', group: id, creator: CREATOR });
+    await clock.runUntil(clock.now() + 2 * RPC_DELAY_MS);
+    await armed;
+    await clock.settle();
     const socket = sockets.at(-1);
     if (!socket) throw new Error('no socket');
     socket.connect();
@@ -237,6 +251,30 @@ describe('a buy in one group', () => {
     expect(t.askedBy(MINT)).toEqual([3, 4, 5, 6, 7]);
     const [a, b] = (await t.status()).groups;
     expect(a?.buy?.runId).not.toBe(b?.buy?.runId);
+  });
+
+  it('a wallet list (BUNNDLY-59): only the listed wallets of the group buy, the saved selection aside', async () => {
+    const t = await setup();
+    // wallet 1 is unselected in the saved settings, wallet 0 is selected
+    await t.saveWith((s) => ({
+      ...s,
+      active: [
+        { index: 0, active: true },
+        { index: 1, active: false },
+      ],
+    }));
+    // a wallet of B in A's list: malformed, nothing is asked
+    expect(
+      await codeOf(t.h.handle({ type: 'startBuy', group: 'g1', mint: USDC, wallets: [2, 3] })),
+    ).toBe('INTERNAL_ERROR');
+    expect(t.orders).toHaveLength(0);
+    // the balances first: a buy without them skips every wallet
+    const read = t.h.handle({ type: 'refreshBalances' });
+    await t.clock.runUntil(t.clock.now() + RPC_DELAY_MS);
+    await read;
+    await t.h.handle({ type: 'startBuy', group: 'g1', mint: USDC, wallets: [1, 2] });
+    await t.untilIdle();
+    expect(t.askedBy(USDC)).toEqual([1, 2]);
   });
 
   it('with several groups the request must name one; an unknown group is refused', async () => {
