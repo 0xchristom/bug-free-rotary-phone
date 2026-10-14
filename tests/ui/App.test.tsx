@@ -57,7 +57,7 @@ describe('navigation', () => {
       'page',
     );
 
-    await user.click(within(nav).getByRole('button', { name: 'Fleet' }));
+    await user.click(within(nav).getByRole('button', { name: 'Dashboard' }));
     expect(screen.getByRole('heading', { name: 'Fleet' })).toBeTruthy();
     expect(within(screen.getByRole('contentinfo')).getByRole('status').textContent).toContain(
       '15 min',
@@ -146,7 +146,7 @@ describe('activity reporting', () => {
     renderApp(vault, 60_000);
     const nav = await screen.findByRole('navigation');
     await user.click(within(nav).getByRole('button', { name: 'Settings' }));
-    await user.click(within(nav).getByRole('button', { name: 'Fleet' }));
+    await user.click(within(nav).getByRole('button', { name: 'Dashboard' }));
     await user.keyboard('a');
     expect(vault.calls('activity')).toBe(1);
 
@@ -170,7 +170,7 @@ describe('nothing in storage or the URL (SPEC 6.1)', () => {
 
     const nav = await screen.findByRole('navigation');
     await user.click(within(nav).getByRole('button', { name: 'Settings' }));
-    await user.click(within(nav).getByRole('button', { name: 'Fleet' }));
+    await user.click(within(nav).getByRole('button', { name: 'Dashboard' }));
     await user.click(screen.getByRole('button', { name: 'Lock' }));
     await user.click(await screen.findByRole('button', { name: 'Create a new fleet' }));
     await user.click(screen.getByRole('button', { name: 'Back' }));
