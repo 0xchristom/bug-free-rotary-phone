@@ -373,7 +373,7 @@ describe('mode A', () => {
       within(row('W02')).getByText('All attempts are used up.', { selector: 'p.cap' }),
     ).toBeTruthy();
     expect(
-      within(row('W02')).getByText('All attempts are used up.', { selector: '.fill .cap' }),
+      within(row('W02')).getByText('All attempts are used up.', { selector: '.fill-cap' }),
     ).toBeTruthy();
     expect(within(row('W02')).queryByRole('link')).toBeNull();
 
