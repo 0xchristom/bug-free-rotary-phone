@@ -1,11 +1,11 @@
 // @vitest-environment jsdom
 /** Operations log panel on the fleet screen (BUNNDLY-25): counts events, downloads CSV/JSON. */
 import { act, cleanup, render, screen } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { WalletEvent } from '../../src/executor/index.ts';
 import { App } from '../../src/ui/App.tsx';
 import { mockStorage, mockVault, unlocked } from './fakes.ts';
+import { setupUser } from './user.ts';
 
 afterEach(cleanup);
 
@@ -46,7 +46,7 @@ async function setup() {
     />,
   );
   await screen.findByRole('heading', { name: 'Operations log' });
-  return { vault, storage, blobs, user: userEvent.setup() };
+  return { vault, storage, blobs, user: setupUser() };
 }
 
 describe('operations log panel', () => {

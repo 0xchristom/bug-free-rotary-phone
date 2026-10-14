@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 /** Settings screen (BUNNDLY-15) against the real vault handler. */
 import { cleanup, render, screen, within } from '@testing-library/react';
-import userEvent, { type UserEvent } from '@testing-library/user-event';
+import type { UserEvent } from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_GLOBAL_SETTINGS, openKeystore, parseKeystoreFile } from '../../src/core/index.ts';
 import { App } from '../../src/ui/App.tsx';
@@ -9,6 +9,11 @@ import type { VaultFileResult } from '../../src/worker/protocol.ts';
 import { createVaultHandler, type VaultHandler } from '../../src/worker/vault.ts';
 import type { VaultClient } from '../../src/worker/vault-client.ts';
 import { mockStorage } from './fakes.ts';
+import { setupUser } from './user.ts';
+
+// The key derivation is not the subject here: the fast stand-in keeps the key bound to
+// the password, the salt and the cost (tests/helpers/fast-kdf.ts, BUNNDLY-74).
+vi.mock('@noble/hashes/scrypt.js', () => import('../helpers/fast-kdf.ts'));
 
 const PASSWORD = 'zielony Kot, 7 krzeseł; drabina';
 const HELIUS_KEY = 'heliusKeyUiTest123';
@@ -35,7 +40,7 @@ async function setup() {
   } as VaultClient;
   const storage = mockStorage();
   render(<App vault={client} storage={storage.env} statusPollMs={60_000} />);
-  const user = userEvent.setup();
+  const user = setupUser();
   const nav = await screen.findByRole('navigation', {}, { timeout: 10_000 });
   await user.click(within(nav).getByRole('button', { name: 'Settings' }));
   await screen.findByRole('heading', { name: 'Settings' });
