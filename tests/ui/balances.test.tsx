@@ -139,8 +139,10 @@ describe('SOL balance refresh on the fleet screen', () => {
         : Promise.resolve(unlocked()),
     );
     await tick(REFRESH_MS);
-    expect(screen.getByRole('alert').textContent).toBe(
-      'The Helius API key is missing. Add it in Settings: balances, live buys and the watcher need it.',
-    );
+    // No key: the target strip says what to set up, without a separate error line (BUNNDLY-73)
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(
+      screen.getByRole('region', { name: 'Commands' }).querySelector('.watchtext')?.textContent,
+    ).toBe('Add the Helius API key in Settings');
   });
 });

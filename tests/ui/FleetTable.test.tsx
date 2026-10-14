@@ -241,7 +241,7 @@ describe('fleet table', () => {
 
   it('the balance is a dash before the first read, never a zero', async () => {
     setup({ holdBalances: true });
-    expect(await screen.findByText('Balances: loading…')).toBeTruthy();
+    expect(await screen.findByText('RPC: no read yet')).toBeTruthy();
     for (const label of ['W01', 'W02', 'W03']) expect(cells(label)[BALANCE]).toBe('—');
     expect(within(row('W01')).getByText('No amount')).toBeTruthy();
   });

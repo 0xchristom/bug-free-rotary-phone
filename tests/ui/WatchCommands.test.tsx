@@ -576,7 +576,7 @@ describe('detections and progress', () => {
     act(() => {
       vault.emit(started);
     });
-    expect(await screen.findByText(/0\/3 confirmed/u)).toBeTruthy();
-    expect(screen.getByText(/From detection to the first confirmation/u)).toBeTruthy();
+    expect(await screen.findByText(/^Fleet fill · 0 of 3 filled · DRY-RUN$/u)).toBeTruthy();
+    expect(screen.getByTitle('Counted from the detection')).toBeTruthy();
   });
 });

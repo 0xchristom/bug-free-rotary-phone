@@ -727,6 +727,12 @@ table.wallets tr.empty td {
   flex-wrap: wrap;
 }
 
+/* The shown group's tab and its menu (Rename, Delete) sit together. */
+.tab-with-menu {
+  display: inline-flex;
+  align-items: center;
+}
+
 .tab-sol {
   color: var(--fg-3);
   font-size: var(--fs-small);

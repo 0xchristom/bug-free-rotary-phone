@@ -46,6 +46,11 @@ export interface CommandBarProps {
   readonly reasons: CommandReasons;
   /** Why no command can run for this fleet at all (e.g. Devnet); shown with or without a target. */
   readonly blocked: string | null;
+  /**
+   * Something to set up first (no Helius key), said in the strip's status instead of a
+   * separate error line (BUNNDLY-73); null when nothing is missing.
+   */
+  readonly setup?: string | null;
   /** The newest token the watcher found (mode B), shown as a chip; Buy can buy it. */
   readonly detected: WatchDetection | null;
   /** Called with the checked target, or null while the field is empty, wrong or checking. */
@@ -94,6 +99,7 @@ export function CommandBar({
   busy,
   reasons,
   blocked,
+  setup = null,
   detected,
   onTarget,
   onArm,
@@ -233,6 +239,10 @@ export function CommandBar({
                 <span className="muted"> · last message {String(secondsAgo)} s ago</span>
               )}
             </>
+          ) : setup !== null ? (
+            <span className="conn" data-tone="wait">
+              {setup}
+            </span>
           ) : target?.kind.kind === 'wallet' ? (
             'Arm the fleet to buy the creator’s next token'
           ) : target ? (

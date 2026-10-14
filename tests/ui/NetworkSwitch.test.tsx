@@ -288,7 +288,7 @@ describe('balances follow the network', () => {
       expect(lateMainnet).not.toBeNull();
     });
     expect(screen.queryAllByText('1.5')).toEqual([]);
-    expect(screen.getByText('Balances: loading…')).toBeTruthy();
+    expect(screen.getByText('RPC: no read yet')).toBeTruthy();
     (lateMainnet as ((value: VaultBalances) => void) | null)?.(balances('devnet'));
     expect(await screen.findAllByText('7')).toHaveLength(3);
     expect(screen.queryAllByText('1.5')).toEqual([]);
@@ -335,7 +335,7 @@ describe('balances follow the network', () => {
     expect(await pressed()).toEqual(['Mainnet']);
     // 7 SOL is devnet's: not in the table, where “max spend as % of the balance” reads it.
     expect(screen.queryAllByText('7')).toEqual([]);
-    expect(screen.getByText('Balances: loading…')).toBeTruthy();
+    expect(screen.getByText('RPC: no read yet')).toBeTruthy();
 
     await user.click(screen.getByRole('button', { name: /^Fleet balance:/u }));
     expect(await screen.findAllByText('1.5')).toHaveLength(3);

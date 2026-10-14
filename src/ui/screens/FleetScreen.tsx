@@ -24,7 +24,7 @@ import {
   renameGroup,
   type MoveTarget,
 } from '../group-view.ts';
-import { GroupTabs } from '../GroupTabs.tsx';
+import { GroupTabs, MoveToGroup } from '../GroupTabs.tsx';
 import { ModeSwitch } from '../ModeSwitch.tsx';
 import { useHeaderSlots } from '../header-slots.ts';
 import { SettingsResetNotice } from '../SettingsResetNotice.tsx';
@@ -785,30 +785,23 @@ export function FleetScreen({
       ? 'A buy is running: change the mode when it ends.'
       : null;
   const { counts } = buyView;
-  const progress = viewRun && (
-    <span className="progress-bar" role="status" aria-live="polite">
+  // The run in the summary's fleet fill, worded as in the mockup (BUNNDLY-73).
+  const fill = viewRun && {
+    text:
+      `Fleet fill · ${String(counts.confirmed)} of ${String(viewRun.wallets)} filled` +
+      (counts.inProgress > 0 ? ` · ${String(counts.inProgress)} in flight` : '') +
+      (counts.failedOrSkipped > 0 ? ` · ${String(counts.failedOrSkipped)} failed or skipped` : '') +
+      (viewRun.dryRun ? ' · DRY-RUN' : '') +
+      (viewRun.phase === 'finished' ? ' · finished' : ''),
+    bar: (
       <ProgressBar
         label="Confirmed buys"
         value={counts.confirmed}
         max={viewRun.wallets}
         tone={viewRun.phase === 'finished' ? 'ok' : 'run'}
       />
-      <span>
-        <strong>
-          {counts.confirmed}/{viewRun.wallets} confirmed
-        </strong>
-        {' · '}
-        {counts.inProgress} in progress{' · '}
-        {counts.failedOrSkipped} failed or skipped
-        {viewRun.dryRun && ' · DRY-RUN'}
-        {viewRun.phase === 'finished' && ' · finished'}
-      </span>
-      <span className="muted">
-        {fromDetection ? 'From detection' : 'From start'} to the first confirmation:{' '}
-        {seconds(viewRun.firstConfirmMs)}, to the last: {seconds(viewRun.lastConfirmMs)}
-      </span>
-    </span>
-  );
+    ),
+  };
 
   return (
     <section className="screen dash" aria-labelledby={`${ids}-title`}>
@@ -854,6 +847,7 @@ export function FleetScreen({
         busy={commandBusy}
         reasons={reasons}
         blocked={buyBlocked}
+        setup={hasRpc ? null : 'Add the Helius API key in Settings'}
         detected={detected}
         onTarget={onTarget}
         onArm={onArm}
@@ -976,24 +970,30 @@ export function FleetScreen({
         explorer={global.explorer}
         network={global.network}
         above={
-          <GroupTabs
-            groups={groupTabs}
-            tab={tab}
-            onTab={setTabChoice}
-            allCount={info.wallets.length}
-            allLamports={fleetLamports}
-            moveCount={viewSelected.length}
-            moveBlocked={moveBlocked}
-            targetBlocked={targetBlocked}
-            onMove={onMove}
-            renameBlocked={shownGroup ? busyBlock(shownGroup.id) : null}
-            deleteBlocked={deleteBlocked}
-            onRename={onRename}
-            onDelete={onDelete}
-          />
+          // One group is the whole fleet: its tab would only repeat "All wallets" (BUNNDLY-73).
+          groupTabs.length >= 2 ? (
+            <GroupTabs
+              groups={groupTabs}
+              tab={tab}
+              onTab={setTabChoice}
+              allCount={info.wallets.length}
+              allLamports={fleetLamports}
+              renameBlocked={shownGroup ? busyBlock(shownGroup.id) : null}
+              deleteBlocked={deleteBlocked}
+              onRename={onRename}
+              onDelete={onDelete}
+            />
+          ) : null
         }
         tools={
           <>
+            <MoveToGroup
+              groups={groupTabs}
+              moveCount={viewSelected.length}
+              moveBlocked={moveBlocked}
+              targetBlocked={targetBlocked}
+              onMove={onMove}
+            />
             <CreateWallets room={room} limit={MAX_WALLETS} blocked={createBlocked} onCreate={add} />
             <Popover
               open={bulkOpen}
@@ -1050,14 +1050,8 @@ export function FleetScreen({
         tokenDecimals={balances.token?.decimals ?? null}
         firstFillMs={buyView.run?.firstConfirmMs ?? null}
         lastFillMs={buyView.run?.lastConfirmMs ?? null}
-        progress={progress}
-        readAt={
-          <span aria-live="polite">
-            {balances.fetchedAt
-              ? `Balances as of ${new Date(balances.fetchedAt).toLocaleTimeString('en-GB')}`
-              : 'Balances: loading…'}
-          </span>
-        }
+        fillFrom={fromDetection ? 'detection' : 'start'}
+        fill={fill}
       />
 
       <div className="dash-notes">
@@ -1067,7 +1061,8 @@ export function FleetScreen({
             delayed.
           </p>
         )}
-        {balances.error && (
+        {/* Without a Helius key the read cannot work: the target strip says what to do. */}
+        {balances.error && hasRpc && (
           <p className="field-error" role="alert">
             {balances.error}
           </p>
@@ -1125,8 +1120,4 @@ export function FleetScreen({
       </div>
     </section>
   );
-}
-
-function seconds(ms: number | null): string {
-  return ms === null ? '–' : `${(ms / 1000).toFixed(1)} s`;
 }

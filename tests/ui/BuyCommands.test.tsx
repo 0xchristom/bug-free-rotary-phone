@@ -296,8 +296,10 @@ describe('mode A', () => {
         }),
       );
     });
-    expect(await screen.findByText(/0\/3 confirmed/u)).toBeTruthy();
-    expect(screen.getByText(/2 in progress/u)).toBeTruthy();
+    // the mockup's wording (BUNNDLY-73): 2 queued wallets in flight, the skipped one not filled
+    expect(
+      await screen.findByText(/Fleet fill · 0 of 3 filled · 2 in flight · 1 failed or skipped/u),
+    ).toBeTruthy();
     expect(screen.getByText(/Do not close or reload this tab/u)).toBeTruthy();
     // two queued wallets are in flight; the skipped one needs attention
     expect([tabCount('In flight'), tabCount('Filled'), tabCount('Needs attention')]).toEqual([
@@ -348,9 +350,11 @@ describe('mode A', () => {
       vault.emit(runEvent('finished'));
     });
     finishBuy();
-    expect(await screen.findByText(/1\/3 confirmed/u)).toBeTruthy();
-    expect(screen.getByText(/0 in progress · 2 failed or skipped/u)).toBeTruthy();
-    expect(screen.getByText(/the first confirmation: 1\.2 s, to the last: 1\.2 s/u)).toBeTruthy();
+    expect(
+      await screen.findByText(/Fleet fill · 1 of 3 filled · 2 failed or skipped/u),
+    ).toBeTruthy();
+    // first and last fill: the one confirmation came 1 200 ms after the start
+    expect(screen.getByTitle('Counted from the start').textContent).toBe('+1.2 s · +1.2 s');
 
     // The row says the state and the wallet's last message; the transaction has its column
     // with the time since the start (sinceStartMs 1 200).
@@ -686,8 +690,7 @@ describe('100 wallets', () => {
       vault.emit(runEvent('started', 100));
       for (let i = 0; i < 100; i++) vault.emit(walletEvent(i, 'QUEUED'));
     });
-    await eventually(() => panel.getByText(/0\/100 confirmed/u));
-    expect(panel.getByText(/100 in progress/u)).toBeTruthy();
+    await eventually(() => panel.getByText(/Fleet fill · 0 of 100 filled · 100 in flight/u));
     renders.clear();
     act(() => {
       vault.emit(walletEvent(5, 'QUOTING'));

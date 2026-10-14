@@ -73,6 +73,11 @@ export function StatusBar({
                 Fallback RPC (public) <b>{String(read.ms)} ms</b>
               </span>
             )}
+            {read !== null && (
+              <span className="rail-item" aria-live="polite">
+                Balances as of {new Date(read.at).toLocaleTimeString('en-GB')}
+              </span>
+            )}
             <span className="rail-sep" aria-hidden="true" />
             {watch === null || socketTone === null ? (
               <span className="rail-item">WebSocket: off</span>

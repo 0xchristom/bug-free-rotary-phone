@@ -7,7 +7,7 @@ import {
   type MoveTarget,
 } from './group-view.ts';
 import { formatSol } from './sol.ts';
-import { Button, Chip, Input, Popover, cx } from './kit/index.ts';
+import { Button, Chip, IconButton, Input, Popover, cx } from './kit/index.ts';
 
 export interface GroupTab {
   readonly id: string;
@@ -25,6 +25,15 @@ export interface GroupTabsProps {
   readonly onTab: (id: string | null) => void;
   readonly allCount: number;
   readonly allLamports: bigint | null;
+  /** Why the shown group cannot be renamed or deleted now; null = it can. */
+  readonly renameBlocked: string | null;
+  readonly deleteBlocked: string | null;
+  readonly onRename: (name: string) => Promise<boolean>;
+  readonly onDelete: () => Promise<boolean>;
+}
+
+export interface MoveToGroupProps {
+  readonly groups: readonly GroupTab[];
   /** Why the selected wallets cannot move now, or null. */
   readonly moveBlocked: string | null;
   /** How many selected wallets would move. */
@@ -32,11 +41,6 @@ export interface GroupTabsProps {
   /** Why each group cannot take wallets now (by id), or no entry. */
   readonly targetBlocked: ReadonlyMap<string, string>;
   readonly onMove: (target: MoveTarget) => Promise<boolean>;
-  /** Why the shown group cannot be renamed or deleted now; null = it can. */
-  readonly renameBlocked: string | null;
-  readonly deleteBlocked: string | null;
-  readonly onRename: (name: string) => Promise<boolean>;
-  readonly onDelete: () => Promise<boolean>;
 }
 
 function sol(lamports: bigint | null): string {
@@ -111,25 +115,100 @@ function NameForm({
   );
 }
 
-type Open = 'move' | 'new' | 'rename' | 'delete' | null;
-
 /**
- * Wallet groups over the table (BUNNDLY-69): one tab per group with its wallets, SOL and
- * state from the worker, and "All". The tools change the groups; a running group keeps
- * its wallets and its name until it ends, and the disabled tool says so.
+ * "Move to group" in the filter row, next to Create wallets (BUNNDLY-69, look of BUNNDLY-73):
+ * the selected wallets go to a group or to a new one. With one group this is how the second
+ * one is made, so it is there even while the group tabs are not.
  */
-export function GroupTabs(p: GroupTabsProps) {
-  const [open, setOpen] = useState<Open>(null);
-  const shown = p.groups.find((g) => g.id === p.tab) ?? null;
+export function MoveToGroup(p: MoveToGroupProps) {
+  const [open, setOpen] = useState<'move' | 'new' | null>(null);
   const names = p.groups.map((g) => g.name);
   const close = (): void => {
     setOpen(null);
   };
-  const toggle = (which: Exclude<Open, null>): void => {
-    setOpen((was) => (was === which ? null : which));
-  };
   const move = async (target: MoveTarget): Promise<void> => {
     if (await p.onMove(target)) close();
+  };
+  return (
+    <Popover
+      open={open !== null}
+      onClose={close}
+      label="Move to group"
+      trigger={
+        <Button
+          size="sm"
+          disabled={p.moveBlocked !== null}
+          title={p.moveBlocked ?? undefined}
+          aria-description={p.moveBlocked ?? undefined}
+          aria-expanded={open !== null}
+          onClick={() => {
+            setOpen((was) => (was === null ? 'move' : null));
+          }}
+        >
+          Move to group
+        </Button>
+      }
+    >
+      {open === 'new' ? (
+        <NameForm
+          label={`New group for ${String(p.moveCount)} wallets`}
+          submit="Create and move"
+          taken={names}
+          onSubmit={(name) => move({ name })}
+          onCancel={close}
+        />
+      ) : (
+        <div className="pop-form">
+          <h3>Move {p.moveCount} wallets to</h3>
+          {p.groups.map((g) => {
+            const blocked = p.targetBlocked.get(g.id) ?? null;
+            return (
+              <Button
+                key={g.id}
+                size="sm"
+                disabled={blocked !== null}
+                title={blocked ?? undefined}
+                aria-description={blocked ?? undefined}
+                onClick={() => void move({ id: g.id })}
+              >
+                {g.name}
+              </Button>
+            );
+          })}
+          <Button
+            size="sm"
+            variant="primary"
+            onClick={() => {
+              setOpen('new');
+            }}
+          >
+            New group…
+          </Button>
+        </div>
+      )}
+    </Popover>
+  );
+}
+
+type Menu = 'menu' | 'rename' | 'delete' | null;
+
+const MENU_LABELS: Record<Exclude<Menu, null>, string> = {
+  menu: 'Group actions',
+  rename: 'Rename group',
+  delete: 'Delete group',
+};
+
+/**
+ * Wallet groups over the table (BUNNDLY-69), shown from two groups on (BUNNDLY-73): one tab
+ * per group with its wallets, SOL and state from the worker, and "All". The shown group's
+ * tab has a menu with Rename and Delete; a running group keeps its name and its wallets
+ * until it ends, and the disabled item says so.
+ */
+export function GroupTabs(p: GroupTabsProps) {
+  const [menu, setMenu] = useState<Menu>(null);
+  const names = p.groups.map((g) => g.name);
+  const close = (): void => {
+    setMenu(null);
   };
   return (
     <div className="tabsrow groups-row">
@@ -146,158 +225,105 @@ export function GroupTabs(p: GroupTabsProps) {
           <span className="tab-sol">{sol(p.allLamports)}</span>
         </button>
         {p.groups.map((g) => (
-          <button
-            key={g.id}
-            type="button"
-            className={cx('tab', p.tab === g.id && 'on')}
-            aria-pressed={p.tab === g.id}
-            onClick={() => {
-              p.onTab(g.id);
-            }}
-          >
-            {g.name} <span className="tab-count">{g.wallets.length}</span>
-            <span className="tab-sol">{sol(g.lamports)}</span>
-            <Chip tone={GROUP_STATE_TONES[g.state]} dot={g.state !== 'idle'}>
-              {GROUP_STATE_LABELS[g.state]}
-            </Chip>
-          </button>
-        ))}
-      </div>
-      <span className="spacer" />
-      <Popover
-        open={open === 'move' || open === 'new'}
-        onClose={close}
-        label="Move to group"
-        trigger={
-          <Button
-            size="sm"
-            disabled={p.moveBlocked !== null}
-            title={p.moveBlocked ?? undefined}
-            aria-description={p.moveBlocked ?? undefined}
-            aria-expanded={open === 'move' || open === 'new'}
-            onClick={() => {
-              toggle('move');
-            }}
-          >
-            Move to group
-          </Button>
-        }
-      >
-        {open === 'new' ? (
-          <NameForm
-            label={`New group for ${String(p.moveCount)} wallets`}
-            submit="Create and move"
-            taken={names}
-            onSubmit={(name) => move({ name })}
-            onCancel={close}
-          />
-        ) : (
-          <div className="pop-form">
-            <h3>Move {p.moveCount} wallets to</h3>
-            {p.groups.map((g) => {
-              const blocked = p.targetBlocked.get(g.id) ?? null;
-              return (
-                <Button
-                  key={g.id}
-                  size="sm"
-                  disabled={blocked !== null}
-                  title={blocked ?? undefined}
-                  aria-description={blocked ?? undefined}
-                  onClick={() => void move({ id: g.id })}
-                >
-                  {g.name}
-                </Button>
-              );
-            })}
-            <Button
-              size="sm"
-              variant="primary"
+          <span key={g.id} className="tab-with-menu">
+            <button
+              type="button"
+              className={cx('tab', p.tab === g.id && 'on')}
+              aria-pressed={p.tab === g.id}
               onClick={() => {
-                setOpen('new');
+                p.onTab(g.id);
               }}
             >
-              New group…
-            </Button>
-          </div>
-        )}
-      </Popover>
-      {shown && (
-        <>
-          <Popover
-            open={open === 'rename'}
-            onClose={close}
-            label="Rename group"
-            trigger={
-              <Button
-                size="sm"
-                disabled={p.renameBlocked !== null}
-                title={p.renameBlocked ?? undefined}
-                aria-description={p.renameBlocked ?? undefined}
-                aria-expanded={open === 'rename'}
-                onClick={() => {
-                  toggle('rename');
-                }}
+              {g.name} <span className="tab-count">{g.wallets.length}</span>
+              <span className="tab-sol">{sol(g.lamports)}</span>
+              <Chip tone={GROUP_STATE_TONES[g.state]} dot={g.state !== 'idle'}>
+                {GROUP_STATE_LABELS[g.state]}
+              </Chip>
+            </button>
+            {p.tab === g.id && (
+              <Popover
+                open={menu !== null}
+                onClose={close}
+                label={menu === null ? MENU_LABELS.menu : MENU_LABELS[menu]}
+                trigger={
+                  <IconButton
+                    size="tiny"
+                    variant="ghost"
+                    label={`Group actions: ${g.name}`}
+                    icon={<span aria-hidden="true">⋯</span>}
+                    aria-expanded={menu !== null}
+                    onClick={() => {
+                      setMenu((was) => (was === null ? 'menu' : null));
+                    }}
+                  />
+                }
               >
-                Rename
-              </Button>
-            }
-          >
-            <NameForm
-              label={`New name for ${shown.name}`}
-              submit="Rename"
-              taken={names.filter((n) => n !== shown.name)}
-              initial={shown.name}
-              onSubmit={async (name) => {
-                if (await p.onRename(name)) close();
-              }}
-              onCancel={close}
-            />
-          </Popover>
-          <Popover
-            open={open === 'delete'}
-            onClose={close}
-            label="Delete group"
-            trigger={
-              <Button
-                size="sm"
-                variant="danger"
-                disabled={p.deleteBlocked !== null}
-                title={p.deleteBlocked ?? undefined}
-                aria-description={p.deleteBlocked ?? undefined}
-                aria-expanded={open === 'delete'}
-                onClick={() => {
-                  toggle('delete');
-                }}
-              >
-                Delete group
-              </Button>
-            }
-          >
-            <div className="pop-form">
-              <p>
-                Delete {shown.name}? Its {shown.wallets.length} wallets go to{' '}
-                {p.groups[0]?.name ?? 'the first group'}.
-              </p>
-              <div className="actions end">
-                <Button size="sm" variant="ghost" onClick={close}>
-                  Cancel
-                </Button>
-                <Button
-                  size="sm"
-                  variant="danger"
-                  onClick={() => {
-                    void p.onDelete().then((ok) => {
-                      if (ok) close();
-                    });
-                  }}
-                >
-                  Delete
-                </Button>
-              </div>
-            </div>
-          </Popover>
-        </>
-      )}
+                {menu === 'rename' ? (
+                  <NameForm
+                    label={`New name for ${g.name}`}
+                    submit="Rename"
+                    taken={names.filter((n) => n !== g.name)}
+                    initial={g.name}
+                    onSubmit={async (name) => {
+                      if (await p.onRename(name)) close();
+                    }}
+                    onCancel={close}
+                  />
+                ) : menu === 'delete' ? (
+                  <div className="pop-form">
+                    <p>
+                      Delete {g.name}? Its {g.wallets.length} wallets go to{' '}
+                      {p.groups[0]?.name ?? 'the first group'}.
+                    </p>
+                    <div className="actions end">
+                      <Button size="sm" variant="ghost" onClick={close}>
+                        Cancel
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="danger"
+                        onClick={() => {
+                          void p.onDelete().then((ok) => {
+                            if (ok) close();
+                          });
+                        }}
+                      >
+                        Delete
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="pop-form">
+                    <Button
+                      size="sm"
+                      disabled={p.renameBlocked !== null}
+                      title={p.renameBlocked ?? undefined}
+                      aria-description={p.renameBlocked ?? undefined}
+                      onClick={() => {
+                        setMenu('rename');
+                      }}
+                    >
+                      Rename
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="danger"
+                      disabled={p.deleteBlocked !== null}
+                      title={p.deleteBlocked ?? undefined}
+                      aria-description={p.deleteBlocked ?? undefined}
+                      onClick={() => {
+                        setMenu('delete');
+                      }}
+                    >
+                      Delete group
+                    </Button>
+                  </div>
+                )}
+              </Popover>
+            )}
+          </span>
+        ))}
+      </div>
     </div>
   );
 }
