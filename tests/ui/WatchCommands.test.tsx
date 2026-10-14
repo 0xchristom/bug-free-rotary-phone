@@ -37,6 +37,8 @@ const CREATOR = 'FQ6WmS5szfK1NRVcGkAqeVbwNeL9kt4xJXhwviyWTB7K';
 const FLEET_ADDRESS = '9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM';
 const MINT = 'HEhuwZjGd8Za7jgjzzpsXJssnP89DQm4oYHghRpnpump';
 const SIG = `${'3'.repeat(40)}${'A'.repeat(48)}`;
+/** Why Buy and Sell of an armed group are off (the Sell text before BUNNDLY-86). */
+const ARMED_REASON = 'DISARM first: the armed watcher may buy this token at any moment.';
 
 /** Mock Web Audio: counts the tones. */
 function mockAudio() {
@@ -518,7 +520,25 @@ describe('detections and progress', () => {
     expect(within(table).getByRole('button', { name: `Copy mint ${MINT}` })).toBeTruthy();
   });
 
-  it('the bar shows the newest usable detection; BUY can buy it (BUNNDLY-59)', async () => {
+  it('armed: BUY on the bar and ▶ in the rows are off with DISARM first, a pasted mint too (BUNNDLY-86)', async () => {
+    const { user, requests } = setup();
+    await arm(user);
+    const input = screen.getByLabelText(TARGET_LABEL);
+    await user.clear(input);
+    await user.type(input, MINT);
+    await screen.findByText('Token · SPL', {}, TARGET_WAIT);
+    const buy = screen.getByRole('button', { name: 'Buy' });
+    expect(buy).toHaveProperty('disabled', true);
+    expect(buy.getAttribute('aria-description')).toBe(ARMED_REASON);
+    const row = screen.getByRole('button', { name: 'Buy Wallet 1' });
+    expect(row).toHaveProperty('disabled', true);
+    expect(row.getAttribute('aria-description')).toBe(ARMED_REASON);
+    await user.click(buy);
+    await user.click(row);
+    expect(requests.filter((r) => r.type === 'startBuy')).toEqual([]);
+  });
+
+  it('the bar shows the newest usable detection; BUY can buy it once disarmed (BUNNDLY-59, 86)', async () => {
     const { user, update } = setup();
     await arm(user);
     const buy = screen.getByRole('button', { name: 'Buy' });
@@ -540,13 +560,19 @@ describe('detections and progress', () => {
     });
     const chip = await screen.findByLabelText(`Detected token ${usable}`);
     expect(chip.textContent).toBe('Detected Cv3D…pump · LaunchLab');
-    expect(screen.getByRole('button', { name: 'Buy' })).toHaveProperty('disabled', false);
-    // the armed watcher may buy this token at any moment: no sell meanwhile
+    // still armed (continuous): the watcher buys, not the bar, and no sell meanwhile
+    expect(screen.getByRole('button', { name: 'Buy' }).getAttribute('aria-description')).toBe(
+      ARMED_REASON,
+    );
     const sell = screen.getByRole('button', { name: 'Sell' });
     expect(sell).toHaveProperty('disabled', true);
-    expect(sell.getAttribute('aria-description')).toBe(
-      'DISARM first: the armed watcher may buy this token at any moment.',
-    );
+    expect(sell.getAttribute('aria-description')).toBe(ARMED_REASON);
+    // a one-shot detection disarms the group: its token is the bar's to buy
+    update({ armed: false, connection: 'disconnected' });
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Buy' })).toHaveProperty('disabled', false);
+    });
+    expect(screen.getByLabelText(`Detected token ${usable}`)).toBeTruthy();
   });
 
   it('a buy started by a detection: the shared progress view counts from the detection', async () => {
