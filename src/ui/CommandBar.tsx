@@ -1,11 +1,24 @@
-import { useEffect, useEffectEvent, useId, useLayoutEffect, useRef, useState } from 'react';
+import {
+  useEffect,
+  useEffectEvent,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
 import type { TargetKind } from '../chain/target.ts';
 import { toUserMessage } from '../core/errors.ts';
-import type { WatchDetection } from '../watcher/watch.ts';
-import { isCreatorAddress, SOURCE_LABELS } from './watch-labels.ts';
+import type { WatchDetection, WatchStatus } from '../watcher/watch.ts';
+import {
+  connectionLabel,
+  connectionTone,
+  isCreatorAddress,
+  SOURCE_LABELS,
+} from './watch-labels.ts';
 import { shortAddress } from './short-address.ts';
 import { useVault } from './vault-state.ts';
-import { Button, Chip, Input } from './kit/index.ts';
+import { AimIcon, Button, Chip, InIcon, OutIcon, StopIcon, cx } from './kit/index.ts';
 
 /** What the target field holds once the worker read the account. */
 export interface Target {
@@ -25,22 +38,27 @@ export interface CommandBarProps {
   /** The target field's text; the screen keeps one per wallet group (BUNNDLY-69). */
   readonly text: string;
   readonly onText: (text: string) => void;
-  readonly dryRun: boolean;
-  /** The watcher is armed: the bar shows DISARM and the watched creator. */
-  readonly armed: boolean;
+  /** The shown group's watcher (its last arming), or null. */
+  readonly watch: WatchStatus | null;
+  /** The browser cannot keep the screen on while the watcher is armed. */
+  readonly wakeUnavailable: boolean;
   readonly busy: boolean;
   readonly reasons: CommandReasons;
   /** Why no command can run for this fleet at all (e.g. Devnet); shown with or without a target. */
   readonly blocked: string | null;
-  /** The newest token the watcher found (mode B), shown as a chip; BUY can buy it. */
+  /**
+   * Something to set up first (no Helius key), said in the strip's status instead of a
+   * separate error line (BUNNDLY-73); null when nothing is missing.
+   */
+  readonly setup?: string | null;
+  /** The newest token the watcher found (mode B), shown as a chip; Buy can buy it. */
   readonly detected: WatchDetection | null;
   /** Called with the checked target, or null while the field is empty, wrong or checking. */
   readonly onTarget: (target: Target | null) => void;
-  readonly onBuy: () => void;
-  readonly onSell: () => void;
   readonly onArm: () => void;
   readonly onDisarm: () => void;
-  readonly onStop: () => void;
+  /** Short messages about the target and the last command, under the strip. */
+  readonly children?: ReactNode;
 }
 
 /** Waits this long after the last keystroke before asking the worker. */
@@ -69,26 +87,24 @@ function isTyping(target: EventTarget | null): boolean {
 }
 
 /**
- * Command bar of the fleet (SPEC 11.4, BUNNDLY-59): one target field (a token mint or a
- * creator wallet, read by the worker) and ARM / BUY / SELL / STOP for the selected wallets.
- * A command that cannot run is disabled and says why. Shortcuts: B buy, S sell, Esc STOP,
- * never while typing in a field or with a dialog open.
+ * The target strip of the Dashboard (SPEC 11.4, BUNNDLY-59, mockup v2): one field for a
+ * token mint or a creator wallet, read by the worker, and on the right what the watcher
+ * does, with Arm / Disarm. Buy, Sell and Stop are in the toolbar (CommandButtons).
  */
 export function CommandBar({
   text,
   onText,
-  dryRun,
-  armed,
+  watch,
+  wakeUnavailable,
   busy,
   reasons,
   blocked,
+  setup = null,
   detected,
   onTarget,
-  onBuy,
-  onSell,
   onArm,
   onDisarm,
-  onStop,
+  children,
 }: CommandBarProps) {
   const { client } = useVault();
   const ids = useId();
@@ -147,6 +163,159 @@ export function CommandBar({
     report();
   }, [targetKey]);
 
+  const armed = watch?.armed ?? false;
+  const [now, setNow] = useState(() => Date.now());
+  // "Last message N s ago" moves while the watcher is armed.
+  useEffect(() => {
+    if (!armed) return;
+    const timer = setInterval(() => {
+      setNow(Date.now());
+    }, 1_000);
+    return () => {
+      clearInterval(timer);
+    };
+  }, [armed]);
+  const secondsAgo =
+    watch?.lastMessageAt == null
+      ? null
+      : Math.max(0, Math.round((now - watch.lastMessageAt) / 1000));
+  const helpId = `${ids}-help`;
+  // One sentence under the strip: why the command that fits the target is off.
+  const why =
+    blocked ??
+    (target?.kind.kind === 'wallet' && !armed
+      ? reasons.arm
+      : target !== null || detected !== null
+        ? reasons.buy
+        : null);
+  const tone = watch === null || !armed ? undefined : connectionTone(watch.connection);
+
+  return (
+    <section className="target" aria-label="Commands">
+      <label htmlFor={`${ids}-target`} className="target-label">
+        Target
+      </label>
+      <div className={cx('field', check.kind === 'error' && 'invalid')}>
+        <input
+          id={`${ids}-target`}
+          aria-label="Target: token mint or creator wallet"
+          value={text}
+          placeholder="Token address, or a creator wallet to watch"
+          spellCheck={false}
+          autoComplete="off"
+          aria-invalid={check.kind === 'error' ? true : undefined}
+          aria-describedby={helpId}
+          onChange={(e) => {
+            onText(e.target.value);
+          }}
+        />
+        {check.kind === 'checking' && <Chip tone="muted">Checking…</Chip>}
+        {target && (
+          <Chip tone={target.kind.kind === 'wallet' ? 'watch' : 'ok'}>
+            {kindLabel(target.kind)}
+          </Chip>
+        )}
+      </div>
+      {detected && (
+        <Chip tone="watch" aria-label={`Detected token ${detected.mint}`}>
+          <span title={detected.mint}>
+            Detected {shortAddress(detected.mint)} · {SOURCE_LABELS[detected.source]}
+          </span>
+        </Chip>
+      )}
+      <div className="watchline">
+        <span
+          className={cx('pulse', armed ? 'armed' : target?.kind.kind === 'mint' && 'live')}
+          aria-hidden="true"
+        />
+        <span className="watchtext">
+          {armed && watch ? (
+            <>
+              <b>Armed</b> · watching {shortAddress(watch.creator)} ·{' '}
+              <span className="conn" data-tone={tone}>
+                {connectionLabel(watch.connection, watch.attempt)}
+              </span>
+              {secondsAgo !== null && (
+                <span className="muted"> · last message {String(secondsAgo)} s ago</span>
+              )}
+            </>
+          ) : setup !== null ? (
+            <span className="conn" data-tone="wait">
+              {setup}
+            </span>
+          ) : target?.kind.kind === 'wallet' ? (
+            'Arm the fleet to buy the creator’s next token'
+          ) : target ? (
+            <>
+              <b>Ready</b> · Buy and Sell act on the selected wallets
+            </>
+          ) : (
+            'Paste a target to begin'
+          )}
+        </span>
+        {armed ? (
+          <Button variant="watch" icon={<AimIcon />} disabled={busy} onClick={onDisarm}>
+            Disarm
+          </Button>
+        ) : (
+          target?.kind.kind === 'wallet' && (
+            <Button
+              variant="watch"
+              icon={<AimIcon />}
+              disabled={reasons.arm !== null}
+              title={reasons.arm ?? undefined}
+              aria-description={reasons.arm ?? undefined}
+              onClick={onArm}
+            >
+              Arm
+            </Button>
+          )
+        )}
+      </div>
+      {/* Out of the notes row, so an empty row takes no height (it is absolutely placed). */}
+      {check.kind !== 'error' && (
+        <p className="sr-only" id={helpId}>
+          {target?.kind.kind === 'wallet'
+            ? 'Arm watches this wallet and buys every new token it creates.'
+            : target
+              ? 'Buy buys this token with the selected wallets.'
+              : 'A token mint to buy now, or a creator wallet to watch. Not saved in the fleet file.'}
+        </p>
+      )}
+      <div className="target-notes">
+        {check.kind === 'error' && (
+          <p className="field-error" id={helpId} role="alert">
+            {check.message}
+          </p>
+        )}
+        {why && <p className="muted cmd-why">{why}</p>}
+        {armed && (
+          <p className="muted" role="status">
+            The watcher is armed. Do not close or reload this tab: the watcher and the buy live only
+            in it.
+            {wakeUnavailable &&
+              ' The screen may turn off: the browser cannot keep it on, and a sleeping computer will not detect the token.'}
+          </p>
+        )}
+        {children}
+      </div>
+    </section>
+  );
+}
+
+export interface CommandButtonsProps {
+  readonly reasons: CommandReasons;
+  readonly onBuy: () => void;
+  readonly onSell: () => void;
+  readonly onStop: () => void;
+}
+
+/**
+ * Buy, Sell and Stop on the right of the toolbar (mockup v2). Shortcuts: B buy, S sell,
+ * Esc stop, never while typing in a field or with a dialog open. A command that cannot
+ * run is disabled and its description says why.
+ */
+export function CommandButtons({ reasons, onBuy, onSell, onStop }: CommandButtonsProps) {
   const commands = useRef({ onBuy, onSell, onStop, reasons });
   useEffect(() => {
     commands.current = { onBuy, onSell, onStop, reasons };
@@ -175,119 +344,44 @@ export function CommandBar({
     };
   }, []);
 
-  const helpId = `${ids}-help`;
-  const whyId = `${ids}-why`;
-  // One sentence under the bar: why the command that fits the target is off.
-  const why =
-    blocked ??
-    (target?.kind.kind === 'wallet' && !armed
-      ? reasons.arm
-      : target !== null || detected !== null
-        ? reasons.buy
-        : null);
-
   return (
-    <section className="cmd-bar" aria-label="Commands">
-      <div className="cmd-row">
-        <div className="cmd-target">
-          <label htmlFor={`${ids}-target`} className="sr-only">
-            Target: token mint or creator wallet
-          </label>
-          <Input
-            id={`${ids}-target`}
-            className="cmd-input"
-            value={text}
-            placeholder="Token mint or creator wallet"
-            spellCheck={false}
-            autoComplete="off"
-            invalid={check.kind === 'error'}
-            aria-describedby={helpId}
-            onChange={(e) => {
-              onText(e.target.value);
-            }}
-          />
-          {check.kind === 'checking' && <Chip tone="muted">Checking…</Chip>}
-          {target && (
-            <Chip tone={target.kind.kind === 'wallet' ? 'watch' : 'ok'}>
-              {kindLabel(target.kind)}
-            </Chip>
-          )}
-        </div>
-        {detected && (
-          <Chip tone="watch" aria-label={`Detected token ${detected.mint}`}>
-            <span title={detected.mint}>
-              Detected {shortAddress(detected.mint)} · {SOURCE_LABELS[detected.source]}
-            </span>
-          </Chip>
-        )}
-        <span className="spacer" />
-        <Chip tone={dryRun ? 'sim' : 'danger'} aria-label={dryRun ? 'Mode: DRY-RUN' : 'Mode: live'}>
-          {dryRun ? 'DRY-RUN' : 'LIVE'}
-        </Chip>
-        {armed ? (
-          <Button variant="warn" disabled={busy} onClick={onDisarm}>
-            DISARM
-          </Button>
-        ) : (
-          <Button
-            variant="watch"
-            disabled={reasons.arm !== null}
-            title={reasons.arm ?? undefined}
-            aria-description={reasons.arm ?? undefined}
-            onClick={onArm}
-          >
-            ARM
-          </Button>
-        )}
-        <Button
-          variant="success"
-          disabled={reasons.buy !== null}
-          title={reasons.buy ?? 'Shortcut: B'}
-          aria-description={reasons.buy ?? undefined}
-          aria-keyshortcuts="B"
-          onClick={onBuy}
-        >
-          BUY
-        </Button>
-        <Button
-          variant="danger"
-          disabled={reasons.sell !== null}
-          title={reasons.sell ?? 'Shortcut: S'}
-          aria-description={reasons.sell ?? undefined}
-          aria-keyshortcuts="S"
-          onClick={onSell}
-        >
-          SELL
-        </Button>
-        <Button
-          variant="warn"
-          disabled={reasons.stop !== null}
-          title={reasons.stop ?? 'Shortcut: Esc'}
-          aria-description={reasons.stop ?? undefined}
-          aria-keyshortcuts="Escape"
-          onClick={onStop}
-        >
-          STOP
-        </Button>
-      </div>
-      {check.kind === 'error' ? (
-        <p className="field-error" id={helpId} role="alert">
-          {check.message}
-        </p>
-      ) : (
-        <p className="hint" id={helpId}>
-          {target?.kind.kind === 'wallet'
-            ? 'ARM watches this wallet and buys every new token it creates.'
-            : target
-              ? 'BUY buys this token with the selected wallets.'
-              : 'A token mint to buy now, or a creator wallet to watch. Not saved in the fleet file.'}
-        </p>
-      )}
-      {why && (
-        <p className="muted cmd-why" id={whyId}>
-          {why}
-        </p>
-      )}
-    </section>
+    <>
+      <Button
+        variant="success"
+        icon={<InIcon />}
+        shortcut="B"
+        disabled={reasons.buy !== null}
+        title={reasons.buy ?? 'Shortcut: B'}
+        aria-description={reasons.buy ?? undefined}
+        aria-keyshortcuts="B"
+        onClick={onBuy}
+      >
+        Buy
+      </Button>
+      <Button
+        variant="danger"
+        icon={<OutIcon />}
+        shortcut="S"
+        disabled={reasons.sell !== null}
+        title={reasons.sell ?? 'Shortcut: S'}
+        aria-description={reasons.sell ?? undefined}
+        aria-keyshortcuts="S"
+        onClick={onSell}
+      >
+        Sell
+      </Button>
+      <Button
+        variant="warn"
+        icon={<StopIcon />}
+        shortcut="Esc"
+        disabled={reasons.stop !== null}
+        title={reasons.stop ?? 'Shortcut: Esc'}
+        aria-description={reasons.stop ?? undefined}
+        aria-keyshortcuts="Escape"
+        onClick={onStop}
+      >
+        Stop
+      </Button>
+    </>
   );
 }

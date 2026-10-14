@@ -46,9 +46,7 @@ import {
   InIcon,
   Input,
   OutIcon,
-  PlayIcon,
   Popover,
-  QrIcon,
   SearchIcon,
   SolIcon,
   SortIcon,
@@ -99,6 +97,10 @@ interface RowProps extends FleetRowData {
   readonly onBuy?: ((index: number) => void) | undefined;
   /** Why no buy can start now (the same for every row), or null. */
   readonly buyBlocked: string | null;
+  /** Sells this wallet's set part alone (mockup v2, BUNNDLY-73); absent: no row action. */
+  readonly onSell?: ((index: number) => void) | undefined;
+  /** Why no sell can start now (the same for every row), or null. */
+  readonly sellBlocked: string | null;
   /** The wallet's group name, shown in the "All" view (BUNNDLY-69); undefined: no column. */
   readonly group?: string | undefined;
   /** Why the wallet's group keeps its row buy now (it runs), or null; the amount follows `locked`. */
@@ -242,6 +244,7 @@ const FleetRow = memo(function FleetRow(p: RowProps) {
     p.frozen ??
     p.buyBlocked ??
     (state.ready ? null : 'This wallet is not ready: ' + idle.text.toLowerCase() + '.');
+  const rowSellBlocked = p.frozen ?? p.sellBlocked;
   const amountProblem = state.overBalance
     ? 'More than the wallet balance.'
     : state.reserveTooLow && state.reserve !== null
@@ -264,9 +267,33 @@ const FleetRow = memo(function FleetRow(p: RowProps) {
           <div>
             <b className="w-name">{p.label}</b>
             <span className="addr">
-              <span className="mono" title={p.address}>
-                {shortAddress(p.address)}
-              </span>
+              {/* The address opens its QR code (mockup v2 has no QR button, BUNNDLY-73). */}
+              <Popover
+                open={qrOpen}
+                onClose={() => {
+                  setQrOpen(false);
+                }}
+                label={`QR code of ${p.label}`}
+                className="qr-pop"
+                trigger={
+                  <button
+                    type="button"
+                    className="addr-btn mono"
+                    title={p.address}
+                    aria-label={`QR code ${p.label}`}
+                    aria-expanded={qrOpen}
+                    onClick={() => {
+                      setQrOpen((open) => !open);
+                    }}
+                  >
+                    {shortAddress(p.address)}
+                  </button>
+                }
+              >
+                <AddressQr address={p.address} />
+                <b>{p.label}</b>
+                <code className="address">{p.address}</code>
+              </Popover>
               <IconButton
                 size="tiny"
                 label={`Copy address ${p.label}`}
@@ -353,11 +380,24 @@ const FleetRow = memo(function FleetRow(p: RowProps) {
               size="sm"
               variant="success"
               label={`Buy ${p.label}`}
-              icon={<PlayIcon />}
+              icon={<InIcon />}
               disabled={rowBuyBlocked !== null}
               aria-description={rowBuyBlocked ?? undefined}
               onClick={() => {
                 p.onBuy?.(p.index);
+              }}
+            />
+          )}
+          {p.onSell && (
+            <IconButton
+              size="sm"
+              variant="danger"
+              label={`Sell ${p.label}`}
+              icon={<OutIcon />}
+              disabled={rowSellBlocked !== null}
+              aria-description={rowSellBlocked ?? undefined}
+              onClick={() => {
+                p.onSell?.(p.index);
               }}
             />
           )}
@@ -372,29 +412,6 @@ const FleetRow = memo(function FleetRow(p: RowProps) {
             locked={p.locked}
             onSave={save}
           />
-          <Popover
-            open={qrOpen}
-            onClose={() => {
-              setQrOpen(false);
-            }}
-            label={`QR code of ${p.label}`}
-            className="qr-pop"
-            trigger={
-              <IconButton
-                size="sm"
-                label={`QR code ${p.label}`}
-                icon={<QrIcon />}
-                aria-expanded={qrOpen}
-                onClick={() => {
-                  setQrOpen((open) => !open);
-                }}
-              />
-            }
-          >
-            <AddressQr address={p.address} />
-            <b>{p.label}</b>
-            <code className="address">{p.address}</code>
-          </Popover>
         </div>
       </td>
     </tr>
@@ -432,10 +449,18 @@ export interface FleetTableProps {
   readonly network?: Network;
   /** Controls on the right of the filter tabs. */
   readonly tools?: ReactNode;
+  /** Shown above the filter tabs: the wallet groups (BUNNDLY-69). */
+  readonly above?: ReactNode;
+  /** The rest of the toolbar after the search: the run mode and the commands (BUNNDLY-73). */
+  readonly toolbar?: ReactNode;
   /** Row action "Buy" with that wallet alone (BUNNDLY-59). */
   readonly onBuyWallet?: (index: number) => void;
   /** Why no buy can start now, for every row; null when rows may buy. */
   readonly rowBuyBlocked?: string | null;
+  /** Row action "Sell" with that wallet alone (BUNNDLY-73). */
+  readonly onSellWallet?: (index: number) => void;
+  /** Why no sell can start now, for every row; null when rows may sell. */
+  readonly rowSellBlocked?: string | null;
   /** Group name per wallet: shows the Group column (the "All" view, BUNNDLY-69). */
   readonly groupNames?: ReadonlyMap<number, string> | undefined;
   /** Wallets of running groups, with why their amount and row buy are off. */
@@ -562,6 +587,7 @@ export function FleetTable(t: FleetTableProps) {
 
   return (
     <div className="wallets-block">
+      {t.above}
       <div className="tabsrow">
         <div className="tabs" role="group" aria-label="Wallet filters">
           {WALLET_FILTERS.map((f) => (
@@ -600,6 +626,7 @@ export function FleetTable(t: FleetTableProps) {
         <span className="sel-count" aria-live="polite">
           {selectedCount} of {t.wallets.length} selected
         </span>
+        {t.toolbar}
       </div>
       <div className="wallets-wrap">
         <table className="wallets">
@@ -700,6 +727,8 @@ export function FleetTable(t: FleetTableProps) {
                 network={network}
                 onBuy={t.onBuyWallet}
                 buyBlocked={t.rowBuyBlocked ?? null}
+                onSell={t.onSellWallet}
+                sellBlocked={t.rowSellBlocked ?? null}
                 group={t.groupNames ? (t.groupNames.get(w.index) ?? NONE) : undefined}
                 frozen={t.frozen?.get(w.index) ?? null}
               />

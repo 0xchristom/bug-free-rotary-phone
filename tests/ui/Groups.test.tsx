@@ -217,8 +217,8 @@ describe('wallet groups (BUNNDLY-69)', () => {
   it('8 wallets: 3 selected move to a new group; the request carries exactly them', async () => {
     const { user, requests } = setup();
     await ready();
-    // one group of all 8 at first: 1.0 + 1.1 + … + 1.7 = 10.8 SOL
-    expect(tabText('All wallets')).toEqual({ count: '8', sol: '10.8 SOL', state: 'Idle' });
+    // one group of all 8 at first: no group tabs, as in the mockup (BUNNDLY-73)
+    expect(screen.queryByRole('group', { name: 'Wallet groups' })).toBeNull();
     await user.click(screen.getByRole('checkbox', { name: 'Select all wallets' }));
     for (const label of ['W02', 'W05', 'W07']) {
       await user.click(screen.getByRole('checkbox', { name: `Select ${label}` }));
@@ -250,7 +250,7 @@ describe('wallet groups (BUNNDLY-69)', () => {
     const { user, requests } = setup({ groups: TWO_GROUPS });
     await ready();
     await typeMint(user);
-    await user.click(screen.getByRole('button', { name: 'BUY' }));
+    await user.click(screen.getByRole('button', { name: 'Buy' }));
     expect(sent(requests, 'startBuy')).toEqual([
       { type: 'startBuy', mint: MINT, wallets: [0, 1, 2, 3, 4], group: 'g1' },
     ]);
@@ -264,8 +264,8 @@ describe('wallet groups (BUNNDLY-69)', () => {
     expect(screen.getByLabelText<HTMLInputElement>(TARGET_LABEL).value).toBe('');
     expect(sent(requests, 'stop')).toEqual([]);
     await typeMint(user);
-    expect(screen.getByRole('button', { name: 'BUY' })).toHaveProperty('disabled', false);
-    await user.click(screen.getByRole('button', { name: 'BUY' }));
+    expect(screen.getByRole('button', { name: 'Buy' })).toHaveProperty('disabled', false);
+    await user.click(screen.getByRole('button', { name: 'Buy' }));
     expect(sent(requests, 'startBuy').at(-1)).toEqual({
       type: 'startBuy',
       mint: MINT,
@@ -275,7 +275,7 @@ describe('wallet groups (BUNNDLY-69)', () => {
 
     await user.click(groupTab('Team A'));
     expect(screen.getByLabelText<HTMLInputElement>(TARGET_LABEL).value).toBe(MINT);
-    await user.click(screen.getByRole('button', { name: 'STOP' }));
+    await user.click(screen.getByRole('button', { name: 'Stop' }));
     expect(sent(requests, 'stop')).toEqual([{ type: 'stop', group: 'g1' }]);
     await eventually(() => {
       expect(tabText('Team A').state).toBe('Stopped');
@@ -289,7 +289,7 @@ describe('wallet groups (BUNNDLY-69)', () => {
     await user.click(groupTab('All'));
     expect(screen.getByRole('columnheader', { name: 'Group' })).toBeTruthy();
     // with two groups the bar's commands wait for a tab
-    expect(screen.getByRole('button', { name: 'BUY' })).toHaveProperty('disabled', true);
+    expect(screen.getByRole('button', { name: 'Buy' })).toHaveProperty('disabled', true);
     await typeMint(user);
     await user.click(screen.getByRole('button', { name: 'Buy W07' }));
     expect(sent(requests, 'startBuy')).toEqual([
@@ -309,11 +309,14 @@ describe('wallet groups (BUNNDLY-69)', () => {
 
     await user.click(groupTab('Team B'));
     const why = 'Team B is running: wait for it to end or press STOP.';
+    // Rename and Delete are in the shown group's menu (BUNNDLY-73)
+    await user.click(screen.getByRole('button', { name: 'Group actions: Team B' }));
     for (const name of ['Move to group', 'Rename', 'Delete group']) {
       const button = screen.getByRole('button', { name });
       expect(button).toHaveProperty('disabled', true);
       expect(button.getAttribute('aria-description')).toBe(why);
     }
+    await user.keyboard('{Escape}');
     const rowBuy = screen.getByRole('button', { name: 'Buy W04' });
     expect(rowBuy).toHaveProperty('disabled', true);
     expect(rowBuy.getAttribute('aria-description')).toBe(why);
@@ -337,6 +340,7 @@ describe('wallet groups (BUNNDLY-69)', () => {
       expect(tabText('Team C').count).toBe('1');
     });
 
+    await user.click(screen.getByRole('button', { name: 'Group actions: Team C' }));
     await user.click(screen.getByRole('button', { name: 'Rename' }));
     const field = screen.getByLabelText('New name for Team C');
     await user.clear(field);
@@ -348,6 +352,7 @@ describe('wallet groups (BUNNDLY-69)', () => {
     );
     await eventually(() => groupTab('Team Z'));
 
+    await user.click(screen.getByRole('button', { name: 'Group actions: Team Z' }));
     await user.click(screen.getByRole('button', { name: 'Delete group' }));
     await user.click(
       within(screen.getByRole('dialog', { name: 'Delete group' })).getByRole('button', {
@@ -403,7 +408,7 @@ describe('wallet groups (BUNNDLY-69)', () => {
     await ready();
     await user.click(groupTab('Team B'));
     await typeMint(user);
-    await user.click(screen.getByRole('button', { name: 'BUY' }));
+    await user.click(screen.getByRole('button', { name: 'Buy' }));
     const dialog = screen.getByRole('alertdialog', { name: 'Buy in live mode?' });
     const value = (term: string): string =>
       within(dialog).getByText(term).nextElementSibling?.textContent ?? '';

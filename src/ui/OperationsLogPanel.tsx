@@ -42,7 +42,7 @@ export function OperationsLogPanel({
 
   return (
     <section aria-labelledby={titleId}>
-      <h4 id={titleId}>Operations log</h4>
+      <h3 id={titleId}>Operations log</h3>
       <p className="muted">
         {size === 0
           ? 'No entries. Every wallet state change in a buy is recorded here.'

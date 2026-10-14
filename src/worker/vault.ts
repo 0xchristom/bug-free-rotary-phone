@@ -1453,10 +1453,15 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
     const rpcUrl = rpcUrlOf(vault);
     if (wsUrl === null || rpcUrl === null) throw new AppError('HELIUS_KEY_MISSING');
     buyWallets(vault, group, list); // the same checks as a buy, now rather than at the detection
+    const armSession = session;
     if ((await classify(vault, creator)).kind !== 'wallet') {
       throw new AppError('TARGET_KIND_MISMATCH');
     }
     await prepareRefresh(undefined)();
+    // Requests run one at a time today (`tail` in `handle`). The checks after the last
+    // await keep arm right without that queue too: one watcher per group, none over a buy.
+    if (session !== armSession || unlocked === null) throw new AppError('VAULT_LOCKED');
+    if (groupBusy(run)) throw new AppError(watchActive(run) ? 'WATCH_ARMED' : 'BUY_RUNNING');
     const rpc = createWatchRpc(
       createResilientTransport({
         primary: createTransport(rpcUrl),
@@ -1465,7 +1470,6 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
       }),
     );
     const net = options.net ?? {};
-    const armSession = session;
     run.watch = startWatch(
       {
         createWebSocket: net.createWebSocket ?? ((url) => new WebSocket(url)),

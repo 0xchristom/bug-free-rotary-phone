@@ -99,7 +99,11 @@ export function useBalances(
       (res) => {
         // The worker says where it read: the switch may have landed between ask and read.
         if (!stale() && res.network === askedNetwork) {
-          reportRead({ source: res.source, ms: Math.round(performance.now() - askedAt) });
+          reportRead({
+            source: res.source,
+            ms: Math.round(performance.now() - askedAt),
+            at: res.fetchedAt,
+          });
           setState({
             lamports: new Map(res.balances.map((b) => [b.index, b.lamports])),
             token: res.token

@@ -589,12 +589,12 @@ describe('unsaved file protection', () => {
     });
 
     const confirm = vi.spyOn(window, 'confirm').mockReturnValueOnce(false);
-    await user.click(screen.getByRole('button', { name: 'Fleet' }));
+    await user.click(screen.getByRole('button', { name: 'Dashboard' }));
     expect(confirm).toHaveBeenCalledTimes(1);
     expect(screen.getByRole('heading', { name: 'Fleet created' })).toBeTruthy();
 
     confirm.mockReturnValueOnce(true);
-    await user.click(screen.getByRole('button', { name: 'Fleet' }));
+    await user.click(screen.getByRole('button', { name: 'Dashboard' }));
     expect(screen.getByRole('heading', { name: 'Fleet' })).toBeTruthy();
   });
 

@@ -10,6 +10,8 @@ export interface RpcRead {
   readonly source: VaultBalances['source'];
   /** From the request to the vault until its answer, measured in the UI. */
   readonly ms: number;
+  /** When the worker read the balances (ISO time), shown in the rail (BUNNDLY-73). */
+  readonly at: string;
 }
 
 export type ReportRpcRead = (read: RpcRead) => void;

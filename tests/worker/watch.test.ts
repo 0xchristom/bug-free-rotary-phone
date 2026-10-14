@@ -533,6 +533,24 @@ describe('arm validation', () => {
     await t.h.handle({ type: 'disarm' });
   });
 
+  // Review of 59: arm awaits the target read and the balances; a second arm of the same
+  // group sent meanwhile passed the checks made before the awaits and started a second watcher.
+  it('two arms of one group at once: one watcher, the other gets WATCH_ARMED', async () => {
+    const t = await setup();
+    const first = t.h.handle({ type: 'arm', creator: CREATOR, wallets: all(t.h) });
+    const second = t.h.handle({ type: 'arm', creator: CREATOR, wallets: all(t.h) });
+    const outcomes = Promise.allSettled([first, second]);
+    await t.clock.runUntil(t.clock.now() + RPC_DELAY_MS);
+    await t.clock.runUntil(t.clock.now() + RPC_DELAY_MS);
+    const [a, b] = await outcomes;
+    expect(a.status).toBe('fulfilled');
+    expect(b.status).toBe('rejected');
+    expect(b.status === 'rejected' && (b.reason as { code?: string }).code).toBe('WATCH_ARMED');
+    await t.clock.settle();
+    expect(t.sockets).toHaveLength(1);
+    await t.h.handle({ type: 'disarm' });
+  });
+
   it('no wallet ready → NO_WALLETS_TO_BUY', async () => {
     const t = await setup();
     const s = await t.status();
