@@ -466,7 +466,7 @@ describe('state chip words of mockup v2 (BUNNDLY-94)', () => {
     await showMint(user);
     act(() => {
       vault.emit(runEvent('started', false));
-      vault.emit(walletEvent(0, 'QUEUED'));
+      vault.emit(walletEvent(0, 'QUEUED', { attempt: 0 }));
       vault.emit(walletEvent(1, 'SCHEDULED', { scheduledAt: 0 }));
     });
     await eventually(() => {
