@@ -28,6 +28,10 @@ import { FakeClock } from '../helpers/fake-clock.ts';
 import { FakeJupiter, type FakeJupiterScript } from '../helpers/fake-jupiter.ts';
 import { USDC, buildTransaction, orderFor } from '../helpers/tx-fakes.ts';
 
+// The key derivation is not the subject here: the fast stand-in keeps the key bound to
+// the password, the salt and the cost (tests/helpers/fast-kdf.ts, BUNNDLY-74).
+vi.mock('@noble/hashes/scrypt.js', () => import('../helpers/fast-kdf.ts'));
+
 vi.setConfig({ testTimeout: 60_000 });
 
 const PASSWORD = 'correct horse battery staple';

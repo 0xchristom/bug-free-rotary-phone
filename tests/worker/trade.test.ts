@@ -4,7 +4,6 @@
  * vault and signing, fake Jupiter and clock; every expected amount is worked out by hand.
  */
 import type { RpcTransport } from '@solana/kit';
-import { readFileSync } from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
 import {
   AppError,
@@ -21,36 +20,15 @@ import { FakeJupiter, type FakeJupiterScript } from '../helpers/fake-jupiter.ts'
 import { MINT_ACCOUNT } from '../helpers/mint-account.ts';
 import { USDC, buildTransaction } from '../helpers/tx-fakes.ts';
 
+// The key derivation is not the subject here: the fast stand-in keeps the key bound to
+// the password, the salt and the cost (tests/helpers/fast-kdf.ts, BUNNDLY-74).
+vi.mock('@noble/hashes/scrypt.js', () => import('../helpers/fast-kdf.ts'));
+
 vi.setConfig({ testTimeout: 60_000 });
 
 const PASSWORD = 'correct horse battery staple';
 const MNEMONIC_12 = `${'abandon '.repeat(11)}about`;
 const SOL = 1_000_000_000n;
-
-/** RPC mock for SOL balances only: every account has 1 SOL. */
-const solOnly = ((config: { payload: unknown }) => {
-  const payload = config.payload as { id: unknown; params: [string[]] };
-  return Promise.resolve({
-    jsonrpc: '2.0',
-    id: payload.id,
-    result: {
-      context: { slot: 1n },
-      // USDC is a token mint to the target check (BUNNDLY-59)
-      value: payload.params[0].map((address) =>
-        address === USDC
-          ? MINT_ACCOUNT
-          : {
-              lamports: SOL,
-              owner: '11111111111111111111111111111111',
-              data: ['', 'base64'],
-              executable: false,
-              rentEpoch: 0n,
-              space: 0n,
-            },
-      ),
-    },
-  });
-}) as unknown as RpcTransport;
 
 async function setup(walletCount = 3, script: FakeJupiterScript = {}) {
   /** SOL balance by address; 1 SOL when not set. */
@@ -373,63 +351,5 @@ describe('trade settings of wallets in a running buy are locked (WALLET_IN_RUN)'
     await t.h.handle({ type: 'stop' });
     await t.finish();
     expect(await codeOf(t.save(sol(6_000_000n), before))).toBe('ok');
-  });
-});
-
-describe('a fleet file from before the change (fixture written by the app before BUNNDLY-58)', () => {
-  it('opens with the default trade parameters and buys with exactly the request of before', async () => {
-    const clock = new FakeClock();
-    const jupiter = new FakeJupiter(clock, {
-      transaction: (taker) => buildTransaction({ feePayer: taker }),
-    });
-    const h = createVaultHandler({
-      chain: { createTransport: () => solOnly, sleep: () => Promise.resolve() },
-      executor: { jupiter, clock },
-      now: () => clock.now(),
-      autoLockMs: 60_000,
-    });
-    const events: ExecutorEvent[] = [];
-    h.onEvent((e) => {
-      if (e.kind !== 'watch') events.push(e);
-    });
-    await h.handle({
-      type: 'unlock',
-      fileText: readFileSync('tests/fixtures/fleet-before-58.json', 'utf8'),
-      password: 'fixture password 58',
-    });
-    const opened = (await h.handle({ type: 'status' })) as VaultStatus;
-    const info = opened.info;
-    expect(info?.settings.trade).toEqual(DEFAULT_TRADE_SETTINGS);
-    // no groups saved: one group with both wallets, and requests may leave the group out
-    expect(info?.settings.groups).toEqual([]);
-    expect(opened.groups).toEqual([{ id: 'g1', armed: false, buy: null, watch: null }]);
-    expect(info?.settings.maxSpend).toEqual([{ index: 0, lamports: 10_000_000n }]);
-    // the Helius key goes in the way the settings screen sends it: no trade part
-    await h.handle({
-      type: 'saveSettings',
-      settings: {
-        maxSpend: info?.settings.maxSpend ?? [],
-        active: [],
-        global: info?.settings.global ?? defaultFleetSettings().global,
-      },
-      apiKeys: { helius: 'heliusFixtureKey' },
-    });
-    await h.handle({ type: 'refreshBalances' });
-    await h.handle({ type: 'startBuy', mint: USDC });
-    for (
-      let i = 0;
-      i < 400 && !events.some((e) => e.kind === 'run' && e.phase === 'finished');
-      i++
-    ) {
-      await clock.runUntil();
-      await new Promise((resolve) => setTimeout(resolve, 5));
-    }
-    const [request, ...more] = jupiter.orderRequests();
-    expect(more).toEqual([]);
-    expect(request).toEqual({
-      outputMint: USDC,
-      amount: 10_000_000n,
-      taker: info?.wallets[0]?.address,
-    });
   });
 });

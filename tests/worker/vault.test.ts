@@ -24,7 +24,11 @@ import { createVaultHandler, type VaultHandler } from '../../src/worker/vault.ts
 import { USDC, buildTransaction, orderFor } from '../helpers/tx-fakes.ts';
 import { valueWords } from '../helpers/words.ts';
 
-// Real scrypt (N=2^17) on create/unlock and when re-opening files.
+// The key derivation is not the subject here: the fast stand-in keeps the key bound to
+// the password, the salt and the cost (tests/helpers/fast-kdf.ts, BUNNDLY-74).
+vi.mock('@noble/hashes/scrypt.js', () => import('../helpers/fast-kdf.ts'));
+
+// Real scrypt runs end to end in tests/worker/real-kdf.test.ts; here the fast stand-in.
 vi.setConfig({ testTimeout: 60_000, hookTimeout: 60_000 });
 
 const PASSWORD = 'correct horse battery staple';
