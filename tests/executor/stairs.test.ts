@@ -243,6 +243,28 @@ describe('pause and resume', () => {
     expect(firstOrders()).toEqual([0, 5_000, 5_000, 14_950]);
   });
 
+  it('a pause while the dispatcher waits for the limiter: no /order until the resume', async () => {
+    // 60 /order a minute: 54 in the first window, the 55th waits for the limiter until
+    // about 60 s. Step 2 at one hour keeps the run pausable.
+    const { clock, jupiter, run, finish } = setup({
+      n: 60,
+      orderRpm: 60,
+      stairs: { intervalMs: 60 * 60 * S, perStep: 56 },
+    });
+    const orderStarts = (): number[] =>
+      jupiter.calls.filter((c) => c.kind === 'order').map((c) => c.start - T0);
+    await clock.runUntil(T0 + 30_000);
+    expect(orderStarts()).toHaveLength(54);
+    expect(run.pause()).toBe(true);
+    await clock.runUntil(T0 + 120_000); // the limiter opened at about 60 s
+    expect(orderStarts()).toHaveLength(54);
+    expect(run.resume()).toBe(true);
+    await finish();
+    const after = orderStarts().filter((at) => at > 30_000);
+    expect(after.length).toBeGreaterThan(0);
+    expect(Math.min(...after)).toBeGreaterThanOrEqual(120_000);
+  });
+
   it('pause has nothing to do without Stairs or once every step has started', async () => {
     const immediate = setup({ n: 2 });
     expect(immediate.run.pause()).toBe(false);
