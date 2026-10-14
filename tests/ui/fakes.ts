@@ -83,6 +83,8 @@ export function mockVault(initial: VaultStatus, onCreate?: CreateHandler) {
           status = { ...status, network: req.network, info };
           return Promise.resolve({ fileText: `{"network":"${req.network}"}`, info });
         }
+        case 'classifyTarget':
+          return classifyFake(req.address);
         case 'refreshBalances':
           return status.info
             ? Promise.resolve({
@@ -195,3 +197,34 @@ export function mockStorage(mode: 'directory' | 'download' = 'directory') {
     },
   };
 }
+
+/**
+ * Well-formed addresses for the target field (BUNNDLY-59), copied from
+ * tests/fixtures/token-accounts.mainnet.json: an SPL mint, a Token-2022 mint and a token
+ * account. What the fake worker says about them is set by `classifyFake`.
+ */
+export const SPL_MINT = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
+export const TOKEN_2022_MINT = '2b1kV6DkPAnxd5ixfnxCpjxmKwqjjaYmCZfHsFu24GXo';
+export const TOKEN_ACCOUNT = '3Tn7BAWv282J1sH1pqF9gtCdaorRFoVMcTpgCqwPEBvf';
+
+/** The fake worker's answer to classifyTarget: the given mints, a token account, else a wallet. */
+export function classifyFake(
+  address: string,
+  mints: Readonly<Record<string, 'spl-token' | 'token-2022'>> = {
+    [SPL_MINT]: 'spl-token',
+    [TOKEN_2022_MINT]: 'token-2022',
+  },
+): Promise<{ kind: 'mint'; program: 'spl-token' | 'token-2022' } | { kind: 'wallet' }> {
+  if (address === TOKEN_ACCOUNT) return Promise.reject(new AppError('TARGET_IS_TOKEN_ACCOUNT'));
+  const program = mints[address];
+  return Promise.resolve(program === undefined ? { kind: 'wallet' } : { kind: 'mint', program });
+}
+
+/** The labelled target field of the command bar. */
+export const TARGET_LABEL = 'Target: token mint or creator wallet';
+
+/**
+ * How long a test waits for the worker's answer about a target: the bar asks 250 ms after
+ * the last keystroke, and a full test run on a loaded machine takes longer than the default 1 s.
+ */
+export const TARGET_WAIT = { timeout: 5_000 } as const;

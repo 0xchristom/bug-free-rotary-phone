@@ -34,6 +34,7 @@ import {
   IconButton,
   Input,
   NumberInput,
+  PlayIcon,
   Popover,
   QrIcon,
   SearchIcon,
@@ -67,6 +68,10 @@ interface RowProps extends FleetRowData {
   readonly buy: BuyRow | null;
   readonly explorer: Explorer;
   readonly network: Network;
+  /** Buys with this wallet alone (BUNNDLY-59); absent: no row action. */
+  readonly onBuy?: ((index: number) => void) | undefined;
+  /** Why no buy can start now (the same for every row), or null. */
+  readonly buyBlocked: string | null;
 }
 
 /** Shown where there is no value yet. */
@@ -183,6 +188,9 @@ const FleetRow = memo(function FleetRow(p: RowProps) {
   const message = lastMessage(p.buy);
   const signature = p.buy?.result?.signature ?? null;
   const txUrl = signature ? transactionUrl(p.explorer, p.network, signature) : null;
+  const rowBuyBlocked =
+    p.buyBlocked ??
+    (state.ready ? null : 'This wallet is not ready: ' + idle.text.toLowerCase() + '.');
   const amountError =
     input !== null && !input.ok
       ? input.message
@@ -287,6 +295,19 @@ const FleetRow = memo(function FleetRow(p: RowProps) {
       </td>
       <td className="c-acts">
         <div className="acts">
+          {p.onBuy && (
+            <IconButton
+              size="sm"
+              variant="success"
+              label={`Buy ${p.label}`}
+              icon={<PlayIcon />}
+              disabled={rowBuyBlocked !== null}
+              aria-description={rowBuyBlocked ?? undefined}
+              onClick={() => {
+                p.onBuy?.(p.index);
+              }}
+            />
+          )}
           <Popover
             open={qrOpen}
             onClose={() => {
@@ -342,6 +363,10 @@ export interface FleetTableProps {
   readonly network?: Network;
   /** Controls on the right of the filter tabs. */
   readonly tools?: ReactNode;
+  /** Row action "Buy" with that wallet alone (BUNNDLY-59). */
+  readonly onBuyWallet?: (index: number) => void;
+  /** Why no buy can start now, for every row; null when rows may buy. */
+  readonly rowBuyBlocked?: string | null;
 }
 
 /** A column header that sorts the table; `aria-sort` says how it is sorted now. */
@@ -574,6 +599,8 @@ export function FleetTable(t: FleetTableProps) {
                 buy={t.buy?.get(w.index) ?? null}
                 explorer={explorer}
                 network={network}
+                onBuy={t.onBuyWallet}
+                buyBlocked={t.rowBuyBlocked ?? null}
               />
             ))}
             {visible.length === 0 && (

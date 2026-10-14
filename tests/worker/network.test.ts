@@ -19,6 +19,7 @@ import type {
   VaultStatus,
 } from '../../src/worker/protocol.ts';
 import { createVaultHandler, type VaultHandler } from '../../src/worker/vault.ts';
+import { MINT_ACCOUNT } from '../helpers/mint-account.ts';
 import {
   FakeSocket,
   QUOTE_BODY,
@@ -35,6 +36,10 @@ const PASSWORD = 'correct horse battery staple';
 const KEY = 'heliusNetworkKey42';
 const CREATOR = '6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P';
 const MINT = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
+
+/** Every wallet of the open fleet: what "select all" in the table sends (BUNNDLY-59). */
+const all = (h: VaultHandler): number[] =>
+  h.inspect().unlocked?.publicWallets.map((w) => w.index) ?? [];
 const MAINNET_HELIUS = `https://mainnet.helius-rpc.com/?api-key=${KEY}`;
 const DEVNET_HELIUS = `https://devnet.helius-rpc.com/?api-key=${KEY}`;
 const MAINNET_PUBLIC = 'https://api.mainnet.solana.com';
@@ -81,17 +86,21 @@ function world(down: readonly string[] = [], perNetwork?: PerNetwork) {
             id: payload.id,
             result: {
               context: { slot: 1n },
-              value: payload.params[0].map((_address, i) => ({
-                lamports:
-                  perNetwork === undefined
-                    ? 2_000_000_000n
-                    : (perNetwork[url.includes('devnet') ? 'devnet' : 'mainnet'][i] ?? 0n),
-                owner: '11111111111111111111111111111111',
-                data: ['', 'base64'],
-                executable: false,
-                rentEpoch: 0n,
-                space: 0n,
-              })),
+              value: payload.params[0].map((address, i) =>
+                address === MINT
+                  ? MINT_ACCOUNT
+                  : {
+                      lamports:
+                        perNetwork === undefined
+                          ? 2_000_000_000n
+                          : (perNetwork[url.includes('devnet') ? 'devnet' : 'mainnet'][i] ?? 0n),
+                      owner: '11111111111111111111111111111111',
+                      data: ['', 'base64'],
+                      executable: false,
+                      rentEpoch: 0n,
+                      space: 0n,
+                    },
+              ),
             },
           };
         }) as unknown as RpcTransport,
@@ -339,7 +348,11 @@ async function moneyFleet(w: World): Promise<string[]> {
  * `QUEUED` (on to `/order`) or the reason it was skipped. Then stops the run.
  */
 async function preCheck(w: World): Promise<string[]> {
-  const { runId } = (await w.h.handle({ type: 'startBuy', mint: MINT })) as BuyStatus;
+  const { runId } = (await w.h.handle({
+    type: 'startBuy',
+    mint: MINT,
+    wallets: all(w.h),
+  })) as BuyStatus;
   const decided = (): string[] => {
     const first = new Map<number, string>();
     for (const e of w.events) {
@@ -417,10 +430,10 @@ describe('devnet has no buy route', () => {
     await toDevnet(w.h);
     await refresh(w.h);
 
-    expect(await codeOf(w.h.handle({ type: 'startBuy', mint: MINT }))).toBe(
+    expect(await codeOf(w.h.handle({ type: 'startBuy', mint: MINT, wallets: all(w.h) }))).toBe(
       'NO_BUY_ROUTE_ON_NETWORK',
     );
-    expect(await codeOf(w.h.handle({ type: 'arm', creator: CREATOR }))).toBe(
+    expect(await codeOf(w.h.handle({ type: 'arm', creator: CREATOR, wallets: all(w.h) }))).toBe(
       'NO_BUY_ROUTE_ON_NETWORK',
     );
     expect(await status(w.h)).toMatchObject({ armed: false, buy: null, watch: null });
@@ -447,7 +460,9 @@ describe('devnet has no buy route', () => {
     await refresh(w.h);
     const before = w.jupiterCalls().length;
     // DRY-RUN buy: the real Jupiter client asks for /order through the mock fetch.
-    expect(await codeOf(w.h.handle({ type: 'startBuy', mint: MINT }))).toBe('ok');
+    expect(await codeOf(w.h.handle({ type: 'startBuy', mint: MINT, wallets: all(w.h) }))).toBe(
+      'ok',
+    );
     await vi.waitFor(() => {
       expect(w.jupiterCalls().length).toBeGreaterThan(before);
     });

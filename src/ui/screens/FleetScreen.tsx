@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useId, useMemo, useState, type SyntheticEvent } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { toUserMessage } from '../../core/errors.ts';
-import { NO_BUY_ROUTE_MESSAGE, buyRouteOf } from '../../core/network.ts';
+import { NETWORK_LABELS, NO_BUY_ROUTE_MESSAGE, buyRouteOf } from '../../core/network.ts';
 import { effectiveJupiterPlan } from '../../core/settings.ts';
+import { walletTrade } from '../../core/trade.ts';
 import {
   saveKeystoreFile,
   supportsDirectoryPicker,
@@ -10,6 +11,7 @@ import {
 } from '../../storage/keystore-file.ts';
 import type { VaultInfo } from '../../worker/protocol.ts';
 import { BuyPanel } from '../BuyPanel.tsx';
+import { CommandBar, type CommandReasons, type Target } from '../CommandBar.tsx';
 import { CreateWallets } from '../CreateWallets.tsx';
 import { ExportDialog } from '../ExportDialog.tsx';
 import { FleetBulk, FleetSummaryBar } from '../FleetBulk.tsx';
@@ -20,10 +22,11 @@ import { OperationsLogPanel } from '../OperationsLogPanel.tsx';
 import { SettingsResetNotice } from '../SettingsResetNotice.tsx';
 import { formatSol, parseSolAmount } from '../sol.ts';
 import { useBalances } from '../use-balances.ts';
-import { EMPTY_BUY, type BuyView } from '../use-buy.ts';
+import { EMPTY_BUY, isBuyRunning, type BuyRow, type BuyView } from '../use-buy.ts';
 import { useVault } from '../vault-state.ts';
 import { WATCH_FROZEN } from '../watch-labels.ts';
-import { Button, Input, useToast } from '../kit/index.ts';
+import { useWatchRuntime } from '../watch-runtime.ts';
+import { Button, Modal, useToast } from '../kit/index.ts';
 
 const MAX_WALLETS = 100;
 
@@ -61,6 +64,32 @@ export interface FleetScreenProps {
   readonly onMintDecimals?: (mint: string, decimals: number) => void;
 }
 
+/** Shown in a row from the click until the worker's first event of the new buy. */
+const QUEUED_ROW: BuyRow = {
+  state: 'QUEUED',
+  attempt: 0,
+  reason: null,
+  quote: null,
+  result: null,
+  sinceStartMs: 0,
+  verify: null,
+};
+
+const NO_READY = 'No ready wallets: select wallets that have a saved max spend.';
+
+const CONFIRM_TITLES = {
+  buy: 'Buy in live mode?',
+  sell: 'Sell in live mode?',
+  arm: 'Arm the watcher in live mode?',
+} as const;
+const CONFIRM_YES = { buy: 'Yes, buy', sell: 'Yes, sell', arm: 'Yes, arm' } as const;
+
+/** A command waiting for the live-mode confirmation. */
+type Confirm =
+  | { readonly kind: 'buy'; readonly mint: string; readonly wallets: readonly number[] }
+  | { readonly kind: 'sell'; readonly mint: string; readonly wallets: readonly number[] }
+  | { readonly kind: 'arm'; readonly creator: string; readonly wallets: readonly number[] };
+
 type Drafts = Readonly<Record<number, string>>;
 type ActiveDrafts = Readonly<Record<number, boolean>>;
 
@@ -96,7 +125,8 @@ export function FleetScreen({
 }: FleetScreenProps) {
   const { client, status, refresh } = useVault();
   const watchArmed = status?.watch?.armed ?? false;
-  const [mintText, setMintText] = useState('');
+  const { alarm } = useWatchRuntime();
+  const [target, setTarget] = useState<Target | null>(null);
   const [mint, setMint] = useState<string | null>(null);
   const [mintError, setMintError] = useState<string | null>(null);
   // A wrong mint: show the message at the field and go on refreshing SOL without it.
@@ -132,11 +162,12 @@ export function FleetScreen({
     const parsed = parseSolAmount(text);
     return parsed.ok ? parsed.lamports : 'invalid';
   };
-  const tableDirty = info.wallets.some(
-    (w) =>
-      draftLamports(w.index) !== (savedMaxSpend.get(w.index) ?? null) ||
-      (active[w.index] ?? true) !== (savedActive[w.index] ?? true),
+  const maxSpendDirty = info.wallets.some(
+    (w) => draftLamports(w.index) !== (savedMaxSpend.get(w.index) ?? null),
   );
+  const tableDirty =
+    maxSpendDirty ||
+    info.wallets.some((w) => (active[w.index] ?? true) !== (savedActive[w.index] ?? true));
   const tableInvalid = info.wallets.some((w) => {
     const text = (maxSpendText[w.index] ?? '').trim();
     return text !== '' && !parseSolAmount(text).ok;
@@ -195,7 +226,12 @@ export function FleetScreen({
   };
   const unknownBalances = info.wallets.filter((w) => !balances.lamports?.has(w.index)).length;
 
-  const selectedCount = info.wallets.filter((w) => active[w.index] ?? true).length;
+  // A buy or an arming uses exactly these wallets, saved in the file or not (BUNNDLY-59).
+  const selectedIndexes = useMemo(
+    () => info.wallets.filter((w) => active[w.index] ?? true).map((w) => w.index),
+    [info.wallets, active],
+  );
+  const selectedCount = selectedIndexes.length;
   const summary = summarize(
     info.wallets.map((w) => {
       const lamports = draftLamports(w.index);
@@ -209,15 +245,13 @@ export function FleetScreen({
     }),
   );
 
-  // The worker checked this mint (its token balance is on screen): only then can a buy start.
-  const checkedMint = balances.token !== null && balances.token.mint === mint ? mint : null;
   const { global } = info.settings;
   const hasRpc = info.apiKeys.helius || info.apiKeys.heliusRpcUrl;
   const buyBlocked =
     buyRouteOf(global.network) === null
       ? NO_BUY_ROUTE_MESSAGE
-      : tableDirty
-        ? 'Save the table changes first: a buy uses the settings saved in the vault.'
+      : maxSpendDirty
+        ? 'Save the max spend changes first: a buy spends the amounts saved in the vault.'
         : !global.dryRun && !hasRpc
           ? 'Live mode needs a Helius key (Settings).'
           : null;
@@ -310,12 +344,193 @@ export function FleetScreen({
     }
   };
 
-  const showToken = (event: SyntheticEvent): void => {
-    event.preventDefault();
-    const text = mintText.trim();
+  // The target field (BUNNDLY-59): a checked mint also shows its balances in the table.
+  const onTarget = useCallback((next: Target | null) => {
+    setTarget(next);
     setMintError(null);
-    setMint(text === '' ? null : text);
+    setMint(next?.kind.kind === 'mint' ? next.address : null);
+  }, []);
+
+  // --- Commands (BUNNDLY-59): the request names the selected wallets. ---
+  const [confirm, setConfirm] = useState<Confirm | null>(null);
+  const [commandBusy, setCommandBusy] = useState(false);
+  const [commandError, setCommandError] = useState<string | null>(null);
+  /** Rows shown as queued at once; `since` is the run the table showed at the click. */
+  const [pending, setPending] = useState<{
+    readonly wallets: ReadonlySet<number>;
+    readonly since: number | null;
+  } | null>(null);
+  const runId = buyView.run?.runId ?? null;
+  // The worker's events of the new buy replace the queued rows.
+  const queued = pending !== null && pending.since === runId ? pending.wallets : null;
+
+  const running = isBuyRunning(buyView, status?.buy ?? null);
+  const stopping = buyView.run?.phase === 'stopping' || status?.buy?.accepting === false;
+  const detected = useMemo(
+    () => status?.watch?.detections.filter((d) => d.problem === null).at(-1) ?? null,
+    [status?.watch?.detections],
+  );
+  const buyMint = target?.kind.kind === 'mint' ? target.address : (detected?.mint ?? null);
+  // A buy spends the saved amounts: the selected wallets that have one.
+  const readyIndexes = selectedIndexes.filter((i) => (savedMaxSpend.get(i) ?? 0n) > 0n);
+  const hasWatcherKeys =
+    (info.apiKeys.helius || info.apiKeys.heliusWsUrl) &&
+    (info.apiKeys.helius || info.apiKeys.heliusRpcUrl);
+  const reasons: CommandReasons = {
+    buy: running
+      ? 'A buy is running. Wait for it to end or press STOP.'
+      : commandBusy
+        ? 'Sending the command…'
+        : (buyBlocked ??
+          (buyMint === null
+            ? target?.kind.kind === 'wallet'
+              ? 'BUY needs a token: arm the watcher and wait for this creator’s token, or paste a mint.'
+              : 'Paste a token mint first.'
+            : readyIndexes.length === 0
+              ? NO_READY
+              : null)),
+    arm: running
+      ? 'A buy is running: you can arm the watcher when it ends.'
+      : commandBusy
+        ? 'Sending the command…'
+        : buyRouteOf(global.network) === null
+          ? NO_BUY_ROUTE_MESSAGE
+          : maxSpendDirty
+            ? 'Save the max spend changes first: the watcher spends the amounts saved in the vault.'
+            : target?.kind.kind !== 'wallet'
+              ? target === null
+                ? 'Paste a creator wallet first.'
+                : 'ARM needs a creator wallet, not a token.'
+              : !hasWatcherKeys
+                ? 'The watcher needs a Helius key (Settings).'
+                : readyIndexes.length === 0
+                  ? NO_READY
+                  : null,
+    sell: running
+      ? 'A buy or sell is running. Wait for it to end or press STOP.'
+      : commandBusy
+        ? 'Sending the command…'
+        : buyRouteOf(global.network) === null
+          ? NO_BUY_ROUTE_MESSAGE
+          : watchArmed
+            ? 'DISARM first: the armed watcher may buy this token at any moment.'
+            : buyMint === null
+              ? 'Paste the mint of the token to sell.'
+              : !hasRpc
+                ? 'Selling reads the token balances first: it needs a Helius key (Settings).'
+                : selectedIndexes.length === 0
+                  ? 'Select the wallets that sell.'
+                  : null,
+    stop: !running ? 'Nothing is running.' : stopping ? 'Stopping…' : null,
   };
+
+  const command = async (task: () => Promise<unknown>): Promise<boolean> => {
+    setCommandError(null);
+    setCommandBusy(true);
+    try {
+      await task();
+      return true;
+    } catch (e) {
+      setCommandError(toUserMessage(e));
+      return false;
+    } finally {
+      setCommandBusy(false);
+    }
+  };
+  const launchBuy = (buyFor: string, wallets: readonly number[]): void => {
+    // The rows change in this click, before the worker answers.
+    setPending({
+      wallets: new Set(wallets.filter((i) => (savedMaxSpend.get(i) ?? 0n) > 0n)),
+      since: runId,
+    });
+    void command(async () => {
+      try {
+        await client.request({ type: 'startBuy', mint: buyFor, wallets });
+      } catch (e) {
+        setPending(null); // refused: the rows go back to what they were
+        throw e;
+      }
+      await refresh();
+    });
+  };
+  const requestBuy = (wallets: readonly number[]): void => {
+    if (buyMint === null) return;
+    if (global.dryRun) launchBuy(buyMint, wallets);
+    else setConfirm({ kind: 'buy', mint: buyMint, wallets });
+  };
+  // SELL (BUNNDLY-60): each selected wallet sells its set part of its token balance.
+  const launchSell = (mint: string, wallets: readonly number[]): void => {
+    setPending({ wallets: new Set(wallets), since: runId });
+    void command(async () => {
+      try {
+        await client.request({ type: 'startSell', mint, wallets });
+      } catch (e) {
+        setPending(null);
+        throw e;
+      }
+      await refresh();
+    });
+  };
+  const onSell = (): void => {
+    if (reasons.sell !== null || buyMint === null) return;
+    if (global.dryRun) launchSell(buyMint, selectedIndexes);
+    else setConfirm({ kind: 'sell', mint: buyMint, wallets: selectedIndexes });
+  };
+  const launchArm = (creator: string, wallets: readonly number[]): void => {
+    alarm.prime(); // the click allows the alarm sound later (autoplay policy)
+    void command(async () => {
+      await client.request({ type: 'arm', creator, wallets });
+      await refresh();
+    });
+  };
+  const onBuy = (): void => {
+    if (reasons.buy === null) requestBuy(selectedIndexes);
+  };
+  const onArm = (): void => {
+    if (reasons.arm !== null || target === null) return;
+    if (global.dryRun) launchArm(target.address, selectedIndexes);
+    else setConfirm({ kind: 'arm', creator: target.address, wallets: selectedIndexes });
+  };
+  const onDisarm = (): void => {
+    void command(async () => {
+      await client.request({ type: 'disarm' });
+      await refresh();
+    });
+  };
+  const onStop = (): void => {
+    if (reasons.stop !== null) return;
+    void command(async () => {
+      await client.request({ type: 'stop' });
+      await refresh();
+    });
+  };
+  // Row action: the same request with one wallet. Stable for the memoized rows.
+  const rowBuy = useRef(requestBuy);
+  useEffect(() => {
+    rowBuy.current = requestBuy;
+  });
+  const onBuyWallet = useCallback((index: number) => {
+    rowBuy.current([index]);
+  }, []);
+  const confirmSpend = (wallets: readonly number[]): bigint =>
+    wallets.reduce((sum, i) => sum + (savedMaxSpend.get(i) ?? 0n), 0n);
+  /** The part each wallet sells (BUNNDLY-58 sets it per wallet): one value or a range. */
+  const sellPart = (wallets: readonly number[]): string => {
+    const parts = wallets.map((i) => walletTrade(info.settings.trade, i, undefined).sellPercent);
+    const low = Math.min(...parts);
+    const high = Math.max(...parts);
+    return low === high ? `${String(low)}%` : `${String(low)}–${String(high)}%`;
+  };
+  const confirmReady = (wallets: readonly number[]): number =>
+    wallets.filter((i) => (savedMaxSpend.get(i) ?? 0n) > 0n).length;
+  const tableBuy = useMemo(() => {
+    const rows = buyView.run === null ? null : buyView.rows;
+    if (queued === null) return rows;
+    const next = new Map(rows ?? []);
+    for (const i of queued) next.set(i, QUEUED_ROW);
+    return next;
+  }, [buyView.run, buyView.rows, queued]);
+  const inFleet = target?.kind.kind === 'wallet' && fleetAddresses.includes(target.address);
 
   // Why "Create wallets" is off right now, in words next to the button.
   const createBlocked = watchArmed
@@ -392,44 +607,19 @@ export function FleetScreen({
 
       <SettingsResetNotice fields={info.settings.resetFields} />
 
-      <form className="token-bar" onSubmit={showToken}>
-        <label htmlFor={`${ids}-mint`}>Token address (mint)</label>
-        <div className="inline">
-          <Input
-            id={`${ids}-mint`}
-            value={mintText}
-            spellCheck={false}
-            autoComplete="off"
-            aria-invalid={mintError !== null}
-            aria-describedby={`${ids}-mint-help`}
-            onChange={(e) => {
-              setMintText(e.target.value);
-            }}
-          />
-          <Button type="submit">Show token balance</Button>
-        </div>
-        {mintError ? (
-          <p className="field-error" id={`${ids}-mint-help`} role="alert">
-            {mintError}
-          </p>
-        ) : (
-          <p className="hint" id={`${ids}-mint-help`}>
-            Balance preview only; the address is not saved in the fleet file.
-          </p>
-        )}
-      </form>
+      {mintError && (
+        <p className="notice error" role="alert">
+          {mintError}
+        </p>
+      )}
 
       <BuyPanel
         view={buyView}
-        mint={checkedMint}
         readyCount={summary.readyCount}
         toSpend={summary.toSpendLamports}
         dryRun={global.dryRun}
-        blocked={buyBlocked}
         plan={effectiveJupiterPlan(global, info.apiKeys.jupiter)}
         onDryRun={setDryRun}
-        fleetAddresses={fleetAddresses}
-        apiKeys={info.apiKeys}
         watchMode={global.mode}
         onWatchMode={setWatchMode}
       >
@@ -437,6 +627,100 @@ export function FleetScreen({
           <OperationsLogPanel log={operationsLog} storage={storage} decimals={buyDecimals} />
         )}
       </BuyPanel>
+
+      <CommandBar
+        dryRun={global.dryRun}
+        armed={watchArmed}
+        busy={commandBusy}
+        reasons={reasons}
+        blocked={buyBlocked}
+        detected={detected}
+        onTarget={onTarget}
+        onBuy={onBuy}
+        onSell={onSell}
+        onArm={onArm}
+        onDisarm={onDisarm}
+        onStop={onStop}
+      />
+      {inFleet && (
+        <p className="notice warning" role="status">
+          This is a wallet from this fleet. Make sure you want to watch your own wallet.
+        </p>
+      )}
+      {commandError && (
+        <p className="notice error" role="alert">
+          {commandError}
+        </p>
+      )}
+      {confirm && (
+        <Modal
+          open
+          role="alertdialog"
+          tone="danger"
+          title={CONFIRM_TITLES[confirm.kind]}
+          onClose={() => {
+            setConfirm(null);
+          }}
+          footer={
+            <>
+              <Button
+                variant="ghost"
+                onClick={() => {
+                  setConfirm(null);
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="danger"
+                onClick={() => {
+                  setConfirm(null);
+                  if (confirm.kind === 'buy') launchBuy(confirm.mint, confirm.wallets);
+                  else if (confirm.kind === 'sell') launchSell(confirm.mint, confirm.wallets);
+                  else launchArm(confirm.creator, confirm.wallets);
+                }}
+              >
+                {CONFIRM_YES[confirm.kind]}
+              </Button>
+            </>
+          }
+        >
+          <dl className="summary" aria-label="What the command does">
+            <div>
+              <dt>Wallets</dt>
+              <dd>
+                {confirm.kind === 'sell' ? confirm.wallets.length : confirmReady(confirm.wallets)}
+              </dd>
+            </div>
+            {confirm.kind === 'sell' ? (
+              <div>
+                <dt>To sell</dt>
+                <dd>{sellPart(confirm.wallets)} of each token balance</dd>
+              </div>
+            ) : (
+              <div>
+                <dt>{confirm.kind === 'buy' ? 'Total to spend' : 'To spend per token'}</dt>
+                <dd>up to {formatSol(confirmSpend(confirm.wallets))} SOL</dd>
+              </div>
+            )}
+            <div>
+              <dt>Network</dt>
+              <dd>{NETWORK_LABELS[global.network]}</dd>
+            </div>
+            <div>
+              <dt>Execution</dt>
+              <dd>
+                live: real transactions
+                {confirm.kind === 'arm' &&
+                  (global.mode === 'continuous'
+                    ? ', a buy for every new token'
+                    : ', one buy, then the watcher disarms')}
+              </dd>
+            </div>
+          </dl>
+          <p>On-chain transactions cannot be undone.</p>
+        </Modal>
+      )}
 
       <FleetBulk
         onAmount={setAllAmount}
@@ -456,7 +740,9 @@ export function FleetScreen({
         onSelectAll={onSelectAll}
         onCopy={onCopy}
         probe={rowProbe}
-        buy={buyView.run === null ? null : buyView.rows}
+        buy={tableBuy}
+        onBuyWallet={onBuyWallet}
+        rowBuyBlocked={reasons.buy === NO_READY ? null : reasons.buy}
         explorer={global.explorer}
         network={global.network}
         tools={
