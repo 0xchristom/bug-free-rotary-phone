@@ -679,6 +679,12 @@ table.wallets tr.empty td {
   flex: 1;
 }
 
+/* Why "Create wallets" is off: wraps in its own box, so the buttons stay on one line. */
+.tabsrow .muted {
+  max-width: 320px;
+  font-size: var(--fs-small);
+}
+
 .tabs {
   display: flex;
   gap: var(--s-0);
