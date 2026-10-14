@@ -5,7 +5,7 @@ import { AppError } from '../../src/core/errors.ts';
 import { App } from '../../src/ui/App.tsx';
 import type { VaultPort } from '../../src/worker/protocol.ts';
 import { createVaultClient } from '../../src/worker/vault-client.ts';
-import { LOCKED, mockStorage, mockVault, unlocked } from './fakes.ts';
+import { LOCKED, fleetInfo, mockStorage, mockVault, unlocked } from './fakes.ts';
 import { setupUser } from './user.ts';
 
 function renderApp(
@@ -59,15 +59,29 @@ describe('navigation', () => {
 
     await user.click(within(nav).getByRole('button', { name: 'Dashboard' }));
     expect(screen.getByRole('heading', { name: 'Fleet' })).toBeTruthy();
-    expect(within(screen.getByRole('contentinfo')).getByRole('status').textContent).toContain(
-      '15 min',
+    // auto-lock is off by default (BUNNDLY-51)
+    expect(within(screen.getByRole('contentinfo')).getByRole('status').textContent).toBe(
+      'Auto-lock: off',
     );
   });
 
   it('shows that auto-lock is suspended while armed', async () => {
-    renderApp(mockVault(unlocked(true)));
+    const status = unlocked(true);
+    const info = fleetInfo();
+    renderApp(
+      mockVault({
+        ...status,
+        info: {
+          ...info,
+          settings: {
+            ...info.settings,
+            global: { ...info.settings.global, autoLockMinutes: 15 },
+          },
+        },
+      }),
+    );
     const rail = await screen.findByRole('contentinfo');
-    expect(within(rail).getByRole('status').textContent).toContain('paused');
+    expect(within(rail).getByRole('status').textContent).toBe('Armed: auto-lock is paused');
   });
 });
 

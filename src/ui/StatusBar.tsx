@@ -1,5 +1,6 @@
 import type { FeedState } from '../chain/balance-stream.ts';
 import { NETWORK_LABELS } from '../core/network.ts';
+import { AUTO_LOCK_LABELS, type AutoLockMinutes } from '../core/settings.ts';
 import type { VaultStatus } from '../worker/protocol.ts';
 import { Chip, FolderIcon } from './kit/index.ts';
 import { FEED_LABELS, type RpcRead } from './shell-status.ts';
@@ -13,7 +14,8 @@ export interface StatusBarProps {
   readonly read: RpcRead | null;
   /** Live or polling balances (BUNNDLY-57); null while no screen reads them. */
   readonly feed?: FeedState | null;
-  readonly autoLockMinutes: number;
+  /** null: auto-lock is off (BUNNDLY-51). */
+  readonly autoLockMinutes: AutoLockMinutes | null;
   /** Opens the plain export of the recovery phrase and keys; null while locked. */
   readonly onExport?: (() => void) | null;
 }
@@ -51,9 +53,11 @@ export function StatusBar({
         <>
           <span className="rail-sep" aria-hidden="true" />
           <span role="status">
-            {open.armed
-              ? 'Armed: auto-lock is paused'
-              : `Auto-lock after ${String(autoLockMinutes)} min of inactivity`}
+            {autoLockMinutes === null
+              ? 'Auto-lock: off'
+              : open.armed
+                ? 'Armed: auto-lock is paused'
+                : `Auto-lock after ${AUTO_LOCK_LABELS[autoLockMinutes]} of inactivity`}
           </span>
           <div className="rail-right">
             <span className="rail-item">

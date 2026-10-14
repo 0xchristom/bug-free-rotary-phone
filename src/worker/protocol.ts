@@ -31,9 +31,6 @@ export type ApiKeyChanges = { readonly [K in ApiKeyName]?: string | null };
 /** Which API secrets are set. The values themselves never leave the worker (D-016). */
 export type ApiKeyFlags = { readonly [K in ApiKeyName]: boolean };
 
-/** Default inactivity before the vault locks itself (SPEC 3.1: 15 minutes). */
-export const DEFAULT_AUTO_LOCK_MS = 15 * 60 * 1000;
-
 export type VaultRequest =
   | {
       readonly type: 'create';

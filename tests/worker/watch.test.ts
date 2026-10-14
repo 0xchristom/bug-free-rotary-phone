@@ -6,7 +6,13 @@
  */
 import type { RpcTransport } from '@solana/kit';
 import { describe, expect, it, vi } from 'vitest';
-import { AppError, defaultFleetSettings, type FleetSettingsV1 } from '../../src/core/index.ts';
+import {
+  AUTO_LOCK_CHOICES,
+  AppError,
+  defaultFleetSettings,
+  type AutoLockMinutes,
+  type FleetSettingsV1,
+} from '../../src/core/index.ts';
 import { logEntry, type ExecutorEvent } from '../../src/executor/index.ts';
 import type { JupiterClient } from '../../src/jupiter/index.ts';
 import type { WatchEvent } from '../../src/watcher/watch.ts';
@@ -58,6 +64,8 @@ interface Setup {
   readonly realClock?: boolean;
   /** How long each `/order` takes (fake clock); 100 ms by default. */
   readonly orderMs?: number;
+  /** Auto-lock from the fleet setting instead of the 60 s test override (BUNNDLY-51). */
+  readonly autoLockMinutes?: AutoLockMinutes;
 }
 
 async function setup(o: Setup = {}) {
@@ -133,7 +141,7 @@ async function setup(o: Setup = {}) {
     executor: o.realClock ? { jupiter } : { jupiter, clock },
     ...(o.realClock ? {} : { watch: { perfNow: () => clock.now() } }),
     now: () => clock.now(),
-    autoLockMs: 60_000,
+    ...(o.autoLockMinutes === undefined ? { autoLockMs: 60_000 } : {}),
   });
   const events: WorkerEvent[] = [];
   h.onEvent((e) => events.push(e));
@@ -153,7 +161,11 @@ async function setup(o: Setup = {}) {
         { index: 0, lamports: 10_000_000n },
         { index: 1, lamports: 10_000_000n },
       ],
-      global: { ...base.global, mode: o.mode ?? 'one-shot' },
+      global: {
+        ...base.global,
+        mode: o.mode ?? 'one-shot',
+        ...(o.autoLockMinutes === undefined ? {} : { autoLockMinutes: o.autoLockMinutes }),
+      },
     },
     ...(o.heliusKey === false ? {} : { apiKeys: { helius: HELIUS_KEY } }),
   });
@@ -428,6 +440,27 @@ describe('auto-lock and lock', () => {
     expect(t.h.checkAutoLock()).toBe(true);
     expect((await t.status()).locked).toBe(true);
   });
+
+  it.each(AUTO_LOCK_CHOICES)(
+    'auto-lock after %i min from the setting: armed past it stays open; after disarm it locks on time',
+    async (minutes) => {
+      const t = await setup({ mode: 'continuous', autoLockMinutes: minutes });
+      const ms = minutes * 60_000;
+      await t.arm();
+      await t.clock.runUntil(t.clock.now() + ms + 60_000);
+      expect(t.h.checkAutoLock()).toBe(false);
+      expect((await t.status()).locked).toBe(false);
+
+      await t.h.handle({ type: 'disarm' }); // activity: the idle time starts here
+      const disarmed = t.clock.now();
+      await t.clock.runUntil(disarmed + ms - 60_000);
+      expect(t.h.checkAutoLock()).toBe(false);
+      expect(t.h.inspect().unlocked).not.toBeNull();
+      await t.clock.runUntil(disarmed + ms + 60_000);
+      expect(t.h.checkAutoLock()).toBe(true);
+      expect(t.h.inspect().unlocked).toBeNull();
+    },
+  );
 
   it('armed: settings and wallets are frozen until disarm (D-039, BUNNDLY-68)', async () => {
     const t = await setup({ mode: 'continuous' });

@@ -104,7 +104,6 @@ import {
   type PublicWalletV1,
   type WalletGroupV1,
 } from '../core/index.ts';
-import { DEFAULT_AUTO_LOCK_MS } from './protocol.ts';
 import {
   DEFAULT_PREFS,
   fileIdOf,
@@ -134,8 +133,6 @@ import type {
   VaultStatus,
   WorkerEvent,
 } from './protocol.ts';
-
-export { DEFAULT_AUTO_LOCK_MS } from './protocol.ts';
 
 export interface ChainOptions {
   /** HTTP transport per URL; tests pass a mock. */
@@ -187,7 +184,7 @@ export interface VaultOptions {
   readonly watch?: WatchOptions;
   /**
    * Inactivity before auto-lock. Overrides the fleet's `autoLockMinutes` setting (tests);
-   * without it the setting applies, and 15 minutes while locked.
+   * without it the setting applies, and auto-lock is off by default (BUNNDLY-51).
    */
   readonly autoLockMs?: number;
   /**
@@ -531,9 +528,12 @@ export const TOKEN_READ_GAP_MS = 1_000;
 
 export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
   const now = options.now ?? (() => Date.now());
-  const autoLockMs = (): number =>
-    options.autoLockMs ??
-    (unlocked ? unlocked.settings.global.autoLockMinutes * 60_000 : DEFAULT_AUTO_LOCK_MS);
+  /** null: auto-lock is off, the vault stays open until a manual lock (BUNNDLY-51). */
+  const autoLockMs = (): number | null => {
+    if (options.autoLockMs !== undefined) return options.autoLockMs;
+    const minutes = unlocked?.settings.global.autoLockMinutes ?? null;
+    return minutes === null ? null : minutes * 60_000;
+  };
   let unlocked: UnlockedVault | null = null;
   /** Changes on every unlock and lock; settings changes keep it (unlike `unlocked`). */
   let session = 0;
@@ -851,7 +851,8 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
   };
 
   const autoLocked = (): boolean => {
-    if (unlocked !== null && !isArmed() && now() - lastActivity >= autoLockMs()) {
+    const after = autoLockMs();
+    if (unlocked !== null && after !== null && !isArmed() && now() - lastActivity >= after) {
       lock();
       return true;
     }

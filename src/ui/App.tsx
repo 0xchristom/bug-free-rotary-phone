@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { toUserMessage } from '../core/errors.ts';
-import { DEFAULT_AUTO_LOCK_MS, type VaultStatus } from '../worker/protocol.ts';
+import type { VaultStatus } from '../worker/protocol.ts';
 import type { StorageEnv } from '../storage/keystore-file.ts';
 import type { VaultClient } from '../worker/vault-client.ts';
 import { DEFAULT_NETWORK, type Network } from '../core/network.ts';
@@ -392,9 +392,7 @@ export function App({
                   status={status}
                   read={unlocked && lastRead?.network === network ? lastRead : null}
                   feed={unlocked && feed?.network === network ? feed.state : null}
-                  autoLockMinutes={
-                    status?.info?.settings.global.autoLockMinutes ?? DEFAULT_AUTO_LOCK_MS / 60_000
-                  }
+                  autoLockMinutes={status?.info?.settings.global.autoLockMinutes ?? null}
                   onExport={
                     unlocked
                       ? () => {

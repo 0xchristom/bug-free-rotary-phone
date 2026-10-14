@@ -1160,3 +1160,16 @@ Rejestr decyzji i rozbieżności z dokumentacją zewnętrzną. Nowe wpisy dopisu
 - Konsekwencje / alternatywy:
   - Kredyty: 1 za otwarcie połączenia plus strumień danych. Pełny odczyt co 30 s zamiast co 12 s zmniejsza liczbę zapytań HTTP przy działającym gnieździe.
   - Odrzucone: `signatureSubscribe` dla każdej transakcji (nie pokazuje wpłat z zewnątrz), osobne połączenie na portfel (limit 5 połączeń), drugi klucz albo dostawca (zakazane w zadaniu i w SPEC 2.2).
+
+## D-056: Automatyczna blokada opcjonalna: domyślnie wyłączona, do wyboru 15 min, 1 h albo 2 h
+
+- Data: 2026-10-14
+- Zadanie: BUNNDLY-51
+- Kontekst: polecenie Krystiana z 12.10.2026: „blokada 15 minutowa interfejsu nie może być automatyczna i z góry narzucona – może być natomiast aktywowana jako ustawienie oraz musi pozwalać na wybór po jakim czasie blokować interfejs z możliwością wyboru 15 minut, 1 godzina, 2 godziny”. Zmienia D-013 i D-019 (domyślne 15 min, zakres 1–120) oraz SPEC 3.1.
+- Decyzja:
+  - `autoLockMinutes` przyjmuje `null` (wyłączona, domyślnie) albo 15, 60 lub 120. W ustawieniach jest lista z czterema pozycjami zamiast pola liczbowego. Inna wartość w `saveSettings` daje `INVALID_SETTINGS`.
+  - Przy wyłączonej blokadzie worker nie blokuje sejfu z powodu bezczynności; timer workera dalej sprawdza warunek co 15 s, ale wynik jest zawsze „nie”. Ręczna blokada działa jak dotąd. Po włączeniu blokada działa jak w D-013: liczy od ostatniej aktywności, zeruje klucze i nie działa przy uzbrojonym watcherze ani w trakcie zakupu lub sprzedaży.
+  - Pasek stanu mówi „Auto-lock: off” albo „Auto-lock after 15 min / 1 h / 2 h of inactivity”; przy uzbrojeniu z włączoną blokadą „Armed: auto-lock is paused”.
+  - **Decyzja tymczasowa (2026-10-12, z zadania), do potwierdzenia przez Krystiana:** w istniejących plikach zapisane 15, 60 i 120 zostają jako włączona blokada, także dotychczasowe domyślne 15. Każda inna wartość przechodzi na wyłączoną i jest zgłaszana raz przez `SettingsResetNotice` (mechanizm D-019) do następnego zapisu. Plik bez pola otwiera się z blokadą wyłączoną, bez informacji.
+  - Okno bez hasła (D-051) się nie zmienia: automatyczna blokada nadal usuwa tylko okno ograniczone czasem, a przy wyłączonej blokadzie nic go nie usuwa poza Lock, „Forget this device” i upływem okna.
+- Konsekwencje: przy wyłączonej blokadzie odblokowany sejf zostaje w pamięci karty do ręcznej blokady albo zamknięcia karty (SECURITY.md). SPEC 3.1 zmienia Andy (tekst w BUNNDLY-51).
