@@ -69,8 +69,11 @@ export type TargetCheck =
   | { readonly kind: 'empty' }
   | { readonly kind: 'checking'; readonly address: string }
   | { readonly kind: 'done'; readonly target: Target }
-  /** The text is no address, or the worker could not read it; `message` is shown at the field. */
-  | { readonly kind: 'error'; readonly message: string };
+  /**
+   * The text is no address (`format`), or the worker could not read it (`read`); `message`
+   * is shown at the field.
+   */
+  | { readonly kind: 'error'; readonly cause: 'format' | 'read'; readonly message: string };
 
 function kindLabel(kind: TargetKind): string {
   if (kind.kind === 'wallet') return 'Creator wallet';
@@ -125,13 +128,14 @@ export function CommandBar({
       : !wellFormed
         ? {
             kind: 'error',
+            cause: 'format',
             message: 'Paste a full Solana address: a token mint or a creator wallet.',
           }
         : answer?.address !== address
           ? { kind: 'checking', address }
           : 'kind' in answer
             ? { kind: 'done', target: { address, kind: answer.kind } }
-            : { kind: 'error', message: answer.error };
+            : { kind: 'error', cause: 'read', message: answer.error };
 
   // Ask the worker what the address is; an answer for older text is dropped.
   useEffect(() => {
@@ -160,7 +164,7 @@ export function CommandBar({
     check.kind === 'done'
       ? `done:${check.target.kind.kind}:${check.target.address}`
       : check.kind === 'error'
-        ? `error:${check.message}`
+        ? `error:${check.cause}:${check.message}`
         : check.kind;
   const report = useEffectEvent(() => {
     onCheck(check);

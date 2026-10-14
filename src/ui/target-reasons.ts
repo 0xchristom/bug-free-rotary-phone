@@ -4,9 +4,9 @@ export const CHECKING_TARGET = 'Checking the target…';
 
 /**
  * Why a command that needs one kind of target cannot run with the target field as it is
- * (BUNNDLY-79): the field is empty, still checking, could not be checked (with the field's
- * own message), or holds the other kind of address. Called only when the needed target is
- * missing.
+ * (BUNNDLY-79): the field is empty, still checking, holds no address (the field's message
+ * alone), could not be read (the field's message after "Could not check the target:"), or
+ * holds the other kind of address. Called only when the needed target is missing.
  */
 export function targetReason(
   check: TargetCheck,
@@ -18,7 +18,9 @@ export function targetReason(
     case 'checking':
       return CHECKING_TARGET;
     case 'error':
-      return `Could not check the target: ${check.message}`;
+      return check.cause === 'format'
+        ? check.message
+        : `Could not check the target: ${check.message}`;
     case 'done':
       return texts.otherKind;
   }

@@ -101,6 +101,14 @@ describe('Buy and Sell say why they are off, for each state of the target', () =
     expect(why('Buy')).toBe('Paste a token mint first.');
     expect(why('Sell')).toBe('Paste the mint of the token to sell.');
 
+    // No address at all: the field's own message, not a failed read.
+    await paste(user, 'not-an-address');
+    const malformed = 'Paste a full Solana address: a token mint or a creator wallet.';
+    await waitFor(() => {
+      expect(why('Buy')).toBe(malformed);
+    }, TARGET_WAIT);
+    expect(why('Sell')).toBe(malformed);
+
     await paste(user, HELD);
     await waitFor(() => {
       expect(why('Buy')).toBe('Checking the target…');
@@ -121,15 +129,19 @@ describe('Buy and Sell say why they are off, for each state of the target', () =
       );
     }, TARGET_WAIT);
     expect(why('Sell')).toBe('SELL needs a token mint, not a creator wallet.');
-  });
+    // Five waits of up to TARGET_WAIT each: a wrong reason fails on the text, not on the test limit.
+  }, 30_000);
 });
 
 describe('targetReason', () => {
-  it('Arm: empty, checking, refused, a token', () => {
+  it('Arm: empty, checking, refused, no address, a token', () => {
     expect(targetReason({ kind: 'empty' }, ARM_TARGET)).toBe('Paste a creator wallet first.');
     expect(targetReason({ kind: 'checking', address: WALLET }, ARM_TARGET)).toBe(CHECKING_TARGET);
-    expect(targetReason({ kind: 'error', message: 'Nope.' }, ARM_TARGET)).toBe(
+    expect(targetReason({ kind: 'error', cause: 'read', message: 'Nope.' }, ARM_TARGET)).toBe(
       'Could not check the target: Nope.',
+    );
+    expect(targetReason({ kind: 'error', cause: 'format', message: 'Nope.' }, ARM_TARGET)).toBe(
+      'Nope.',
     );
     expect(
       targetReason(
