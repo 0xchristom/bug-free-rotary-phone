@@ -46,6 +46,7 @@ function setup() {
     info,
     buy: null,
     watch: null,
+    groups: [],
   });
   const vault = mockVault(status());
   const pending = new Map<string, Deferred>();

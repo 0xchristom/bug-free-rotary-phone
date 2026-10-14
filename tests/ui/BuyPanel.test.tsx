@@ -46,6 +46,7 @@ function setup({ count = 3, global = {}, probe, jupiterKey = false }: Setup = {}
     info,
     buy,
     watch: null,
+    groups: [],
   });
   const vault = mockVault(status());
   const requests: VaultRequest[] = [];

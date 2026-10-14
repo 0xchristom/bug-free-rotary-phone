@@ -242,6 +242,7 @@ describe('settings in the keystore secrets', () => {
           orderRpm: 3000,
         },
         trade: DEFAULT_TRADE_SETTINGS,
+        groups: [],
       },
       apiKeys: {
         helius: 'h',
@@ -262,6 +263,7 @@ describe('settings in the keystore secrets', () => {
       active: [],
       global: DEFAULT_GLOBAL_SETTINGS,
       trade: DEFAULT_TRADE_SETTINGS,
+      groups: [],
     });
   });
 

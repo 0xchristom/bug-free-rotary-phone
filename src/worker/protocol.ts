@@ -57,11 +57,15 @@ export type VaultRequest =
   | {
       readonly type: 'saveSettings';
       /**
-       * Replaces global, maxSpend and active; the trade parameters too when present,
-       * otherwise they stay as they are (BUNNDLY-58).
+       * Replaces global, maxSpend and active; the trade parameters (BUNNDLY-58) and the
+       * wallet groups (BUNNDLY-68) too when present, otherwise they stay as they are.
        */
-      readonly settings: Omit<FleetSettingsV1, 'trade' | 'resetFields' | 'resetTradeFields'> & {
+      readonly settings: Omit<
+        FleetSettingsV1,
+        'trade' | 'groups' | 'resetFields' | 'resetTradeFields' | 'resetGroups'
+      > & {
         readonly trade?: FleetSettingsV1['trade'];
+        readonly groups?: FleetSettingsV1['groups'];
       };
       readonly apiKeys?: ApiKeyChanges;
     }
@@ -86,7 +90,7 @@ export type VaultRequest =
    * Runs in the worker; progress arrives as events. DRY-RUN unless the settings say
    * otherwise. While it runs the vault is armed: no auto-lock and no manual lock.
    */
-  | { readonly type: 'startBuy'; readonly mint: string }
+  | { readonly type: 'startBuy'; readonly mint: string; readonly group?: string }
   /**
    * Sell `mint` for SOL with the listed wallets (SPEC 11.4, BUNNDLY-60). The token balances
    * are read first; each wallet sells `floor(balance × percent / 100)` of that read and
@@ -100,16 +104,18 @@ export type VaultRequest =
       readonly wallets: readonly number[];
       /** Part of the token balance to sell: an integer 1-100. 100 when omitted. */
       readonly percent?: number;
+      /** The wallets must all be in this group. */
+      readonly group?: string;
     }
   /** STOP: no new `/order`; transactions already sent are followed to the end. */
-  | { readonly type: 'stop' }
+  | { readonly type: 'stop'; readonly group?: string }
   /**
    * Mode B (SPEC 3.4 B, BUNNDLY-34): watch `creator` and buy every token it creates, by
    * the `mode` setting. While armed: no auto-lock and no manual lock.
    */
-  | { readonly type: 'arm'; readonly creator: string }
+  | { readonly type: 'arm'; readonly creator: string; readonly group?: string }
   /** Closes the socket and empties the detection queue; a running buy goes on. */
-  | { readonly type: 'disarm' }
+  | { readonly type: 'disarm'; readonly group?: string }
   /** User activity in the UI; resets the auto-lock timer. */
   | { readonly type: 'activity' };
 
@@ -176,6 +182,16 @@ export interface BuyStatus {
   readonly accepting: boolean;
 }
 
+/** One wallet group's state (BUNNDLY-68). */
+export interface GroupStatus {
+  readonly id: string;
+  /** The group buys, sells or its watcher is armed. */
+  readonly armed: boolean;
+  readonly buy: BuyStatus | null;
+  /** The group's last arming, also after it disarmed; null if none. */
+  readonly watch: WatchStatus | null;
+}
+
 export interface VaultStatus {
   readonly locked: boolean;
   /** The open fleet's network; mainnet while locked (nothing is read then). */
@@ -187,6 +203,8 @@ export interface VaultStatus {
   readonly buy: BuyStatus | null;
   /** The last arming of this session (mode B), also after it disarmed; null if none. */
   readonly watch: WatchStatus | null;
+  /** Every group of the open fleet, in order; empty while locked (BUNNDLY-68). */
+  readonly groups: readonly GroupStatus[];
 }
 
 /** Encrypted keystore file text to save, plus the new public view. */

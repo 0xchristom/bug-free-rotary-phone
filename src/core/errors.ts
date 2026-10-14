@@ -37,6 +37,8 @@ export const ERROR_MESSAGES = {
   NO_WALLETS_TO_SELL: 'No wallet is marked for selling.',
   WALLET_IN_RUN:
     'A wallet in the running buy or sell keeps its trade settings until the run ends. Wait for it or press STOP.',
+  GROUP_RUNNING:
+    'This group is buying, selling or armed: its wallets stay in it until that ends. Wait for it, press STOP or DISARM.',
   INVALID_MINT_ADDRESS: 'This is not a valid token mint address (base58, 32–44 characters).',
   INVALID_CREATOR_ADDRESS:
     'This is not a valid creator wallet address (base58, 32 bytes, not the SOL mint).',
