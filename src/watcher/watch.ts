@@ -119,6 +119,11 @@ export interface BuyTrigger {
   readonly detectedAt: number;
   /** Called once, when the buy calls `/order` for the first time. */
   readonly onFirstOrder: () => void;
+  /**
+   * The Meteora DBC pool created with the token, when the detection's transaction named it
+   * (BUNNDLY-48): the direct route buys from it without `getProgramAccounts`.
+   */
+  readonly pool?: string;
 }
 
 export interface WatchDeps {
@@ -161,6 +166,8 @@ export interface Watch {
 interface Entry {
   detection: WatchDetection;
   readonly receivedAt: number;
+  /** The launchpad pool from the detection, for the buy only (not in the events). */
+  readonly pool?: string;
 }
 
 export function startWatch(deps: WatchDeps, options: WatchOptions): Watch {
@@ -207,6 +214,7 @@ export function startWatch(deps: WatchDeps, options: WatchOptions): Watch {
       runId = deps.startBuy({
         mint: entry.detection.mint,
         detectedAt: entry.detection.detectedAt,
+        ...(entry.pool === undefined ? {} : { pool: entry.pool }),
         onFirstOrder: () => {
           if (firstOrderAt !== null) return;
           firstOrderAt = deps.perfNow();
@@ -261,6 +269,7 @@ export function startWatch(deps: WatchDeps, options: WatchOptions): Watch {
         problem: null,
       },
       receivedAt: d.receivedAt,
+      ...(d.pool === undefined ? {} : { pool: d.pool }),
     };
     entries.push(entry);
     // A live log is new by definition; a transaction must not be older than arming.

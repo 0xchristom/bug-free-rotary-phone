@@ -58,6 +58,8 @@ export const ERROR_MESSAGES = {
   BUY_WHILE_ARMED:
     'This group is armed: its watcher buys the creator’s next token. Press DISARM to buy by hand.',
   NO_BUY_ROUTE_ON_NETWORK: NO_BUY_ROUTE_MESSAGE,
+  NO_SELL_ROUTE_ON_NETWORK:
+    'Selling is off on Devnet for now: the direct Meteora DBC route only buys.',
   VAULT_TIMEOUT: 'The key vault did not respond in time. Try again.',
   INTERNAL_ERROR: 'An internal application error occurred. Try again.',
   STORAGE_CANCELLED: 'The file or folder choice was cancelled. No file was saved or loaded.',

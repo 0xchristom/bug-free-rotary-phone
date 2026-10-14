@@ -103,7 +103,7 @@ describe('the saved choice', () => {
 describe('buy route', () => {
   it('Jupiter on mainnet, none on devnet', () => {
     expect(buyRouteOf('mainnet')).toBe('jupiter');
-    expect(buyRouteOf('devnet')).toBeNull();
+    expect(buyRouteOf('devnet')).toBe('direct'); // Meteora DBC, BUNNDLY-48
   });
 });
 

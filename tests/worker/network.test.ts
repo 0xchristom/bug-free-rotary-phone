@@ -34,7 +34,6 @@ vi.setConfig({ testTimeout: 60_000 });
 
 const PASSWORD = 'correct horse battery staple';
 const KEY = 'heliusNetworkKey42';
-const CREATOR = '6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P';
 const MINT = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
 
 /** Every wallet of the open fleet: what "select all" in the table sends (BUNNDLY-59). */
@@ -424,20 +423,17 @@ describe('balances of one network never pay for a buy on the other', () => {
   });
 });
 
-describe('devnet has no buy route', () => {
-  it('startBuy, arm and the connection test send nothing to Jupiter', async () => {
+describe('devnet buys without Jupiter (direct route, BUNNDLY-48)', () => {
+  it('startBuy goes ahead and the connection test asks nothing of Jupiter', async () => {
     const w = world();
     await fleet(w.h);
     await toDevnet(w.h);
     await refresh(w.h);
 
+    // The buy itself is tests/worker/direct-route.test.ts; here only: no Jupiter on devnet.
     expect(await codeOf(w.h.handle({ type: 'startBuy', mint: MINT, wallets: all(w.h) }))).toBe(
-      'NO_BUY_ROUTE_ON_NETWORK',
+      'ok',
     );
-    expect(await codeOf(w.h.handle({ type: 'arm', creator: CREATOR, wallets: all(w.h) }))).toBe(
-      'NO_BUY_ROUTE_ON_NETWORK',
-    );
-    expect(await status(w.h)).toMatchObject({ armed: false, buy: null, watch: null });
 
     const report = (await w.h.handle({ type: 'testConnections' })) as ConnectionReport;
     expect(report.network).toBe('devnet');

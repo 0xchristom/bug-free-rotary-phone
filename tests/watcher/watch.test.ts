@@ -12,9 +12,24 @@ import {
   type BuyTrigger,
   type WatchEvent,
 } from '../../src/watcher/watch.ts';
+import {
+  asTransaction,
+  detectFromTransaction,
+} from '../../src/watcher/detectors/transaction-path.ts';
 import { FakeSocket } from '../helpers/fake-socket.ts';
 import { FakeClock, T0 } from '../helpers/fake-clock.ts';
-import { launch, signatureOf, withBlockTime, withMint } from '../helpers/launch-fixtures.ts';
+import {
+  launch,
+  launchTransaction,
+  signatureOf,
+  signatureOfTx,
+  withBlockTime,
+  withMint,
+} from '../helpers/launch-fixtures.ts';
+
+const fail = (): never => {
+  throw new Error('fixture is not a transaction');
+};
 
 const URL = 'wss://mainnet.helius-rpc.com/?api-key=watchSecretKey123';
 const N = launch(0);
@@ -32,6 +47,8 @@ interface Setup {
   /** Signatures of the creator after the baseline (the gap a catch-up reads). */
   readonly gap?: string[];
   readonly startBuy?: (trigger: BuyTrigger) => number;
+  /** The watched creator; the pump.fun one by default. */
+  readonly creator?: string;
 }
 
 function setup(o: Setup = {}) {
@@ -86,7 +103,7 @@ function setup(o: Setup = {}) {
       },
       emit: (e) => events.push(e),
     },
-    { url: URL, creator: CREATOR, mode: o.mode ?? 'one-shot' },
+    { url: URL, creator: o.creator ?? CREATOR, mode: o.mode ?? 'one-shot' },
   );
   const socket = (): FakeSocket => {
     const s = sockets.at(-1);
@@ -260,6 +277,31 @@ describe('transactions from before arming (second layer, review of PR #26)', () 
     await t.clock.runUntil(t.clock.now() + 1_000);
     expect(t.of('stale')).toHaveLength(0);
     expect(t.triggers.map((x) => x.mint)).toEqual([MINT]);
+  });
+});
+
+describe('the pool from the detection (BUNNDLY-48)', () => {
+  it('a Meteora DBC create hands its pool to the buy; a pump.fun launch hands none', async () => {
+    const dbc = launchTransaction('dbcCreate1');
+    const sig = signatureOfTx(dbc.tx);
+    const recent = withBlockTime(dbc.tx, Math.floor(T0 / 1000) - 30);
+    const t = setup({ creator: dbc.watched, gap: [sig], txs: { [sig]: recent } });
+    await t.connect();
+    await t.clock.runUntil(t.clock.now() + 1_000);
+    // The detectors test checks this account is the pool PDA of config and both mints.
+    const [detected] = detectFromTransaction(asTransaction(recent) ?? fail(), dbc.watched);
+    expect(detected?.pool).toBeDefined();
+    expect(t.triggers.map((x) => [x.mint, x.pool])).toEqual([[dbc.expectedMint, detected?.pool]]);
+    // The pool is for the buy only, the detection event does not carry it.
+    t.triggers[0]?.onFirstOrder();
+    expect(t.of('detection')).toHaveLength(1);
+    expect(t.of('detection')[0]?.detection).not.toHaveProperty('pool');
+
+    const pump = setup();
+    await pump.connect();
+    pump.socket().message(N.message);
+    expect(pump.triggers).toHaveLength(1);
+    expect(pump.triggers[0]).not.toHaveProperty('pool');
   });
 });
 
