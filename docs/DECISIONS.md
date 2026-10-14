@@ -1173,3 +1173,17 @@ Rejestr decyzji i rozbieżności z dokumentacją zewnętrzną. Nowe wpisy dopisu
   - **Decyzja tymczasowa (2026-10-12, z zadania), do potwierdzenia przez Krystiana:** w istniejących plikach zapisane 15, 60 i 120 zostają jako włączona blokada, także dotychczasowe domyślne 15. Każda inna wartość przechodzi na wyłączoną i jest zgłaszana raz przez `SettingsResetNotice` (mechanizm D-019) do następnego zapisu. Plik bez pola otwiera się z blokadą wyłączoną, bez informacji.
   - Okno bez hasła (D-051) się nie zmienia: automatyczna blokada nadal usuwa tylko okno ograniczone czasem, a przy wyłączonej blokadzie nic go nie usuwa poza Lock, „Forget this device” i upływem okna.
 - Konsekwencje: przy wyłączonej blokadzie odblokowany sejf zostaje w pamięci karty do ręcznej blokady albo zamknięcia karty (SECURITY.md). SPEC 3.1 zmienia Andy (tekst w BUNNDLY-51).
+
+## D-057: Mainnet bez publicznego zapasu RPC: `api.mainnet.solana.com` odmawia stronie
+
+- Data: 2026-10-14
+- Zadanie: BUNNDLY-78 (znalezione w odbiorze BUNNDLY-77)
+- Kontekst: D-020 i D-025 ustaliły `https://api.mainnet.solana.com` jako awaryjny odczyt po błędzie Helius i bez klucza. Sprawdzenie 14.10.2026: `POST https://api.mainnet.solana.com` (`getHealth`) z nagłówkiem `Origin: https://bug-free-rotary-phone.pages.dev` daje **HTTP 403** „Access forbidden”, z przeglądarki na pages.dev i z PowerShella. To samo zapytanie bez nagłówka `Origin` daje `{"result":"ok"}`, a `https://api.devnet.solana.com` z tym samym `Origin` daje `ok`. Strona zawsze wysyła `Origin`, więc na mainnecie zapas nie ma szans zadziałać, a bez klucza Helius aplikacja pokazywała ogólne „Could not read data…”.
+- Decyzja:
+  - Mainnet nie ma publicznego zapasu (`publicRpcUrl('mainnet')` to `null`). Bez klucza Helius odczyty na mainnecie (salda, sprawdzenie celu, zakup także w DRY-RUN) dają `HELIUS_KEY_MISSING` bez żadnego zapytania. Po błędzie Helius zostaje `RPC_UNAVAILABLE` bez próby publicznego hosta.
+  - Devnet zachowuje zapas `api.devnet.solana.com`; odpowiedź z niego jest nadal opisana jako „Fallback”.
+  - Odpowiedź 401 albo 403 z publicznego RPC daje nowy błąd `PUBLIC_RPC_REFUSED` („The public Solana RPC refuses requests from this page. Add the Helius API key in Settings…”), a nie `RPC_UNAVAILABLE`, bo to odmowa, nie awaria.
+  - `api.mainnet.solana.com` znika z `connect-src` w `public/_headers`; poza `src/core/network.ts` żaden moduł (watcher, salda, executor) nie nazywał tego hosta.
+- Konsekwencje / alternatywy:
+  - Na mainnecie klucz Helius jest potrzebny do każdego odczytu z sieci. Zmienia D-020 i D-025 w części mainnetu; tabela usług w SPEC sekcja 2 dalej wymienia publiczny mainnet jako zapas; według Andy'ego (BUNNDLY-78) ta zmiana SPEC nie zmienia.
+  - Odrzucone: inny publiczny dostawca albo drugi klucz (SPEC 2.2), własny serwer pośredniczący (brak backendu, SPEC 2.1).

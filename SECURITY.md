@@ -20,7 +20,7 @@ Bunndly zarządza kluczami prywatnymi portfeli z prawdziwymi środkami. Ten doku
 
 - **Nie ma backendu ani serwera.** To statyczne pliki; klucze nigdy nie opuszczają przeglądarki (SPEC 2.1).
 - **Nie wysyła kluczy prywatnych, mnemonika ani hasła** nigdzie. Do Helius i Jupitera trafiają tylko adresy publiczne, a od sprintu 3 także podpisane transakcje (SPEC 6.2).
-- **Łączy się tylko z** Helius (`*.helius-rpc.com`, HTTPS i WSS), `api.jup.ag` i awaryjnym `api.mainnet.solana.com`. Wymusza to nagłówek CSP (`connect-src`, D-025).
+- **Łączy się tylko z** Helius (`*.helius-rpc.com`, HTTPS i WSS), `api.jup.ag` i, tylko na devnecie, awaryjnym `api.devnet.solana.com`. Mainnet nie ma zapasu: `api.mainnet.solana.com` odmawia stronie (D-057). Wymusza to nagłówek CSP (`connect-src`, D-025).
 - **Nie ma telemetrii,** analityki, trackerów ani skryptów z zewnętrznych serwerów (SPEC 6.8).
 - **Nie zapisuje kluczy API w zmiennych builda ani w repozytorium** (SPEC 2.1, 8.4).
 

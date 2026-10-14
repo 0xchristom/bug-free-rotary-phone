@@ -399,17 +399,26 @@ describe('startBuy', () => {
     }
   });
 
-  it('live mode needs the Helius key for the chain check; DRY-RUN does not', async () => {
-    const live = await setup({ dryRun: false, refresh: false, heliusKey: false });
-    expect(
-      await codeOf(live.h.handle({ type: 'startBuy', mint: USDC, wallets: all(live.h) })),
-    ).toBe('HELIUS_KEY_MISSING');
-    const dry = await setup({ refresh: false, heliusKey: false });
-    expect(await codeOf(dry.h.handle({ type: 'startBuy', mint: USDC, wallets: all(dry.h) }))).toBe(
-      'ok',
-    );
-    await runToEnd(dry.clock, dry.events);
-  });
+  // D-057: api.mainnet.solana.com answers 403 to a page, so on mainnet the target cannot be
+  // read without the key, in DRY-RUN too, and nothing is asked at all.
+  it.each([
+    ['classifyTarget', true],
+    ['startBuy', true],
+    ['startBuy', false],
+  ] as const)(
+    'mainnet without the Helius key: %s (DRY-RUN %s) gives HELIUS_KEY_MISSING and reads nothing',
+    async (type, dryRun) => {
+      const { h, jupiter } = await setup({ dryRun, refresh: false, heliusKey: false });
+      const before = rpcReads.length;
+      const request =
+        type === 'startBuy'
+          ? h.handle({ type, mint: USDC, wallets: all(h) })
+          : h.handle({ type, address: USDC });
+      expect(await codeOf(request)).toBe('HELIUS_KEY_MISSING');
+      expect(rpcReads.length).toBe(before);
+      expect(jupiter.calls).toHaveLength(0);
+    },
+  );
 
   it('timeout after a real signed send that landed: the chain check confirms, one buy', async () => {
     const { clock, jupiter, fakeChain, h, events } = await setup({

@@ -3,6 +3,8 @@
  * network's addresses. Helius RPC and WebSocket, the public fallback RPC, the explorer
  * links and the way a buy is routed are all chosen from here; no other module names a
  * network host. Dependency-free, shared by the vault worker and the UI.
+ * Mainnet has no public fallback: api.mainnet.solana.com answers 403 to requests from a
+ * page (D-057).
  *
  * Sources, read 2026-10-12:
  * - Helius endpoints: https://www.helius.dev/docs/api-reference/endpoints
@@ -35,7 +37,8 @@ export type BuyRoute = 'jupiter';
 
 interface NetworkConfig {
   readonly heliusHost: string;
-  readonly publicRpcUrl: string;
+  /** Null where the public RPC refuses requests from a page (mainnet, D-057). */
+  readonly publicRpcUrl: string | null;
   /** Query added to explorer links; empty on mainnet. */
   readonly explorerQuery: string;
   readonly buyRoute: BuyRoute | null;
@@ -51,7 +54,7 @@ export const HELIUS_DOMAIN = 'helius-rpc.com';
 const CONFIG: Record<Network, NetworkConfig> = {
   mainnet: {
     heliusHost: `mainnet.${HELIUS_DOMAIN}`,
-    publicRpcUrl: 'https://api.mainnet.solana.com',
+    publicRpcUrl: null,
     explorerQuery: '',
     buyRoute: 'jupiter',
   },
@@ -84,8 +87,11 @@ export function heliusWsUrl(network: Network, apiKey: string): string {
   return `wss://${heliusHost(network)}/?api-key=${encodeURIComponent(apiKey)}`;
 }
 
-/** Public RPC of the network, used only for reads and only after Helius failed (D-020). */
-export function publicRpcUrl(network: Network): string {
+/**
+ * Public RPC of the network, used only for reads and only after Helius failed (D-020).
+ * Null on mainnet: it answers 403 to requests from a page (D-057).
+ */
+export function publicRpcUrl(network: Network): string | null {
   return CONFIG[network].publicRpcUrl;
 }
 
