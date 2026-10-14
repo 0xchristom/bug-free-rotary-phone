@@ -4,11 +4,11 @@
  * the Activity screen; the Dashboard has none of the old panels.
  */
 import { act, cleanup, render, screen, within } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { WalletEvent } from '../../src/executor/index.ts';
 import { App } from '../../src/ui/App.tsx';
 import { mockStorage, mockVault, unlocked } from './fakes.ts';
+import { setupUser } from './user.ts';
 
 afterEach(cleanup);
 
@@ -49,7 +49,7 @@ async function setup() {
     />,
   );
   await screen.findByRole('heading', { name: 'Fleet' });
-  const user = userEvent.setup();
+  const user = setupUser();
   await user.click(
     within(screen.getByRole('navigation')).getByRole('button', { name: 'Activity' }),
   );

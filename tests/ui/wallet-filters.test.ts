@@ -48,6 +48,11 @@ describe('filter tabs', () => {
     ['signing', wallet(buy('SIGNING')), ['selected', 'flight']],
     ['sent', wallet(buy('SUBMITTED')), ['selected', 'flight']],
     ['sent, chain being checked', wallet(buy('UNKNOWN', CHECKING)), ['selected', 'flight']],
+    [
+      'in flight, reserve too low',
+      wallet(buy('QUEUED'), { reserveTooLow: true }),
+      ['selected', 'flight', 'attention'],
+    ],
     ['bought, chain MATCH', wallet(buy('CONFIRMED', null, 'MATCH')), ['selected', 'filled']],
     [
       'bought, chain INCREASED',

@@ -4,9 +4,13 @@
  */
 import { createPrivateKey, createPublicKey } from 'node:crypto';
 import { base58 } from '@scure/base';
-import { beforeAll, describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { AppError, PLAIN_EXPORT_WARNING, type PlainExport } from '../../src/core/index.ts';
 import { createVaultHandler, type VaultHandler } from '../../src/worker/vault.ts';
+
+// The key derivation is not the subject here: the fast stand-in keeps the key bound to
+// the password, the salt and the cost (tests/helpers/fast-kdf.ts, BUNNDLY-74).
+vi.mock('@noble/hashes/scrypt.js', () => import('../helpers/fast-kdf.ts'));
 
 const PASSWORD = 'correct horse battery staple';
 const MNEMONIC_24 = `${'abandon '.repeat(23)}art`;

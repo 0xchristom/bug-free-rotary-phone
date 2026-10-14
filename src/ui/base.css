@@ -678,6 +678,12 @@ table.wallets tr.empty td {
   flex: 1;
 }
 
+/* Why "Create wallets" is off: wraps in its own box, so the buttons stay on one line. */
+.tabsrow .muted {
+  max-width: 320px;
+  font-size: var(--fs-small);
+}
+
 .tabs {
   display: flex;
   gap: var(--s-0);
@@ -783,7 +789,155 @@ code.address {
 }
 
 .amount-input {
-  width: 132px;
+  width: 112px;
+}
+
+/* Buy amount in a row (BUNNDLY-71): the field and a button that switches SOL / %. */
+.amount-row {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-1);
+}
+
+.unit-toggle {
+  min-width: 36px;
+  height: 30px;
+  padding: 0 var(--s-2);
+  color: var(--fg-2);
+  font: inherit;
+  font-size: var(--fs-small);
+  background: var(--surface-raised);
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-control);
+  cursor: pointer;
+}
+
+.unit-toggle:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+/* In the row the amount reads like the mockup's .amt (SOL mark, plain number): the frame of
+   the field and of the unit button shows on hover and focus only. */
+.amt {
+  font-size: var(--fs-strong);
+  font-weight: 500;
+}
+
+.amt .amount-input {
+  width: 96px;
+  padding: 0 var(--s-2);
+  background: transparent;
+  border-color: transparent;
+}
+
+.amt .amount-input .k-num-input {
+  text-align: left;
+}
+
+.amt .unit-toggle {
+  background: transparent;
+  border-color: transparent;
+  color: var(--fg-3);
+}
+
+.amt:hover .amount-input,
+.amt:focus-within .amount-input,
+.amt .amount-input:has([aria-invalid='true']) {
+  background: var(--surface-panel);
+  border-color: var(--line-2);
+}
+
+.amt:hover .unit-toggle,
+.amt:focus-within .unit-toggle {
+  background: var(--surface-raised);
+  border-color: var(--line-2);
+  color: var(--fg-2);
+}
+
+.amt .amount-input:has([aria-invalid='true']) {
+  border-color: var(--danger);
+}
+
+/* Priority fee and slippage: buy badge on top (green, in arrow), sell under it (red, out arrow). */
+.pair {
+  display: grid;
+  gap: var(--s-1);
+  justify-items: start;
+}
+
+.mini {
+  height: 19px;
+  padding: 0 6px 0 5px;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-1);
+  border-radius: var(--r-chip);
+  font-size: var(--fs-small);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.mini .k-i {
+  width: 10px;
+  height: 10px;
+  stroke-width: 2.2;
+}
+
+.mini.b {
+  background: var(--ok-bg);
+  color: var(--ok);
+}
+
+.mini.s {
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+
+/* Trade settings popover (mockup: Edit selected / the row's edit button). */
+.trade-form {
+  display: grid;
+  gap: var(--s-3);
+}
+
+.trade-form h3 {
+  font-size: var(--fs-title);
+  font-weight: 600;
+  letter-spacing: 0;
+}
+
+.trade-form p {
+  color: var(--fg-2);
+  font-size: var(--fs-note);
+}
+
+.trade-form .grid2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.trade-form .tf {
+  display: grid;
+  gap: 5px;
+}
+
+.trade-form .tf label {
+  color: var(--fg-2);
+  font-size: var(--fs-small);
+  font-weight: 500;
+}
+
+.trade-form .amount-row {
+  display: flex;
+}
+
+.trade-form .amount-row .k-input {
+  flex: 1;
+}
+
+.trade-form .unit-toggle {
+  height: var(--h-control);
 }
 
 table.connections td {
@@ -1162,6 +1316,16 @@ button.top-chip {
 .hero p {
   color: var(--fg-2);
   font-size: var(--fs-strong);
+}
+
+/* The password of a remembered fleet: a field that stands out from the panel. */
+.hero .form {
+  width: 100%;
+  max-width: 360px;
+}
+
+.hero .k-input {
+  background: var(--surface-base);
 }
 
 /* STOP is the one control that must be found without reading. */

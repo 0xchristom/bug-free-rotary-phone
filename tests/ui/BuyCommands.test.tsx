@@ -169,6 +169,7 @@ function runEvent(phase: RunEvent['phase'], wallets = 3): RunEvent {
     wallets,
     counts: {
       IDLE: 0,
+      SCHEDULED: 0,
       QUEUED: 0,
       QUOTING: 0,
       SIGNING: 0,

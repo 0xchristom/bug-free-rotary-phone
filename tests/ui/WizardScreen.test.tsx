@@ -325,8 +325,15 @@ describe('what blocks the fleet is always said next to the field (BUNNDLY-42)', 
     await user.click(createButton());
     gate.resolve();
     await screen.findByRole('heading', { name: 'Fleet created' });
+    // The fake browser keeps no data (fakes.ts), so the fleet is not remembered.
     expect(seen).toEqual([
-      { type: 'create', fleetName: 'Moja flota', walletCount: 7, password: PASSWORD },
+      {
+        type: 'create',
+        fleetName: 'Moja flota',
+        walletCount: 7,
+        password: PASSWORD,
+        remember: false,
+      },
     ]);
   });
 
@@ -357,6 +364,7 @@ describe('what blocks the fleet is always said next to the field (BUNNDLY-42)', 
         walletCount: 30,
         password: twelve,
         mnemonic: MNEMONIC_12,
+        remember: false,
       },
     ]);
   });

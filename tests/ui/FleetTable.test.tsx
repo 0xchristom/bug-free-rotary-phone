@@ -22,7 +22,7 @@ const SOL = 1_000_000_000n;
 
 /** Column positions of the wallet table. */
 const BALANCE = 2;
-const TOKEN = 4;
+const TOKEN = 6;
 
 interface Setup {
   readonly count?: number;
@@ -193,6 +193,8 @@ describe('fleet table', () => {
       'Wallet',
       'Balance',
       'Buy amount',
+      'Priority fee',
+      'Slippage',
       'Tokens',
       'Status',
       'Last transaction',
@@ -213,7 +215,7 @@ describe('fleet table', () => {
       },
     });
     await ready();
-    expect(within(row('W01')).getByLabelText<HTMLInputElement>('Max spend W01').value).toBe(
+    expect(within(row('W01')).getByLabelText<HTMLInputElement>('Buy amount W01').value).toBe(
       '0.985',
     );
     expect(row('W01').dataset.ready).toBe('true');
@@ -233,9 +235,8 @@ describe('fleet table', () => {
     expect(row('W03').className).toBe('');
     expect(within(row('W03')).getByText('No amount')).toBeTruthy();
 
-    await user.clear(within(row('W03')).getByLabelText('Max spend W03'));
-    await user.type(within(row('W03')).getByLabelText('Max spend W03'), '2');
-    expect(within(row('W03')).getByText('More than the wallet balance.')).toBeTruthy();
+    await user.type(within(row('W03')).getByLabelText('Buy amount W03'), '2{Enter}');
+    expect(await within(row('W03')).findByText('More than the wallet balance.')).toBeTruthy();
     expect(row('W03').className).toBe('row-error');
   });
 
@@ -255,29 +256,55 @@ describe('fleet table', () => {
     expect(cell?.querySelector('svg.k-i-sol')).toBeTruthy();
   });
 
-  it('invalid amounts show English messages and block saving', async () => {
-    const { user } = setup();
+  it('invalid amounts show English messages and are not saved', async () => {
+    const { user, saved } = setup();
     await ready();
-    const input = within(row('W01')).getByLabelText('Max spend W01');
+    const input = within(row('W01')).getByLabelText('Buy amount W01');
     for (const [text, message] of [
       ['-1', 'The amount cannot be negative.'],
       ['0,1234567891', 'Use at most 9 decimal places (1 lamport).'],
       ['lots', 'Enter an amount in SOL, e.g. 0.25.'],
     ] as const) {
       await user.clear(input);
-      await user.type(input, text);
+      await user.type(input, `${text}{Enter}`);
       expect(within(row('W01')).getByText(message)).toBeTruthy();
-      expect(
-        screen.getByRole<HTMLButtonElement>('button', { name: 'Save table changes' }).disabled,
-      ).toBe(true);
     }
+    // a percent is a whole number from 1 to 100
+    await user.click(
+      within(row('W01')).getByRole('button', { name: /^Unit of the buy amount W01/u }),
+    );
+    await user.clear(input);
+    await user.type(input, '101{Enter}');
+    expect(within(row('W01')).getByText('Enter a whole number from 1 to 100.')).toBeTruthy();
+    expect(saved).toEqual([]);
   });
 
-  it('saves max spend and the selection through the vault, then the file on click', async () => {
+  it('saves the amount on Enter and the selection on click, then the file on click', async () => {
     const { user, saved, storage } = setup();
     await ready();
-    await user.type(within(row('W01')).getByLabelText('Max spend W01'), '0.5');
-    await user.type(within(row('W03')).getByLabelText('Max spend W03'), '0,25');
+    await user.type(within(row('W01')).getByLabelText('Buy amount W01'), '0.5{Enter}');
+    await screen.findByText(/The trade settings are saved in the vault/u);
+    // leaving the field and its unit button saves too
+    await user.type(within(row('W03')).getByLabelText('Buy amount W03'), '0,25');
+    await user.tab(); // to the unit button: still the same control
+    expect(saved).toHaveLength(1);
+    await user.tab();
+    await eventually(() => {
+      expect(saved).toHaveLength(2);
+    });
+    expect(saved[1]).toEqual({
+      maxSpend: [
+        { index: 0, lamports: 500_000_000n },
+        { index: 2, lamports: 250_000_000n },
+      ],
+      active: [],
+      global: fleetInfo().settings.global,
+      trade: fleetInfo().settings.trade,
+    });
+    expect(storage.showDirectoryPicker).not.toHaveBeenCalled();
+    await user.click(screen.getByRole('button', { name: 'Save the updated fleet file' }));
+    expect(await screen.findByText(/with the new trade settings/u)).toBeTruthy();
+
     await user.click(selectBox('W02'));
     expect(screen.getByText('You have unsaved table changes.')).toBeTruthy();
     expect(row('W02').className).toBe('unsel');
@@ -289,20 +316,17 @@ describe('fleet table', () => {
     expect(event.defaultPrevented).toBe(true);
 
     await user.click(screen.getByRole('button', { name: 'Save table changes' }));
-    await screen.findByText(/The table changes .* are saved in the vault/u);
-    expect(saved).toHaveLength(1);
-    expect(saved[0]).toEqual({
-      maxSpend: [
-        { index: 0, lamports: 500_000_000n },
-        { index: 2, lamports: 250_000_000n },
-      ],
+    await screen.findByText(/The selected wallets are saved in the vault/u);
+    expect(saved[2]).toEqual({
+      maxSpend: saved[1]?.maxSpend,
       active: [{ index: 1, active: false }],
       global: fleetInfo().settings.global,
     });
-    expect(storage.showDirectoryPicker).not.toHaveBeenCalled();
-
+    // the file from the first save is there: replacing it is confirmed
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
     await user.click(screen.getByRole('button', { name: 'Save the updated fleet file' }));
     expect(await screen.findByText(/with the new fleet settings/u)).toBeTruthy();
+    expect(confirm).toHaveBeenCalledOnce();
     expect(storage.files.get('Flota testowa.keystore.json')).toBe('{"saved":true}');
     expect(screen.queryByText('You have unsaved table changes.')).toBeNull();
   });
@@ -443,7 +467,13 @@ describe('wallet cell', () => {
     const names = within(row('Wallet 1'))
       .getAllByRole('button')
       .map((b) => b.getAttribute('aria-label'));
-    expect(names).toEqual(['Copy address Wallet 1', 'Buy Wallet 1', 'QR code Wallet 1']);
+    expect(names).toEqual([
+      'Copy address Wallet 1',
+      'Unit of the buy amount Wallet 1: SOL. Switch',
+      'Buy Wallet 1',
+      'Trade settings Wallet 1',
+      'QR code Wallet 1',
+    ]);
   });
 
   it('the QR code opens in a popover with the address of its wallet; Esc gives the focus back', async () => {
@@ -511,7 +541,7 @@ describe('selection', () => {
     await user.click(headerBox()); // none
     await user.click(selectBox('W02')); // only wallet 1
     await user.click(screen.getByRole('button', { name: 'Save table changes' }));
-    await screen.findByText(/The table changes .* are saved in the vault/u);
+    await screen.findByText(/The selected wallets are saved in the vault/u);
     // wallets without an entry are active (D-019): 0 and 2 are stored as off, 1 is on
     expect(saved[0]?.active).toEqual([
       { index: 0, active: false },
@@ -671,7 +701,7 @@ describe('create wallets', () => {
       'disabled',
       false,
     );
-    await user.type(within(row('W01')).getByLabelText('Max spend W01'), '0.5');
+    await user.click(selectBox('W01'));
     expect(screen.getByRole('button', { name: 'Create wallets' })).toHaveProperty('disabled', true);
     expect(
       screen.getByText(
@@ -700,66 +730,7 @@ describe('create wallets', () => {
   });
 });
 
-describe('bulk actions and summary', () => {
-  // The bulk amounts sit in the "Set amounts" popover of the toolbar (BUNNDLY-73).
-  async function openBulk(user: ReturnType<typeof setup>['user']): Promise<void> {
-    await user.click(screen.getByRole('button', { name: 'Set amounts' }));
-  }
-
-  it('sets the same max spend on all wallets (drafts only, saved on click)', async () => {
-    const { user, saved } = setup();
-    await ready();
-    await openBulk(user);
-    await user.type(screen.getByLabelText('Max spend for all (SOL)'), '0,5');
-    await user.click(screen.getByRole('button', { name: 'Set amount' }));
-    for (const label of ['W01', 'W02', 'W03']) {
-      expect(within(row(label)).getByLabelText<HTMLInputElement>(`Max spend ${label}`).value).toBe(
-        '0.5',
-      );
-    }
-    expect(saved).toHaveLength(0);
-    expect(['W01', 'W02', 'W03'].map((l) => row(l).dataset.ready)).toEqual([
-      'true',
-      'true',
-      'true',
-    ]);
-    expect(summaryValue('Selected')).toBe('3 of 3');
-    expect(summaryValue('Planned buy')).toBe('1.5 SOL');
-    expect(summaryValue('Fleet balance')).toBe('3 SOL');
-  });
-
-  it('a wrong amount or percent gives an English message and changes nothing', async () => {
-    const { user } = setup();
-    await ready();
-    await openBulk(user);
-    await user.type(screen.getByLabelText('Max spend for all (SOL)'), '-1');
-    await user.click(screen.getByRole('button', { name: 'Set amount' }));
-    expect(screen.getByText('The amount cannot be negative.')).toBeTruthy();
-    await user.type(screen.getByLabelText('Max spend as % of balance'), '150');
-    await user.click(screen.getByRole('button', { name: 'Set percent' }));
-    expect(screen.getByText(/Enter a percent of the balance from 0\.01 to 100/u)).toBeTruthy();
-    expect(within(row('W01')).getByLabelText<HTMLInputElement>('Max spend W01').value).toBe('');
-  });
-
-  it('sets max spend as a % of each balance (rounded down)', async () => {
-    const { user } = setup({ lamports: (i) => SOL + BigInt(i) * 333n });
-    await ready();
-    await openBulk(user);
-    await user.type(screen.getByLabelText('Max spend as % of balance'), '90');
-    await user.click(screen.getByRole('button', { name: 'Set percent' }));
-    expect(within(row('W01')).getByLabelText<HTMLInputElement>('Max spend W01').value).toBe('0.9');
-    // (1 000 000 333 × 9000) / 10 000 = 900 000 299.7 → 900 000 299 lamports
-    expect(within(row('W02')).getByLabelText<HTMLInputElement>('Max spend W02').value).toBe(
-      '0.900000299',
-    );
-    // reserve = balance − 90 % ≥ 0.015 SOL, so every wallet is ready
-    expect(['W01', 'W02', 'W03'].map((l) => row(l).dataset.ready)).toEqual([
-      'true',
-      'true',
-      'true',
-    ]);
-  });
-
+describe('summary', () => {
   it('the summary sums token balances with decimals', async () => {
     const { user } = setup();
     await ready();
@@ -830,11 +801,20 @@ describe('filters, search and sorting (mockup v2)', () => {
     expect(shownLabels()).toEqual(['W03', 'W01', 'W02']);
   });
 
-  it('a click on Buy amount sorts by the amount typed, empty ones last', async () => {
-    const { user } = setup({ settings: { maxSpend: [{ index: 2, lamports: 100_000_000n }] } });
+  it('a click on Buy amount sorts by what a buy would spend, empty ones last', async () => {
+    const { user } = setup({
+      lamports: () => 2n * SOL,
+      settings: {
+        maxSpend: [{ index: 2, lamports: 100_000_000n }],
+        trade: {
+          fleet: fleetInfo().settings.trade.fleet,
+          // 2 % of 2 SOL = 0.04 SOL: between the other two
+          wallets: [{ index: 0, buyPercent: 2 }],
+        },
+      },
+    });
     await ready();
-    await user.type(within(row('W01')).getByLabelText('Max spend W01'), '0.05');
-    const header = screen.getByRole('columnheader', { name: 'Buy amount (max spend, SOL)' });
+    const header = screen.getByRole('columnheader', { name: 'Buy amount (SOL or % of balance)' });
     await user.click(within(header).getByRole('button'));
     expect(shownLabels()).toEqual(['W03', 'W01', 'W02']);
   });
@@ -844,6 +824,8 @@ describe('filters, search and sorting (mockup v2)', () => {
     await ready();
     await user.type(screen.getByRole('searchbox', { name: 'Search wallets' }), 'W02');
     expect(headerBox().checked).toBe(true);
+    // the count is of the whole fleet, not of what the search shows
+    expect(screen.getByText('3 of 3 selected')).toBeTruthy();
     await user.click(headerBox()); // clears W02 only
     await user.clear(screen.getByRole('searchbox', { name: 'Search wallets' }));
     expect(['W01', 'W02', 'W03'].map((l) => selectBox(l).checked)).toEqual([true, false, true]);

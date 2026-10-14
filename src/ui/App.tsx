@@ -165,6 +165,27 @@ export function App({
     };
   }, [vault, applyStatus, statusPollMs]);
 
+  // A fleet remembered on this device opens without the password while its window lasts
+  // (BUNNDLY-52). Start waits for the answer so it does not flash before the fleet.
+  const [resumed, setResumed] = useState(false);
+  useEffect(() => {
+    let active = true;
+    vault
+      .request({ type: 'resume' })
+      .then(
+        (next) => {
+          if (active) applyStatus(next, 'auto');
+        },
+        () => undefined,
+      )
+      .finally(() => {
+        if (active) setResumed(true);
+      });
+    return () => {
+      active = false;
+    };
+  }, [vault, applyStatus]);
+
   // User activity keeps the vault unlocked; reported at most once per throttle window.
   useEffect(() => {
     const onActivity = (): void => {
@@ -281,7 +302,7 @@ export function App({
                     {notice}
                   </p>
                 )}
-                {status === null ? (
+                {status === null || !resumed ? (
                   <p className="muted">Connecting to the vault…</p>
                 ) : (
                   <>

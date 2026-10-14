@@ -12,6 +12,10 @@ import { createVaultHandler, type VaultHandler } from '../../src/worker/vault.ts
 import * as signing from '../../src/worker/sign-order.ts';
 import { MAKER, OTHER_SIGNER, USDC, buildTransaction, orderFor } from '../helpers/tx-fakes.ts';
 
+// The key derivation is not the subject here: the fast stand-in keeps the key bound to
+// the password, the salt and the cost (tests/helpers/fast-kdf.ts, BUNNDLY-74).
+vi.mock('@noble/hashes/scrypt.js', () => import('../helpers/fast-kdf.ts'));
+
 vi.mock('../../src/worker/sign-order.ts', { spy: true });
 
 const PASSWORD = 'correct horse battery staple';

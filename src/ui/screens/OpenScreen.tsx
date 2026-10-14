@@ -4,6 +4,8 @@ import { openKeystoreFile, type StorageEnv } from '../../storage/keystore-file.t
 import type { VaultPreview } from '../../worker/protocol.ts';
 import { useVault } from '../vault-state.ts';
 import { Button, Chip, Input, ProgressBar } from '../kit/index.ts';
+import { RememberOption } from '../remember-ui.tsx';
+import { rememberChoice, useRememberedView } from '../remember-view.ts';
 
 type Phase =
   | { readonly kind: 'pick'; readonly picking: boolean }
@@ -41,6 +43,9 @@ export function OpenScreen({ storage, onBack, onUnlocked }: OpenScreenProps) {
   const [phase, setPhase] = useState<Phase>({ kind: 'pick', picking: false });
   const [password, setPassword] = useState('');
   const [problem, setProblem] = useState<Problem>(null);
+  const { view: remembered } = useRememberedView();
+  const [rememberTicked, setRememberTicked] = useState<boolean | null>(null);
+  const remember = rememberChoice(remembered, rememberTicked);
 
   const pick = async (): Promise<void> => {
     setProblem(null);
@@ -71,7 +76,7 @@ export function OpenScreen({ storage, onBack, onUnlocked }: OpenScreenProps) {
     setPhase({ ...current, unlocking: 0 });
     try {
       await client.request(
-        { type: 'unlock', fileText: current.fileText, password: secret },
+        { type: 'unlock', fileText: current.fileText, password: secret, remember },
         {
           onProgress: (progress) => {
             setPhase({ ...current, unlocking: progress });
@@ -169,6 +174,12 @@ export function OpenScreen({ storage, onBack, onUnlocked }: OpenScreenProps) {
             <p className="muted">Decrypting the file… {percent}%</p>
           </>
         )}
+        <RememberOption
+          view={remembered}
+          checked={remember}
+          onChange={setRememberTicked}
+          disabled={percent !== null}
+        />
         <div className="actions">
           <Button type="submit" variant="primary" disabled={password === '' || percent !== null}>
             Unlock

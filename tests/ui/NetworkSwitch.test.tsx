@@ -15,6 +15,7 @@ import {
   mockVault,
   unlocked,
 } from './fakes.ts';
+import { setupUser } from './user.ts';
 
 const CREATOR = '6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P';
 const MINT = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
@@ -27,7 +28,7 @@ afterEach(() => {
 function setup(status: VaultStatus, storageMode: 'directory' | 'download' = 'directory') {
   const vault = mockVault(status);
   const storage = mockStorage(storageMode);
-  const user = userEvent.setup();
+  const user = setupUser();
   render(<App vault={vault.client} storage={storage.env} statusPollMs={20} />);
   const requests = (type: VaultRequest['type']): VaultRequest[] =>
     vault.request.mock.calls.map(([r]) => r).filter((r) => r.type === type);
@@ -255,7 +256,7 @@ describe('balances follow the network', () => {
       if (req.type === 'setNetwork') network = req.network;
       return original ? original(req, options) : Promise.reject(new Error('no vault'));
     });
-    const user = userEvent.setup();
+    const user = setupUser();
     render(
       <App
         vault={vault.client}
@@ -317,7 +318,7 @@ describe('balances follow the network', () => {
       }
       return original ? original(req, options) : Promise.reject(new Error('no vault'));
     });
-    const user = userEvent.setup();
+    const user = setupUser();
     render(
       <App
         vault={vault.client}

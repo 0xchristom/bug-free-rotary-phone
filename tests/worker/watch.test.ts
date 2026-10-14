@@ -167,8 +167,17 @@ async function setup(o: Setup = {}) {
    * Arms (the target check and then the balance read take the RPC's 1 s each) and opens
    * the socket.
    */
-  const arm = async (creator = CREATOR, wallets = all(h)): Promise<void> => {
-    const armed = h.handle({ type: 'arm', creator, wallets });
+  const arm = async (
+    creator = CREATOR,
+    wallets = all(h),
+    stairs?: { intervalMs: number; perStep: number },
+  ): Promise<void> => {
+    const armed = h.handle({
+      type: 'arm',
+      creator,
+      wallets,
+      ...(stairs === undefined ? {} : { stairs }),
+    });
     if (!o.realClock) {
       await clock.runUntil(clock.now() + RPC_DELAY_MS);
       await clock.runUntil(clock.now() + RPC_DELAY_MS);
@@ -283,6 +292,35 @@ describe('arm → real pump.fun log → buy', () => {
     expect(reaction ?? Infinity).toBeLessThan(50);
     await t.h.handle({ type: 'disarm' });
     await t.h.handle({ type: 'stop' });
+  });
+});
+
+describe('Stairs after a detection (BUNNDLY-61)', () => {
+  it('armed with a step every 10 s: the second wallet asks 10 s after the detection', async () => {
+    const t = await setup();
+    await t.arm(CREATOR, all(t.h), { intervalMs: 10_000, perStep: 1 });
+    const deliveredAt = t.clock.now();
+    t.socket().message(N.message);
+    await t.clock.settle();
+    expect(t.orders.map((o) => o.at - deliveredAt)).toEqual([0]);
+    await t.untilNoBuy();
+    expect(t.orders.map((o) => o.at - deliveredAt)).toEqual([0, 10_000]);
+    expect(t.runs()[0]?.stairs?.steps).toBe(2);
+    await t.h.handle({ type: 'disarm' });
+  });
+
+  it('bad Stairs parameters refuse the arming', async () => {
+    const t = await setup();
+    await rejectsWith(
+      t.h.handle({
+        type: 'arm',
+        creator: CREATOR,
+        wallets: all(t.h),
+        stairs: { intervalMs: 500, perStep: 1 },
+      }),
+      'INVALID_STAIRS',
+    );
+    expect(t.sockets).toHaveLength(0);
   });
 });
 

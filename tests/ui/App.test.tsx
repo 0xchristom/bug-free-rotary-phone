@@ -1,12 +1,12 @@
 // @vitest-environment jsdom
 import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AppError } from '../../src/core/errors.ts';
 import { App } from '../../src/ui/App.tsx';
 import type { VaultPort } from '../../src/worker/protocol.ts';
 import { createVaultClient } from '../../src/worker/vault-client.ts';
 import { LOCKED, mockStorage, mockVault, unlocked } from './fakes.ts';
+import { setupUser } from './user.ts';
 
 function renderApp(
   vault: ReturnType<typeof mockVault>,
@@ -31,7 +31,7 @@ afterEach(() => {
 
 describe('navigation', () => {
   it('locked vault: start screen, wizard and back; no fleet navigation or lock button', async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     renderApp(mockVault(LOCKED));
     expect(await screen.findByRole('heading', { name: 'Welcome to Bunndly' })).toBeTruthy();
     expect(screen.queryByRole('navigation')).toBeNull();
@@ -44,7 +44,7 @@ describe('navigation', () => {
   });
 
   it('unlocked vault: fleet screen with the fleet name; switches to settings and back', async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     renderApp(mockVault(unlocked()));
     expect(await screen.findByRole('heading', { name: 'Fleet' })).toBeTruthy();
     expect(screen.getByText('Flota testowa')).toBeTruthy();
@@ -122,7 +122,7 @@ describe('vault status changes', () => {
   });
 
   it('“Lock” calls lock and returns to the start screen', async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     const vault = mockVault(unlocked());
     renderApp(vault, 60_000);
     await user.click(await screen.findByRole('button', { name: 'Lock' }));
@@ -141,7 +141,7 @@ describe('vault status changes', () => {
 
 describe('activity reporting', () => {
   it('reports user activity at most once per throttle window, only when unlocked', async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     const vault = mockVault(unlocked());
     renderApp(vault, 60_000);
     const nav = await screen.findByRole('navigation');
@@ -164,7 +164,7 @@ describe('nothing in storage or the URL (SPEC 6.1)', () => {
     const pushState = vi.spyOn(window.history, 'pushState');
     const replaceState = vi.spyOn(window.history, 'replaceState');
     const href = window.location.href;
-    const user = userEvent.setup();
+    const user = setupUser();
     const vault = mockVault(unlocked());
     renderApp(vault);
 

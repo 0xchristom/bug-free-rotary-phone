@@ -297,7 +297,7 @@ describe('wallet groups (BUNNDLY-69)', () => {
     ]);
   });
 
-  it('a running group keeps its wallets, name and amounts; another group can change', async () => {
+  it('a running group keeps its wallets, name and row buys; another group can change', async () => {
     const { user, requests } = setup({
       groups: THREE_GROUPS,
       runs: { g2: { buy: running(MINT) } },
@@ -317,10 +317,17 @@ describe('wallet groups (BUNNDLY-69)', () => {
       expect(button.getAttribute('aria-description')).toBe(why);
     }
     await user.keyboard('{Escape}');
-    expect(screen.getByLabelText('Max spend W04')).toHaveProperty('disabled', true);
+    const rowBuy = screen.getByRole('button', { name: 'Buy W04' });
+    expect(rowBuy).toHaveProperty('disabled', true);
+    expect(rowBuy.getAttribute('aria-description')).toBe(why);
+    // The amount locks only for the wallets of the run itself (D-050); this run has no rows yet.
+    expect(screen.getByLabelText('Buy amount W04')).toHaveProperty('disabled', false);
 
     await user.click(groupTab('Team C'));
-    expect(screen.getByLabelText('Max spend W07')).toHaveProperty('disabled', false);
+    // C's row buy waits only for a mint, not for the running B
+    expect(screen.getByRole('button', { name: 'Buy W07' }).getAttribute('aria-description')).toBe(
+      'Paste a token mint first.',
+    );
     // C's wallets cannot go into the running B, but B is no reason to keep C from changing.
     // Only the selected W07 moves; W08 stays and goes to A when C is deleted.
     await user.click(screen.getByRole('checkbox', { name: 'Select W08' }));
