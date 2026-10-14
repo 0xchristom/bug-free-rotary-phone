@@ -376,14 +376,15 @@ describe('auto-lock and lock', () => {
     expect((await t.status()).locked).toBe(true);
   });
 
-  it('armed: settings and wallets are frozen (WATCH_ARMED) until disarm', async () => {
+  it('armed: settings and wallets are frozen until disarm (D-039, BUNNDLY-68)', async () => {
     const t = await setup({ mode: 'continuous' });
     const settings = (await t.status()).info?.settings;
     if (!settings) throw new Error('no settings');
     await t.arm();
     const live = { ...settings, global: { ...settings.global, dryRun: false } };
     await rejectsWith(t.h.handle({ type: 'saveSettings', settings: live }), 'WATCH_ARMED');
-    await rejectsWith(t.h.handle({ type: 'addWallets', count: 1 }), 'WATCH_ARMED');
+    // one group with every wallet: it is armed, so new wallets cannot join it
+    await rejectsWith(t.h.handle({ type: 'addWallets', count: 1 }), 'GROUP_RUNNING');
     await rejectsWith(t.h.handle({ type: 'setNetwork', network: 'devnet' }), 'WATCH_ARMED');
     expect((await t.status()).info?.settings.global.dryRun).toBe(true);
     expect((await t.status()).network).toBe('mainnet');

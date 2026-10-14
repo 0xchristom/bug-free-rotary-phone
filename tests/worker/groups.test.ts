@@ -142,6 +142,11 @@ async function setup(
       apiKeys: { helius: HELIUS_KEY },
     }) as Promise<VaultFileResult>;
   const saved = await save(fleet.groups);
+  /** Saves the settings from the start with `change` applied, the groups as they are now. */
+  const saveWith = (
+    change: (s: FleetSettingsV1) => FleetSettingsV1,
+    apiKeys: Record<string, string | null> = {},
+  ) => h.handle({ type: 'saveSettings', settings: change(settings(fleet.groups)), apiKeys });
   const status = async () => (await h.handle({ type: 'status' })) as VaultStatus;
   const addresses = ((await status()).info?.wallets ?? []).map((w) => w.address);
   for (const i of [0, 3]) probes.add(addresses[i] ?? '');
@@ -189,6 +194,7 @@ async function setup(
     status,
     group,
     save,
+    saveWith,
     saved,
     askedBy,
     startBuy,
@@ -344,6 +350,82 @@ describe('members of a busy group stay', () => {
     await t.untilIdle();
     expect(await codeOf(t.h.handle({ type: 'addWallets', count: 1 }))).toBe('ok');
     expect((await t.status()).info?.settings.groups).toEqual([{ ...A, wallets: [0, 1, 2, 8] }, B]);
+  });
+});
+
+describe('an armed group freezes only what its buy depends on (D-039 relaxed)', () => {
+  const spend = (index: number, lamports: bigint) => (s: FleetSettingsV1) => ({
+    ...s,
+    maxSpend: s.maxSpend.map((m) => (m.index === index ? { index, lamports } : m)),
+  });
+  const inactive = (index: number) => (s: FleetSettingsV1) => ({
+    ...s,
+    active: [{ index, active: false }],
+  });
+  const walletSlippage = (index: number) => (s: FleetSettingsV1) => ({
+    ...s,
+    trade: { ...s.trade, wallets: [{ index, buySlippageBps: 300 }] },
+  });
+  const global = (patch: Partial<FleetSettingsV1['global']>) => (s: FleetSettingsV1) => ({
+    ...s,
+    global: { ...s.global, ...patch },
+  });
+
+  it("B armed: B's wallets are refused (WALLET_IN_RUN), A's wallets may change", async () => {
+    const t = await setup();
+    await t.arm('g2');
+    for (const change of [spend(4, 20_000_000n), inactive(4), walletSlippage(7)]) {
+      expect(await codeOf(t.saveWith(change))).toBe('WALLET_IN_RUN');
+    }
+    // a fleet default B's wallets take is theirs too
+    const fleetSlippage = (s: FleetSettingsV1) => ({
+      ...s,
+      trade: { ...s.trade, fleet: { ...s.trade.fleet, buySlippageBps: 300 } },
+    });
+    expect(await codeOf(t.saveWith(fleetSlippage))).toBe('WALLET_IN_RUN');
+    expect((await t.status()).info?.settings.maxSpend[4]?.lamports).toBe(10_000_000n);
+
+    for (const change of [spend(1, 20_000_000n), inactive(2), walletSlippage(0)]) {
+      expect(await codeOf(t.saveWith(change))).toBe('ok');
+    }
+    expect((await t.status()).info?.settings.trade.wallets).toEqual([
+      { index: 0, buySlippageBps: 300 },
+    ]);
+    expect((await t.group('g2'))?.watch?.armed).toBe(true);
+  });
+
+  it('B armed: the global settings and keys of the run are refused (WATCH_ARMED), the explorer and auto-lock are not', async () => {
+    const t = await setup();
+    await t.arm('g2');
+    for (const change of [
+      global({ dryRun: false }),
+      global({ minReserveLamports: 20_000_000n }),
+      global({ maxAttempts: 2 }),
+      global({ mode: 'one-shot' }),
+    ]) {
+      expect(await codeOf(t.saveWith(change))).toBe('WATCH_ARMED');
+    }
+    expect(await codeOf(t.saveWith((s) => s, { jupiter: 'jupiterGroupsKey' }))).toBe('WATCH_ARMED');
+    expect(await codeOf(t.saveWith((s) => s, { helius: null }))).toBe('WATCH_ARMED');
+    expect(await codeOf(t.h.handle({ type: 'setNetwork', network: 'devnet' }))).toBe('WATCH_ARMED');
+    expect((await t.status()).info?.settings.global.dryRun).toBe(true);
+
+    expect(await codeOf(t.saveWith(global({ explorer: 'orb', autoLockMinutes: 30 })))).toBe('ok');
+    // the same key again is no change
+    expect(await codeOf(t.saveWith((s) => s, { helius: HELIUS_KEY }))).toBe('ok');
+
+    await t.h.handle({ type: 'disarm', group: 'g2' });
+    expect(await codeOf(t.saveWith(global({ dryRun: false })))).toBe('ok');
+    expect(await codeOf(t.saveWith(spend(4, 20_000_000n)))).toBe('ok');
+  });
+
+  it('new wallets join the first group: accepted while another group is armed, refused while it is', async () => {
+    const t = await setup();
+    await t.arm('g2');
+    expect(await codeOf(t.h.handle({ type: 'addWallets', count: 1 }))).toBe('ok');
+    expect((await t.status()).info?.settings.groups).toEqual([{ ...A, wallets: [0, 1, 2, 8] }, B]);
+    await t.arm('g1');
+    expect(await codeOf(t.h.handle({ type: 'addWallets', count: 1 }))).toBe('GROUP_RUNNING');
   });
 });
 
