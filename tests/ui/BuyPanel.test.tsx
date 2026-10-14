@@ -19,6 +19,7 @@ import {
   fleetInfo,
   mockStorage,
   mockVault,
+  withDefaultGroup,
 } from './fakes.ts';
 import { eventually } from './settle.ts';
 import { setupUser } from './user.ts';
@@ -89,7 +90,7 @@ function setup({
     switch (req.type) {
       case 'status':
       case 'activity':
-        return Promise.resolve(status());
+        return Promise.resolve(withDefaultGroup(status()));
       case 'refreshBalances':
         return Promise.resolve({
           balances: info.wallets.map((w) => ({ index: w.index, lamports: SOL })),
@@ -250,6 +251,7 @@ describe('mode A', () => {
       type: 'startBuy',
       mint: MINT,
       wallets: [0, 1, 2],
+      group: 'g1',
     });
   });
 
@@ -263,6 +265,7 @@ describe('mode A', () => {
       type: 'startBuy',
       mint: MINT,
       wallets: [0, 2],
+      group: 'g1',
     });
     expect(requests.filter((r) => r.type === 'saveSettings')).toEqual([]);
   });
@@ -372,7 +375,11 @@ describe('mode A', () => {
     expect(screen.queryByRole('checkbox', { name: 'Select W01' })).toBeNull();
     expect(screen.getByRole('checkbox', { name: 'Select W02' })).toBeTruthy();
     expect(screen.getByRole('checkbox', { name: 'Select W03' })).toBeTruthy();
-    await user.click(screen.getByRole('button', { name: /^All wallets/u }));
+    await user.click(
+      within(screen.getByRole('group', { name: 'Wallet filters' })).getByRole('button', {
+        name: /^All wallets/u,
+      }),
+    );
     // one confirmed wallet at 1.2 s: the first and the last fill
     expect(summaryValue('First and last fill')).toBe('+1.2 s · +1.2 s');
 
@@ -457,7 +464,7 @@ describe('command bar (BUNNDLY-59)', () => {
     await showMint(user);
     await user.click(screen.getByRole('button', { name: 'Buy W02' }));
     expect(requests.filter((r) => r.type === 'startBuy')).toEqual([
-      { type: 'startBuy', mint: MINT, wallets: [1] },
+      { type: 'startBuy', mint: MINT, wallets: [1], group: 'g1' },
     ]);
   });
 
@@ -467,7 +474,7 @@ describe('command bar (BUNNDLY-59)', () => {
     await user.click(screen.getByRole('checkbox', { name: 'Select W02' }));
     await user.click(screen.getByRole('button', { name: 'SELL' }));
     expect(requests.filter((r) => r.type === 'startSell')).toEqual([
-      { type: 'startSell', mint: MINT, wallets: [0, 2] },
+      { type: 'startSell', mint: MINT, wallets: [0, 2], group: 'g1' },
     ]);
     expect(requests.filter((r) => r.type === 'startBuy')).toEqual([]);
     expect(['W01', 'W02', 'W03'].map(stateOf)).toEqual(['Queued', 'not queued', 'Queued']);
@@ -500,7 +507,7 @@ describe('command bar (BUNNDLY-59)', () => {
     expect(requests.filter((r) => r.type === 'startSell')).toEqual([]);
     await user.click(within(dialog).getByRole('button', { name: 'Yes, sell' }));
     expect(requests.filter((r) => r.type === 'startSell')).toEqual([
-      { type: 'startSell', mint: MINT, wallets: [0, 1, 2] },
+      { type: 'startSell', mint: MINT, wallets: [0, 1, 2], group: 'g1' },
     ]);
   });
 

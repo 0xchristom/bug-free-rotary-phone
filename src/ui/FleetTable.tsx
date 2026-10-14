@@ -72,11 +72,15 @@ interface RowProps extends FleetRowData {
   readonly onBuy?: ((index: number) => void) | undefined;
   /** Why no buy can start now (the same for every row), or null. */
   readonly buyBlocked: string | null;
+  /** The wallet's group name, shown in the "All" view (BUNNDLY-69); undefined: no column. */
+  readonly group?: string | undefined;
+  /** Why the wallet's group keeps its amount and its buy now (it runs), or null. */
+  readonly frozen: string | null;
 }
 
 /** Shown where there is no value yet. */
 const NONE = '—';
-/** Columns of the table, for the row that says no wallet matches. */
+/** Columns of the table without the group column, for the row that says no wallet matches. */
 const COLUMNS = 8;
 
 const STATE_LABELS: Record<WalletState, string> = {
@@ -189,6 +193,7 @@ const FleetRow = memo(function FleetRow(p: RowProps) {
   const signature = p.buy?.result?.signature ?? null;
   const txUrl = signature ? transactionUrl(p.explorer, p.network, signature) : null;
   const rowBuyBlocked =
+    p.frozen ??
     p.buyBlocked ??
     (state.ready ? null : 'This wallet is not ready: ' + idle.text.toLowerCase() + '.');
   const amountError =
@@ -243,6 +248,7 @@ const FleetRow = memo(function FleetRow(p: RowProps) {
           </div>
         </div>
       </td>
+      {p.group !== undefined && <td className="c-group">{p.group}</td>}
       <td>
         {p.balance === null ? (
           NONE
@@ -259,6 +265,8 @@ const FleetRow = memo(function FleetRow(p: RowProps) {
           className="amount-input"
           aria-label={`Max spend ${p.label}`}
           value={p.maxSpendText}
+          disabled={p.frozen !== null}
+          title={p.frozen ?? undefined}
           invalid={input !== null && !input.ok}
           onChange={(e) => {
             p.onMaxSpend(p.index, e.target.value);
@@ -367,6 +375,10 @@ export interface FleetTableProps {
   readonly onBuyWallet?: (index: number) => void;
   /** Why no buy can start now, for every row; null when rows may buy. */
   readonly rowBuyBlocked?: string | null;
+  /** Group name per wallet: shows the Group column (the "All" view, BUNNDLY-69). */
+  readonly groupNames?: ReadonlyMap<number, string> | undefined;
+  /** Wallets of running groups, with why their amount and row buy are off. */
+  readonly frozen?: ReadonlyMap<number, string>;
 }
 
 /** A column header that sorts the table; `aria-sort` says how it is sorted now. */
@@ -547,6 +559,11 @@ export function FleetTable(t: FleetTableProps) {
                 />
               </th>
               <SortHeader label="Wallet" sortKey="wallet" sort={sort} onSort={onSort} />
+              {t.groupNames && (
+                <th scope="col" className="c-group">
+                  Group
+                </th>
+              )}
               <SortHeader
                 label="Balance"
                 name="Balance (SOL)"
@@ -601,11 +618,13 @@ export function FleetTable(t: FleetTableProps) {
                 network={network}
                 onBuy={t.onBuyWallet}
                 buyBlocked={t.rowBuyBlocked ?? null}
+                group={t.groupNames ? (t.groupNames.get(w.index) ?? NONE) : undefined}
+                frozen={t.frozen?.get(w.index) ?? null}
               />
             ))}
             {visible.length === 0 && (
               <tr className="empty">
-                <td colSpan={COLUMNS}>
+                <td colSpan={COLUMNS + (t.groupNames ? 1 : 0)}>
                   {t.wallets.length === 0 ? 'No wallets yet.' : 'No wallet matches the filter.'}
                 </td>
               </tr>

@@ -59,6 +59,21 @@ type CreateHandler = (
   options: VaultRequestOptions,
 ) => Promise<unknown>;
 
+/**
+ * The status as the worker sends it (BUNNDLY-68): an open fleet without saved groups has
+ * one group, `g1`, whose state is the one the fields from before groups show. A status
+ * that lists its groups is sent as it is.
+ */
+export function withDefaultGroup(status: VaultStatus): VaultStatus {
+  if (status.info === null || status.groups.length > 0 || status.info.settings.groups.length > 0) {
+    return status;
+  }
+  return {
+    ...status,
+    groups: [{ id: 'g1', armed: status.armed, buy: status.buy, watch: status.watch }],
+  };
+}
+
 /** Fake vault worker client; `status` can be changed to simulate auto-lock. */
 export function mockVault(initial: VaultStatus, onCreate?: CreateHandler) {
   let status = initial;
@@ -67,7 +82,7 @@ export function mockVault(initial: VaultStatus, onCreate?: CreateHandler) {
       switch (req.type) {
         case 'status':
         case 'activity':
-          return Promise.resolve(status);
+          return Promise.resolve(withDefaultGroup(status));
         case 'lock':
           status = LOCKED;
           return Promise.resolve(status);

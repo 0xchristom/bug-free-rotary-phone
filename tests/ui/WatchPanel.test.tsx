@@ -27,6 +27,7 @@ import {
   fleetInfo,
   mockStorage,
   mockVault,
+  withDefaultGroup,
 } from './fakes.ts';
 import { setupUser } from './user.ts';
 
@@ -149,7 +150,7 @@ function setup(o: Setup = {}) {
     switch (req.type) {
       case 'status':
       case 'activity':
-        return Promise.resolve(status());
+        return Promise.resolve(withDefaultGroup(status()));
       case 'refreshBalances':
         return Promise.resolve({
           balances: info.wallets.map((w) => ({ index: w.index, lamports: 1_000_000_000n })),
@@ -290,7 +291,7 @@ describe('ARM / DISARM', () => {
     const { user, requests } = setup();
     await arm(user);
     expect(requests.filter((r) => r.type === 'arm')).toEqual([
-      { type: 'arm', creator: CREATOR, wallets: [0, 1, 2] },
+      { type: 'arm', creator: CREATOR, wallets: [0, 1, 2], group: 'g1' },
     ]);
     expect(screen.getByText(/The watcher is armed. Do not close/u)).toBeTruthy();
     await user.click(screen.getByRole('button', { name: 'DISARM' }));

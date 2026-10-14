@@ -22,6 +22,9 @@ export interface CommandReasons {
 }
 
 export interface CommandBarProps {
+  /** The target field's text; the screen keeps one per wallet group (BUNNDLY-69). */
+  readonly text: string;
+  readonly onText: (text: string) => void;
   readonly dryRun: boolean;
   /** The watcher is armed: the bar shows DISARM and the watched creator. */
   readonly armed: boolean;
@@ -72,6 +75,8 @@ function isTyping(target: EventTarget | null): boolean {
  * never while typing in a field or with a dialog open.
  */
 export function CommandBar({
+  text,
+  onText,
   dryRun,
   armed,
   busy,
@@ -87,7 +92,6 @@ export function CommandBar({
 }: CommandBarProps) {
   const { client } = useVault();
   const ids = useId();
-  const [text, setText] = useState('');
   /** The worker's last answer, for the address it was asked about. */
   const [answer, setAnswer] = useState<
     | { readonly address: string; readonly kind: TargetKind }
@@ -199,7 +203,7 @@ export function CommandBar({
             invalid={check.kind === 'error'}
             aria-describedby={helpId}
             onChange={(e) => {
-              setText(e.target.value);
+              onText(e.target.value);
             }}
           />
           {check.kind === 'checking' && <Chip tone="muted">Checking…</Chip>}
