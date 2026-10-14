@@ -4,6 +4,7 @@
  * vault and signing, fake Jupiter and clock; every expected amount is worked out by hand.
  */
 import type { RpcTransport } from '@solana/kit';
+import { readFileSync } from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
 import {
   AppError,
@@ -24,6 +25,26 @@ vi.setConfig({ testTimeout: 60_000 });
 const PASSWORD = 'correct horse battery staple';
 const MNEMONIC_12 = `${'abandon '.repeat(11)}about`;
 const SOL = 1_000_000_000n;
+
+/** RPC mock for SOL balances only: every account has 1 SOL. */
+const solOnly = ((config: { payload: unknown }) => {
+  const payload = config.payload as { id: unknown; params: [string[]] };
+  return Promise.resolve({
+    jsonrpc: '2.0',
+    id: payload.id,
+    result: {
+      context: { slot: 1n },
+      value: payload.params[0].map(() => ({
+        lamports: SOL,
+        owner: '11111111111111111111111111111111',
+        data: ['', 'base64'],
+        executable: false,
+        rentEpoch: 0n,
+        space: 0n,
+      })),
+    },
+  });
+}) as unknown as RpcTransport;
 
 async function setup(walletCount = 3, script: FakeJupiterScript = {}) {
   /** SOL balance by address; 1 SOL when not set. */
@@ -117,7 +138,7 @@ async function setup(walletCount = 3, script: FakeJupiterScript = {}) {
     await start();
     return finish();
   };
-  return { h, jupiter, status, balance, save, asked, start, finish, buy };
+  return { h, jupiter, events, status, balance, save, asked, start, finish, buy };
 }
 
 const trade = (
@@ -220,6 +241,29 @@ describe('slippage into /order', () => {
   });
 });
 
+describe('the priority fee on the Jupiter route', () => {
+  it('a set fee never goes into /order (Auto on this route), and no trade setting reaches the events', async () => {
+    const t = await setup(2);
+    await t.save(
+      { maxSpend: [{ index: 0, lamports: 3_000_000n }] },
+      trade({ buyPriorityFeeLamports: 50_000n, sellPriorityFeeLamports: 70_000n }, [
+        { index: 1, buyPercent: 10, buyPriorityFeeLamports: 60_000n },
+      ]),
+    );
+    await t.buy();
+    for (const r of t.jupiter.orderRequests()) {
+      expect(Object.keys(r).sort()).toEqual(['amount', 'outputMint', 'taker']);
+    }
+    const text = (value: unknown): string =>
+      JSON.stringify(value, (_k, v: unknown) => (typeof v === 'bigint' ? v.toString() : v));
+    // the fee values appear nowhere: not in a call to Jupiter, not in an event
+    for (const call of t.jupiter.calls)
+      expect(text(call.request)).not.toMatch(/50000|60000|70000/u);
+    expect(t.events.length).toBeGreaterThan(0);
+    expect(text(t.events)).not.toMatch(/[Pp]riority|buyPercent|sellPercent|50000|60000|70000/u);
+  });
+});
+
 describe('saveSettings with trade parameters', () => {
   it('refuses what the form refuses, even when sent past the form', async () => {
     const t = await setup();
@@ -283,5 +327,59 @@ describe('trade settings of wallets in a running buy are locked (WALLET_IN_RUN)'
     await t.h.handle({ type: 'stop' });
     await t.finish();
     expect(await codeOf(t.save(sol(6_000_000n), before))).toBe('ok');
+  });
+});
+
+describe('a fleet file from before the change (fixture written by the app before BUNNDLY-58)', () => {
+  it('opens with the default trade parameters and buys with exactly the request of before', async () => {
+    const clock = new FakeClock();
+    const jupiter = new FakeJupiter(clock, {
+      transaction: (taker) => buildTransaction({ feePayer: taker }),
+    });
+    const h = createVaultHandler({
+      chain: { createTransport: () => solOnly, sleep: () => Promise.resolve() },
+      executor: { jupiter, clock },
+      now: () => clock.now(),
+      autoLockMs: 60_000,
+    });
+    const events: ExecutorEvent[] = [];
+    h.onEvent((e) => {
+      if (e.kind !== 'watch') events.push(e);
+    });
+    await h.handle({
+      type: 'unlock',
+      fileText: readFileSync('tests/fixtures/fleet-before-58.json', 'utf8'),
+      password: 'fixture password 58',
+    });
+    const info = ((await h.handle({ type: 'status' })) as VaultStatus).info;
+    expect(info?.settings.trade).toEqual(DEFAULT_TRADE_SETTINGS);
+    expect(info?.settings.maxSpend).toEqual([{ index: 0, lamports: 10_000_000n }]);
+    // the Helius key goes in the way the settings screen sends it: no trade part
+    await h.handle({
+      type: 'saveSettings',
+      settings: {
+        maxSpend: info?.settings.maxSpend ?? [],
+        active: [],
+        global: info?.settings.global ?? defaultFleetSettings().global,
+      },
+      apiKeys: { helius: 'heliusFixtureKey' },
+    });
+    await h.handle({ type: 'refreshBalances' });
+    await h.handle({ type: 'startBuy', mint: USDC });
+    for (
+      let i = 0;
+      i < 400 && !events.some((e) => e.kind === 'run' && e.phase === 'finished');
+      i++
+    ) {
+      await clock.runUntil();
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+    const [request, ...more] = jupiter.orderRequests();
+    expect(more).toEqual([]);
+    expect(request).toEqual({
+      outputMint: USDC,
+      amount: 10_000_000n,
+      taker: info?.wallets[0]?.address,
+    });
   });
 });
