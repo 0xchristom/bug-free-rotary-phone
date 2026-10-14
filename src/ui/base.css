@@ -728,6 +728,24 @@ table.wallets tr.empty td {
   font-variant-numeric: tabular-nums;
 }
 
+/* Wallet groups over the table (BUNNDLY-69): many groups wrap, never scroll sideways. */
+.groups-row .tabs {
+  flex-wrap: wrap;
+}
+
+.tab-sol {
+  color: var(--fg-3);
+  font-size: var(--fs-small);
+  font-variant-numeric: tabular-nums;
+}
+
+.c-group {
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .search {
   width: 220px;
   display: flex;
