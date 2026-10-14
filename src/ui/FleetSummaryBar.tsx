@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import type { FillTone } from './fill.ts';
 import type { FleetSummary } from './fleet-math.ts';
 import { formatSol, formatUnits } from './sol.ts';
 import { SolIcon } from './kit/index.ts';
@@ -10,6 +11,8 @@ export interface FleetSummaryBarProps {
   readonly selectedCount: number;
   /** Decimals of the shown token, or null when no token is shown. */
   readonly tokenDecimals: number | null;
+  /** False until the first SOL balance read: the sums are unknown, not 0 (BUNNDLY-81). */
+  readonly balancesRead?: boolean;
   /** Since the start of the last buy: its first and its last confirmed wallet. */
   readonly firstFillMs: number | null;
   readonly lastFillMs: number | null;
@@ -22,19 +25,44 @@ export interface FleetSummaryBarProps {
   readonly fill?: { readonly text: string; readonly bar: ReactNode } | null;
 }
 
+/**
+ * The fleet fill bar (mockup v2 `.segs`): one segment per selected wallet in the tone of its
+ * Fill (`fillOf`), so the colours match the rows. The text above it gives the counts.
+ */
+export function FleetSegments({ tones }: { readonly tones: readonly FillTone[] }) {
+  return (
+    <div className="segs" aria-hidden="true" data-testid="fleet-segments">
+      {tones.map((tone, k) => (
+        <i key={k} data-tone={tone} />
+      ))}
+    </div>
+  );
+}
+
+function Sol({ lamports }: { readonly lamports: bigint }) {
+  return (
+    <>
+      <SolIcon />
+      {formatSol(lamports)}
+      <span className="sr-only"> SOL</span>
+    </>
+  );
+}
+
 function sinceStart(ms: number): string {
   return ms < 1000 ? `+${String(Math.round(ms))} ms` : `+${(ms / 1000).toFixed(1)} s`;
 }
 
 /**
- * Totals over the fleet under the table (SPEC 11.2, mockup v2). The fleet fill segments come
- * with the fill bar (BUNNDLY-56).
+ * Totals over the fleet under the table (SPEC 11.2, mockup v2). The fleet fill text and its
+ * segments come from `fleetFill` (BUNNDLY-56).
  */
 export function FleetSummaryBar({
   summary,
   walletCount,
   selectedCount,
   tokenDecimals,
+  balancesRead = true,
   firstFillMs,
   lastFillMs,
   fillFrom = 'start',
@@ -50,19 +78,11 @@ export function FleetSummaryBar({
       </div>
       <div>
         <dt>Fleet balance</dt>
-        <dd>
-          <SolIcon />
-          {formatSol(summary.totalLamports)}
-          <span className="sr-only"> SOL</span>
-        </dd>
+        <dd>{balancesRead ? <Sol lamports={summary.totalLamports} /> : '—'}</dd>
       </div>
       <div>
         <dt>Planned buy</dt>
-        <dd>
-          <SolIcon />
-          {formatSol(summary.toSpendLamports)}
-          <span className="sr-only"> SOL</span>
-        </dd>
+        <dd>{balancesRead ? <Sol lamports={summary.toSpendLamports} /> : '—'}</dd>
       </div>
       <div className="wide">
         <dt role="status" aria-live="polite">

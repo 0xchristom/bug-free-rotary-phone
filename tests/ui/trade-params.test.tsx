@@ -214,6 +214,43 @@ function walletEvent(index: number, state: WalletEvent['state']): WalletEvent {
 const GLOBAL = fleetInfo().settings.global;
 
 describe('the buy amount in a row', () => {
+  // The row field is 64 px (mockup column 114 px): the placeholder is the bare default, so
+  // "No amount" or "Default 10 % of balance" is never cut off; the words are its description.
+  it('the placeholder is the bare fleet default; the description says it in words', async () => {
+    setup();
+    await ready();
+    expect(amount('W01').placeholder).toBe('—');
+    expect(amount('W01').getAttribute('aria-description')).toBe('Empty: no fleet default amount.');
+    cleanup();
+
+    setup({
+      trade: {
+        ...DEFAULT_TRADE_SETTINGS,
+        fleet: {
+          ...DEFAULT_TRADE_SETTINGS.fleet,
+          buyAmount: { kind: 'lamports', lamports: 20_000_000n },
+        },
+      },
+    });
+    await ready();
+    // 20 000 000 lamports = 0.02 SOL
+    expect(amount('W01').placeholder).toBe('0.02');
+    expect(amount('W01').getAttribute('aria-description')).toBe(
+      'Empty: the fleet default, 0.02 SOL.',
+    );
+    cleanup();
+
+    setup({
+      trade: {
+        ...DEFAULT_TRADE_SETTINGS,
+        fleet: { ...DEFAULT_TRADE_SETTINGS.fleet, buyAmount: { kind: 'percent', percent: 10 } },
+      },
+    });
+    await ready();
+    expect(amount('W01').placeholder).toBe('10 %');
+    expect(amount('W01').getAttribute('title')).toBe('Empty: the fleet default, 10 % of balance.');
+  });
+
   it('leaving the field while its Enter save is on the way saves once (BUNNDLY-76)', async () => {
     const { saved } = setup();
     await ready();
@@ -365,8 +402,9 @@ describe('the buy amount in a row', () => {
       });
     });
     // only W03 has an amount: its row is the one queued
-    expect(within(row('W03')).getByText('Queued')).toBeTruthy();
-    expect(within(row('W01')).queryByText('Queued')).toBeNull();
+    // the state chip says it; the Fill caption below says the same stage
+    expect(within(row('W03')).getByText('Queued', { selector: ':not(.fill .cap)' })).toBeTruthy();
+    expect(within(row('W01')).queryAllByText('Queued')).toEqual([]);
   });
 
   it('an armed watcher locks every wallet of its group', async () => {

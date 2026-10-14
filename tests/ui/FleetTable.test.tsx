@@ -22,7 +22,7 @@ const SOL = 1_000_000_000n;
 
 /** Column positions of the wallet table. */
 const BALANCE = 2;
-const TOKEN = 6;
+const TOKEN = 7;
 
 interface Setup {
   readonly count?: number;
@@ -196,6 +196,7 @@ describe('fleet table', () => {
       'Buy amount',
       'Priority fee',
       'Slippage',
+      'Fill',
       'Tokens',
       'Status',
       'Last transaction',
@@ -705,26 +706,28 @@ describe('create wallets', () => {
     expect(added).toEqual([2]);
   }, 30_000);
 
-  it('a full fleet and unsaved table changes turn the button off with the reason next to it', async () => {
+  // BUNNDLY-82: the reason is the button's description and tooltip, not text in the toolbar,
+  // which at 1280 px pushed the next buttons to a second row.
+  it('a full fleet and unsaved table changes turn the button off; the reason is on the button', async () => {
+    const UNSAVED = 'Save the table changes and the updated fleet file first, then create wallets.';
+    const FULL = 'The fleet already has the maximum of 100 wallets.';
     const { user } = setup({ count: 3 });
     await ready();
-    expect(screen.getByRole('button', { name: 'Create wallets' })).toHaveProperty(
-      'disabled',
-      false,
-    );
+    const create = (): HTMLElement => screen.getByRole('button', { name: 'Create wallets' });
+    expect(create()).toHaveProperty('disabled', false);
+    expect(create().getAttribute('aria-description')).toBeNull();
     await user.click(selectBox('W01'));
-    expect(screen.getByRole('button', { name: 'Create wallets' })).toHaveProperty('disabled', true);
-    expect(
-      screen.getByText(
-        'Save the table changes and the updated fleet file first, then create wallets.',
-      ),
-    ).toBeTruthy();
+    expect(create()).toHaveProperty('disabled', true);
+    expect(create().getAttribute('aria-description')).toBe(UNSAVED);
+    expect(create().getAttribute('title')).toBe(UNSAVED);
+    expect(screen.queryByText(UNSAVED)).toBeNull();
     cleanup();
 
     setup({ count: 100 });
     await ready();
-    expect(screen.getByRole('button', { name: 'Create wallets' })).toHaveProperty('disabled', true);
-    expect(screen.getByText('The fleet already has the maximum of 100 wallets.')).toBeTruthy();
+    expect(create()).toHaveProperty('disabled', true);
+    expect(create().getAttribute('aria-description')).toBe(FULL);
+    expect(screen.queryByText(FULL)).toBeNull();
   }, 30_000);
 
   it('Cancel closes the popover, sends nothing and forgets the typed count', async () => {

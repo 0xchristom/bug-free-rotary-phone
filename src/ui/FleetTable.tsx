@@ -19,7 +19,9 @@ import {
 } from '../executor/states.ts';
 import { VERIFY_MESSAGES, type VerifyStatus } from '../executor/verify.ts';
 import type { FeedState } from '../chain/balance-stream.ts';
+import type { Side } from '../executor/executor.ts';
 import { AddressQr } from './AddressQr.tsx';
+import { fillOf, type FillTone } from './fill.ts';
 import { FEED_LABELS } from './shell-status.ts';
 import { rowState, type RowState } from './fleet-math.ts';
 import { shortAddress } from './short-address.ts';
@@ -81,6 +83,8 @@ interface RowProps extends FleetRowData {
   readonly amountUnit: 'SOL' | '%';
   /** The fleet default amount in words, for the empty field. */
   readonly defaultAmount: string;
+  /** What an empty amount field means, in words: the field's description. */
+  readonly defaultAmountText: string;
   /** What a buy would spend now (a percent counted from the balance), or null. */
   readonly spend: bigint | null;
   /** What the wallet trades with, in words (defaults applied). */
@@ -102,6 +106,10 @@ interface RowProps extends FleetRowData {
   readonly probe?: ((index: number) => void) | undefined;
   /** This wallet's progress; the same object until its next event (memo). */
   readonly buy: BuyRow | null;
+  /** The Fill column (BUNNDLY-56, `fillOf`); as primitives so the row stays memoized. */
+  readonly fillPercent: number;
+  readonly fillTone: FillTone;
+  readonly fillLabel: string;
   readonly explorer: Explorer;
   readonly network: Network;
   /** Buys with this wallet alone (BUNNDLY-59); absent: no row action. */
@@ -121,7 +129,7 @@ interface RowProps extends FleetRowData {
 /** Shown where there is no value yet. */
 const NONE = '—';
 /** Columns of the table without the group column, for the row that says no wallet matches. */
-const COLUMNS = 10;
+const COLUMNS = 11;
 
 const STATE_LABELS: Record<WalletState, string> = {
   IDLE: 'Waiting',
@@ -203,6 +211,45 @@ function lastMessage(buy: BuyRow | null): { readonly text: string; readonly titl
   if (buy.reason?.code === 'DRY_RUN') return null;
   const why = reasonText(buy.reason);
   return why === null ? null : { text: why, title: why };
+}
+
+/**
+ * The wallet's fill bar (mockup v2 `.fill`): the bar, the percent and the stage or result
+ * under it. The text says what the colour says (BUNNDLY-56).
+ */
+function FillBar({
+  label,
+  percent,
+  tone,
+  text,
+}: {
+  readonly label: string;
+  readonly percent: number;
+  readonly tone: FillTone;
+  readonly text: string;
+}) {
+  return (
+    <div
+      className="fill"
+      data-tone={tone}
+      role="progressbar"
+      aria-label={`Fill of ${label}`}
+      aria-valuemin={0}
+      aria-valuemax={100}
+      aria-valuenow={percent}
+      aria-valuetext={text === '' ? `${String(percent)}%` : `${String(percent)}%, ${text}`}
+    >
+      <div className="top">
+        <div className="track">
+          <div className="bar" style={{ width: `${String(percent)}%` }} />
+        </div>
+        <span className="pct">{percent}%</span>
+      </div>
+      <div className="cap" title={text}>
+        {text}
+      </div>
+    </div>
+  );
 }
 
 /** A buy value over a sell value, as the mockup's badges (green in, red out). */
@@ -360,6 +407,7 @@ const FleetRow = memo(function FleetRow(p: RowProps) {
           savedText={p.amountText}
           savedUnit={p.amountUnit}
           placeholder={p.defaultAmount}
+          placeholderText={p.defaultAmountText}
           locked={p.locked}
           problem={amountProblem}
           onSave={save}
@@ -371,8 +419,11 @@ const FleetRow = memo(function FleetRow(p: RowProps) {
       <td>
         <Pair what="Slippage" buy={p.buySlip} sell={p.sellSlip} />
       </td>
+      <td className="c-fill">
+        <FillBar label={p.label} percent={p.fillPercent} tone={p.fillTone} text={p.fillLabel} />
+      </td>
       <td className="num">{p.token ?? NONE}</td>
-      <td>
+      <td className="c-status">
         {p.buy === null ? (
           <Chip tone={idle.tone}>{idle.text}</Chip>
         ) : (
@@ -490,6 +541,12 @@ export interface FleetTableProps {
   readonly groupNames?: ReadonlyMap<number, string> | undefined;
   /** Wallets of running groups, with why their amount and row buy are off. */
   readonly frozen?: ReadonlyMap<number, string>;
+  /** The run in `buy`: DRY-RUN, a buy or a sell, a paused Stairs run (the Fill column). */
+  readonly runDryRun?: boolean;
+  readonly runSide?: Side;
+  readonly runPaused?: boolean;
+  /** Clock for the "Starts in" countdown of scheduled wallets (Stairs). */
+  readonly now?: number;
   /** Live or polling balances (BUNNDLY-57), said above the balance column. */
   readonly feed?: FeedState | null;
 }
@@ -612,8 +669,18 @@ export function FleetTable(t: FleetTableProps) {
   });
   const visible = visibleRows.map((r) => r.wallet);
   const fleet = t.trade.fleet;
+  // The row field is narrow (mockup column 114 px): its placeholder is the bare default
+  // ("0.02", "10 %", "—"), the field's description says it in words.
   const defaultAmount =
-    fleet.buyAmount === null ? 'No amount' : `Default ${amountLabel(fleet.buyAmount)}`;
+    fleet.buyAmount === null
+      ? '—'
+      : fleet.buyAmount.kind === 'lamports'
+        ? formatSol(fleet.buyAmount.lamports)
+        : `${String(fleet.buyAmount.percent)} %`;
+  const defaultAmountText =
+    fleet.buyAmount === null
+      ? 'Empty: no fleet default amount.'
+      : `Empty: the fleet default, ${amountLabel(fleet.buyAmount)}.`;
 
   const selectedCount = t.wallets.filter((w) => t.selected[w.index] ?? true).length;
   const visibleSelected = visible.filter((w) => t.selected[w.index] ?? true).length;
@@ -720,6 +787,9 @@ export function FleetTable(t: FleetTableProps) {
               />
               <th scope="col">Priority fee</th>
               <th scope="col">Slippage</th>
+              <th scope="col" className="c-fill">
+                Fill
+              </th>
               <SortHeader
                 label={
                   t.token
@@ -740,42 +810,63 @@ export function FleetTable(t: FleetTableProps) {
             </tr>
           </thead>
           <tbody>
-            {visibleRows.map(({ wallet: w, own, effective, spend }) => (
-              <FleetRow
-                key={w.index}
-                index={w.index}
-                label={w.label}
-                address={w.address}
-                balance={t.lamports?.get(w.index) ?? null}
-                token={tokenText?.get(w.index) ?? null}
-                amountText={amountText(own)}
-                amountUnit={own?.kind === 'percent' ? '%' : 'SOL'}
-                defaultAmount={defaultAmount}
-                spend={spend}
-                amountNow={amountLabel(effective.buyAmount)}
-                buySlip={slippageLabel(effective.buySlippageBps)}
-                sellSlip={slippageLabel(effective.sellSlippageBps)}
-                buyFee={feeLabel(effective.buyPriorityFeeLamports)}
-                sellFee={feeLabel(effective.sellPriorityFeeLamports)}
-                sellPart={`${String(effective.sellPercent)} %`}
-                locked={t.locked?.has(w.index) ?? false}
-                selected={t.selected[w.index] ?? true}
-                minReserve={t.minReserve}
-                onTrade={t.onTrade}
-                onSelect={t.onSelect}
-                onCopy={t.onCopy}
-                probe={t.probe}
-                buy={t.buy?.get(w.index) ?? null}
-                explorer={explorer}
-                network={network}
-                onBuy={t.onBuyWallet}
-                buyBlocked={t.rowBuyBlocked ?? null}
-                onSell={t.onSellWallet}
-                sellBlocked={t.rowSellBlocked ?? null}
-                group={t.groupNames ? (t.groupNames.get(w.index) ?? NONE) : undefined}
-                frozen={t.frozen?.get(w.index) ?? null}
-              />
-            ))}
+            {visibleRows.map(({ wallet: w, own, effective, spend }) => {
+              const buy = t.buy?.get(w.index) ?? null;
+              const fill =
+                buy === null
+                  ? { percent: 0, tone: 'idle' as const, label: '' }
+                  : fillOf({
+                      state: buy.state,
+                      reason: buy.reason,
+                      verify: buy.verify,
+                      dryRun: t.runDryRun ?? false,
+                      side: t.runSide ?? 'buy',
+                      scheduledAt: buy.scheduledAt ?? null,
+                      // only a scheduled row counts down: the others keep their props (memo)
+                      now: buy.state === 'SCHEDULED' ? (t.now ?? buy.scheduledAt ?? 0) : 0,
+                      paused: t.runPaused ?? false,
+                    });
+              return (
+                <FleetRow
+                  key={w.index}
+                  index={w.index}
+                  label={w.label}
+                  address={w.address}
+                  balance={t.lamports?.get(w.index) ?? null}
+                  token={tokenText?.get(w.index) ?? null}
+                  amountText={amountText(own)}
+                  amountUnit={own?.kind === 'percent' ? '%' : 'SOL'}
+                  defaultAmount={defaultAmount}
+                  defaultAmountText={defaultAmountText}
+                  spend={spend}
+                  amountNow={amountLabel(effective.buyAmount)}
+                  buySlip={slippageLabel(effective.buySlippageBps)}
+                  sellSlip={slippageLabel(effective.sellSlippageBps)}
+                  buyFee={feeLabel(effective.buyPriorityFeeLamports)}
+                  sellFee={feeLabel(effective.sellPriorityFeeLamports)}
+                  sellPart={`${String(effective.sellPercent)} %`}
+                  locked={t.locked?.has(w.index) ?? false}
+                  selected={t.selected[w.index] ?? true}
+                  minReserve={t.minReserve}
+                  onTrade={t.onTrade}
+                  onSelect={t.onSelect}
+                  onCopy={t.onCopy}
+                  probe={t.probe}
+                  buy={buy}
+                  fillPercent={fill.percent}
+                  fillTone={fill.tone}
+                  fillLabel={fill.label}
+                  explorer={explorer}
+                  network={network}
+                  onBuy={t.onBuyWallet}
+                  buyBlocked={t.rowBuyBlocked ?? null}
+                  onSell={t.onSellWallet}
+                  sellBlocked={t.rowSellBlocked ?? null}
+                  group={t.groupNames ? (t.groupNames.get(w.index) ?? NONE) : undefined}
+                  frozen={t.frozen?.get(w.index) ?? null}
+                />
+              );
+            })}
             {visible.length === 0 && (
               <tr className="empty">
                 <td colSpan={COLUMNS + (t.groupNames ? 1 : 0)}>

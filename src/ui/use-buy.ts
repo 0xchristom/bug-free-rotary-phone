@@ -4,7 +4,13 @@
  * wallet got an event, so memoized table rows of other wallets do not re-render.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { ExecutorEvent, RunPhase, WalletQuote, WalletResult } from '../executor/executor.ts';
+import type {
+  ExecutorEvent,
+  RunPhase,
+  Side,
+  WalletQuote,
+  WalletResult,
+} from '../executor/executor.ts';
 import type { WalletReason, WalletState } from '../executor/states.ts';
 import type { VerifyStatus } from '../executor/verify.ts';
 import type { BuyStatus } from '../worker/protocol.ts';
@@ -19,6 +25,8 @@ export interface BuyRow {
   readonly sinceStartMs: number;
   /** Token balance check after CONFIRMED (live mode). */
   readonly verify: VerifyStatus | null;
+  /** Stairs: when the wallet's step starts (executor clock); only while SCHEDULED. */
+  readonly scheduledAt?: number | null;
 }
 
 export interface BuyRun {
@@ -30,6 +38,10 @@ export interface BuyRun {
   /** Since the start, of the first and the last CONFIRMED. */
   readonly firstConfirmMs: number | null;
   readonly lastConfirmMs: number | null;
+  /** A buy or a sell (BUNNDLY-60); absent on the events of a buy. */
+  readonly side?: Side;
+  /** Stairs: paused with `pauseStairs` (run phases `paused` and `resumed`). */
+  readonly paused?: boolean;
 }
 
 export interface BuyCounts {
@@ -102,11 +114,19 @@ export function reduceBuy(view: BuyView, events: readonly ExecutorEvent[]): BuyV
           phase: 'started',
           firstConfirmMs: null,
           lastConfirmMs: null,
+          side: event.side ?? 'buy',
+          paused: false,
         };
         rows = new Map();
         copied = true;
       } else if (run !== null && event.runId === run.runId) {
-        run = { ...run, phase: event.phase };
+        const paused =
+          event.phase === 'paused'
+            ? true
+            : event.phase === 'resumed'
+              ? false
+              : (run.paused ?? false);
+        run = { ...run, phase: event.phase, paused };
       }
       continue;
     }
@@ -125,6 +145,7 @@ export function reduceBuy(view: BuyView, events: readonly ExecutorEvent[]): BuyV
       result: event.result,
       sinceStartMs: event.times.sinceStartMs,
       verify: before?.verify ?? null,
+      scheduledAt: event.scheduledAt ?? null,
     });
     if (event.state === 'CONFIRMED') {
       const ms = event.times.sinceStartMs;

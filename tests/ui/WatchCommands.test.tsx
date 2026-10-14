@@ -366,8 +366,11 @@ describe('an armed watcher freezes the settings', () => {
     expect(
       screen.getAllByText(/Disarm the watcher to change the mode or the settings/u).length,
     ).toBe(
-      2, // table, wallets (the mode switch says it in its description)
+      1, // table (the mode switch and Create wallets say it in their description, BUNNDLY-82)
     );
+    expect(
+      screen.getByRole('button', { name: 'Create wallets' }).getAttribute('aria-description'),
+    ).toMatch(/Disarm the watcher to change the mode or the settings/u);
     expect(screen.getByRole('button', { name: 'Save table changes' })).toHaveProperty(
       'disabled',
       true,
@@ -577,7 +580,8 @@ describe('detections and progress', () => {
     act(() => {
       vault.emit(started);
     });
-    expect(await screen.findByText(/^Fleet fill · 0 of 3 filled · DRY-RUN$/u)).toBeTruthy();
+    // fleetFill (BUNNDLY-56): no wallet event yet, the 3 selected wallets wait
+    expect(await screen.findByText(/^Fleet fill · 0 of 3 filled$/u)).toBeTruthy();
     expect(screen.getByTitle('Counted from the detection')).toBeTruthy();
   });
 });

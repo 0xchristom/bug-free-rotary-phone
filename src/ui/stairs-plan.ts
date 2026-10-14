@@ -30,6 +30,15 @@ export function parsePerStep(text: string): number | null {
   return wholeNumber(text, 1, PER_STEP_MAX);
 }
 
+/** Why a Stairs command cannot start with these fields, or null. */
+export function stairsProblem(every: string, perStep: string): string | null {
+  if (parseEvery(every) === null) {
+    return `Stairs: the step must be ${String(EVERY_MIN_S)} to ${String(EVERY_MAX_S)} seconds.`;
+  }
+  if (parsePerStep(perStep) === null) return 'Stairs: at least 1 wallet per step.';
+  return null;
+}
+
 /** What the vault gets for a Stairs run. */
 export function stairsRequest(everyS: number, perStep: number): StairsOptions {
   return { intervalMs: everyS * 1_000, perStep };

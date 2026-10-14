@@ -6,7 +6,10 @@ export interface CreateWalletsProps {
   readonly room: number;
   /** The fleet limit, for the message. */
   readonly limit: number;
-  /** Why wallets cannot be created right now; shown next to the button. */
+  /**
+   * Why wallets cannot be created right now: the button's description and tooltip, so the
+   * toolbar stays one row at 1280 px (BUNNDLY-82).
+   */
   readonly blocked: string | null;
   /** Creates the wallets; resolves to false when it failed (the screen shows why). */
   readonly onCreate: (count: number) => Promise<boolean>;
@@ -46,7 +49,6 @@ export function CreateWallets({ room, limit, blocked, onCreate }: CreateWalletsP
 
   return (
     <>
-      {blocked !== null && <span className="muted">{blocked}</span>}
       <Popover
         open={open && blocked === null}
         onClose={close}
@@ -57,6 +59,8 @@ export function CreateWallets({ room, limit, blocked, onCreate }: CreateWalletsP
             size="sm"
             icon={<PlusIcon />}
             disabled={blocked !== null}
+            title={blocked ?? undefined}
+            aria-description={blocked ?? undefined}
             aria-expanded={open && blocked === null}
             onClick={() => {
               setOpen((was) => !was);

@@ -297,9 +297,9 @@ describe('mode A', () => {
         }),
       );
     });
-    // the mockup's wording (BUNNDLY-73): 2 queued wallets in flight, the skipped one not filled
+    // fleetFill's wording (BUNNDLY-56): 2 queued wallets in flight, the skipped one skipped
     expect(
-      await screen.findByText(/Fleet fill · 0 of 3 filled · 2 in flight · 1 failed or skipped/u),
+      await screen.findByText(/^Fleet fill · 0 of 3 filled · 2 in flight · 1 skipped$/u),
     ).toBeTruthy();
     expect(screen.getByText(/Do not close or reload this tab/u)).toBeTruthy();
     // two queued wallets are in flight; the skipped one needs attention
@@ -351,8 +351,9 @@ describe('mode A', () => {
       vault.emit(runEvent('finished'));
     });
     finishBuy();
+    // W01 MATCH, W02 failed, W03 skipped for want of SOL
     expect(
-      await screen.findByText(/Fleet fill · 1 of 3 filled · 2 failed or skipped/u),
+      await screen.findByText(/^Fleet fill · 1 of 3 filled · 1 failed · 1 skipped$/u),
     ).toBeTruthy();
     // first and last fill: the one confirmation came 1 200 ms after the start
     expect(screen.getByTitle('Counted from the start').textContent).toBe('+1.2 s · +1.2 s');
@@ -367,11 +368,17 @@ describe('mode A', () => {
     expect(within(row('W01')).getByText('+1.2 s after start')).toBeTruthy();
 
     expect(within(row('W02')).getByText('Failed')).toBeTruthy();
-    expect(within(row('W02')).getByText('All attempts are used up.')).toBeTruthy();
+    // the message column, and the Fill caption says the same reason
+    expect(
+      within(row('W02')).getByText('All attempts are used up.', { selector: 'p.cap' }),
+    ).toBeTruthy();
+    expect(
+      within(row('W02')).getByText('All attempts are used up.', { selector: '.fill .cap' }),
+    ).toBeTruthy();
     expect(within(row('W02')).queryByRole('link')).toBeNull();
 
     expect(within(row('W03')).getByText('Skipped')).toBeTruthy();
-    expect(within(row('W03')).getByText(/Not enough SOL/u)).toBeTruthy();
+    expect(within(row('W03')).getByText(/Not enough SOL/u, { selector: 'p.cap' })).toBeTruthy();
     // no row of details any more: header + 3 wallets
     expect(screen.getAllByRole('row')).toHaveLength(4);
 
@@ -404,7 +411,8 @@ describe('mode A', () => {
 
 describe('command bar (BUNNDLY-59)', () => {
   const stateOf = (label: string): string =>
-    within(row(label)).queryByText('Queued') === null ? 'not queued' : 'Queued';
+    // the state chip and the Fill caption both say it
+    within(row(label)).queryAllByText('Queued').length === 0 ? 'not queued' : 'Queued';
 
   it('BUY marks the selected rows Queued before the worker answers', async () => {
     const { user, requests } = setup({ start: 'hold' });
@@ -727,7 +735,7 @@ describe('100 wallets', () => {
       vault.emit(walletEvent(5, 'SIGNING'));
       vault.emit(walletEvent(42, 'QUOTING'));
     });
-    await eventually(() => screen.getByText('Signing'));
+    await eventually(() => screen.getAllByText('Signing'));
     // one frame for the batch: rows 5 and 42 once each, no other row
     expect([...renders.keys()].sort((a, b) => a - b)).toEqual([5, 42]);
     expect(renders.get(5)).toBe(1);

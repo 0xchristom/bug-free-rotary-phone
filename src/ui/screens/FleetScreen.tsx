@@ -14,7 +14,9 @@ import {
 import type { GroupStatus, VaultInfo } from '../../worker/protocol.ts';
 import { CommandBar, CommandButtons, type CommandReasons, type Target } from '../CommandBar.tsx';
 import { CreateWallets } from '../CreateWallets.tsx';
-import { FleetSummaryBar } from '../FleetSummaryBar.tsx';
+import type { StairsOptions } from '../../executor/index.ts';
+import { fillOf, fleetFill, type Fill } from '../fill.ts';
+import { FleetSegments, FleetSummaryBar } from '../FleetSummaryBar.tsx';
 import { summarize } from '../fleet-math.ts';
 import { FleetTable } from '../FleetTable.tsx';
 import {
@@ -29,6 +31,16 @@ import { GroupTabs, MoveToGroup } from '../GroupTabs.tsx';
 import { ModeSwitch } from '../ModeSwitch.tsx';
 import { useHeaderSlots } from '../header-slots.ts';
 import { SettingsResetNotice } from '../SettingsResetNotice.tsx';
+import {
+  parseEvery,
+  parsePerStep,
+  pauseControl,
+  planText,
+  stairsPlan,
+  stairsProblem,
+  stairsRequest,
+} from '../stairs-plan.ts';
+import { StairsStrip } from '../StairsStrip.tsx';
 import { formatSol } from '../sol.ts';
 import { LOCKED_HINT, applyWalletPatch, plannedSpend, type WalletPatch } from '../trade-edit.ts';
 import { useBalances } from '../use-balances.ts';
@@ -38,7 +50,7 @@ import { useVault } from '../vault-state.ts';
 import { WATCH_FROZEN } from '../watch-labels.ts';
 import { useWatchRuntime } from '../watch-runtime.ts';
 import { EditSelected } from '../WalletTradeFields.tsx';
-import { Button, Modal, ProgressBar, Segmented, SolIcon, useToast } from '../kit/index.ts';
+import { Button, Modal, PauseIcon, PlayIcon, Segmented, SolIcon, useToast } from '../kit/index.ts';
 
 const MAX_WALLETS = 100;
 
@@ -97,7 +109,12 @@ const CONFIRM_TITLES = {
 const CONFIRM_YES = { buy: 'Yes, buy', sell: 'Yes, sell', arm: 'Yes, arm' } as const;
 
 /** A command waiting for the live-mode confirmation. */
-type Confirm = { readonly group: WalletGroupV1; readonly wallets: readonly number[] } & (
+type Confirm = {
+  readonly group: WalletGroupV1;
+  readonly wallets: readonly number[];
+  /** The bar's Stairs steps (BUNNDLY-61); absent: Immediate. */
+  readonly stairs?: StairsOptions | undefined;
+} & (
   | { readonly kind: 'buy'; readonly mint: string }
   | { readonly kind: 'sell'; readonly mint: string }
   | { readonly kind: 'arm'; readonly creator: string }
@@ -394,6 +411,18 @@ export function FleetScreen({
   const [confirm, setConfirm] = useState<Confirm | null>(null);
   const [commandBusy, setCommandBusy] = useState(false);
   const [commandError, setCommandError] = useState<string | null>(null);
+  // Immediate or Stairs for the bar's BUY, SELL and ARM (BUNNDLY-61, mockup v2); a row
+  // action trades its one wallet at once.
+  const [execMode, setExecMode] = useState<'immediate' | 'stairs'>('immediate');
+  const [everyText, setEveryText] = useState('6');
+  const [perStepText, setPerStepText] = useState('1');
+  const stairsBad = execMode === 'stairs' ? stairsProblem(everyText, perStepText) : null;
+  const barStairs = (): StairsOptions | undefined => {
+    const every = parseEvery(everyText);
+    const perStep = parsePerStep(perStepText);
+    if (execMode !== 'stairs' || every === null || perStep === null) return undefined;
+    return stairsRequest(every, perStep);
+  };
   /** Rows shown as queued at once; `since` is the run the table showed at the click. */
   const [pending, setPending] = useState<{
     readonly wallets: ReadonlySet<number>;
@@ -478,7 +507,12 @@ export function FleetScreen({
   const reasons: CommandReasons =
     commandGroup === null
       ? { buy: PICK_GROUP, arm: PICK_GROUP, sell: PICK_GROUP, stop: PICK_GROUP }
-      : groupReasons;
+      : {
+          ...groupReasons,
+          buy: groupReasons.buy ?? stairsBad,
+          sell: groupReasons.sell ?? stairsBad,
+          arm: groupReasons.arm ?? stairsBad,
+        };
 
   const command = async (task: () => Promise<unknown>): Promise<boolean> => {
     setCommandError(null);
@@ -493,7 +527,12 @@ export function FleetScreen({
       setCommandBusy(false);
     }
   };
-  const launchBuy = (buyFor: string, group: string, wallets: readonly number[]): void => {
+  const launchBuy = (
+    buyFor: string,
+    group: string,
+    wallets: readonly number[],
+    stairs?: StairsOptions,
+  ): void => {
     // The rows change in this click, before the worker answers.
     setPending({
       wallets: new Set(wallets.filter(hasAmount)),
@@ -501,7 +540,13 @@ export function FleetScreen({
     });
     void command(async () => {
       try {
-        await client.request({ type: 'startBuy', mint: buyFor, wallets, group });
+        await client.request({
+          type: 'startBuy',
+          mint: buyFor,
+          wallets,
+          group,
+          ...(stairs ? { stairs } : {}),
+        });
       } catch (e) {
         setPending(null); // refused: the rows go back to what they were
         throw e;
@@ -509,17 +554,32 @@ export function FleetScreen({
       await refresh();
     });
   };
-  const requestBuy = (group: WalletGroupV1, wallets: readonly number[]): void => {
+  const requestBuy = (
+    group: WalletGroupV1,
+    wallets: readonly number[],
+    stairs?: StairsOptions,
+  ): void => {
     if (buyMint === null) return;
-    if (global.dryRun) launchBuy(buyMint, group.id, wallets);
-    else setConfirm({ kind: 'buy', mint: buyMint, group, wallets });
+    if (global.dryRun) launchBuy(buyMint, group.id, wallets, stairs);
+    else setConfirm({ kind: 'buy', mint: buyMint, group, wallets, stairs });
   };
   // SELL (BUNNDLY-60): each selected wallet sells its set part of its token balance.
-  const launchSell = (mint: string, group: string, wallets: readonly number[]): void => {
+  const launchSell = (
+    mint: string,
+    group: string,
+    wallets: readonly number[],
+    stairs?: StairsOptions,
+  ): void => {
     setPending({ wallets: new Set(wallets), since: runId });
     void command(async () => {
       try {
-        await client.request({ type: 'startSell', mint, wallets, group });
+        await client.request({
+          type: 'startSell',
+          mint,
+          wallets,
+          group,
+          ...(stairs ? { stairs } : {}),
+        });
       } catch (e) {
         setPending(null);
         throw e;
@@ -529,28 +589,46 @@ export function FleetScreen({
   };
   const onSell = (): void => {
     if (reasons.sell !== null || buyMint === null || commandGroup === null) return;
-    if (global.dryRun) launchSell(buyMint, commandGroup.id, groupSelected);
-    else setConfirm({ kind: 'sell', mint: buyMint, group: commandGroup, wallets: groupSelected });
+    const stairs = barStairs();
+    if (global.dryRun) launchSell(buyMint, commandGroup.id, groupSelected, stairs);
+    else {
+      setConfirm({
+        kind: 'sell',
+        mint: buyMint,
+        group: commandGroup,
+        wallets: groupSelected,
+        stairs,
+      });
+    }
   };
-  const launchArm = (creator: string, group: string, wallets: readonly number[]): void => {
+  const launchArm = (
+    creator: string,
+    group: string,
+    wallets: readonly number[],
+    stairs?: StairsOptions,
+  ): void => {
     alarm.prime(); // the click allows the alarm sound later (autoplay policy)
     void command(async () => {
-      await client.request({ type: 'arm', creator, wallets, group });
+      await client.request({ type: 'arm', creator, wallets, group, ...(stairs ? { stairs } : {}) });
       await refresh();
     });
   };
   const onBuy = (): void => {
-    if (reasons.buy === null && commandGroup !== null) requestBuy(commandGroup, groupSelected);
+    if (reasons.buy === null && commandGroup !== null) {
+      requestBuy(commandGroup, groupSelected, barStairs());
+    }
   };
   const onArm = (): void => {
     if (reasons.arm !== null || target === null || commandGroup === null) return;
-    if (global.dryRun) launchArm(target.address, commandGroup.id, groupSelected);
+    const stairs = barStairs();
+    if (global.dryRun) launchArm(target.address, commandGroup.id, groupSelected, stairs);
     else {
       setConfirm({
         kind: 'arm',
         creator: target.address,
         group: commandGroup,
         wallets: groupSelected,
+        stairs,
       });
     }
   };
@@ -570,6 +648,41 @@ export function FleetScreen({
       await refresh();
     });
   };
+  // Pause / Resume of the shown group's Stairs run, while wallets wait for a step.
+  const commandRun = commandStatus?.buy ?? null;
+  const runWaiting =
+    viewRun !== null &&
+    commandRun?.runId === viewRun.runId &&
+    [...buyView.rows.values()].some((r) => r.state === 'SCHEDULED');
+  const pause = useMemo(() => pauseControl(commandRun, runWaiting), [commandRun, runWaiting]);
+  const onPause = (): void => {
+    if (pause === null || commandGroup === null) return;
+    const group = commandGroup.id;
+    const request = pause.request;
+    void command(async () => {
+      if (request === 'pauseStairs') await client.request({ type: 'pauseStairs', group });
+      else await client.request({ type: 'resumeStairs', group });
+      await refresh();
+    });
+  };
+  // The "Starts in" countdown of scheduled wallets ticks once a second while not paused.
+  const counting =
+    viewRun !== null &&
+    viewRun.paused !== true &&
+    [...buyView.rows.values()].some((r) => r.state === 'SCHEDULED');
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!counting) return;
+    const tick = (): void => {
+      setNow(Date.now());
+    };
+    const first = window.setTimeout(tick, 0);
+    const id = window.setInterval(tick, 1_000);
+    return () => {
+      window.clearTimeout(first);
+      window.clearInterval(id);
+    };
+  }, [counting]);
   // Row action: one wallet buys in its own group, whatever tab is shown. Stable for the
   // memoized rows.
   const buyInGroup = (index: number): void => {
@@ -759,7 +872,7 @@ export function FleetScreen({
     );
   };
 
-  // Why "Create wallets" is off right now, in words next to the button.
+  // Why "Create wallets" is off right now: the button's description and tooltip.
   const createBlocked = watchArmed
     ? WATCH_FROZEN
     : phase.kind === 'unsaved' || tableDirty
@@ -841,23 +954,23 @@ export function FleetScreen({
     : anyRunning
       ? 'A buy is running: change the mode when it ends.'
       : null;
-  const { counts } = buyView;
-  // The run in the summary's fleet fill, worded as in the mockup (BUNNDLY-73).
+  // Fleet fill (BUNNDLY-56): every selected wallet in the tone of its Fill, from `fillOf`
+  // like the rows, counted by `fleetFill`.
+  const fleetFills: Fill[] = selectedIndexes.map((i) => {
+    const row = tableBuy?.get(i);
+    if (row === undefined) return { percent: 0, tone: 'idle', label: 'Waiting' };
+    return fillOf({
+      state: row.state,
+      reason: row.reason,
+      verify: row.verify,
+      dryRun: viewRun?.dryRun ?? global.dryRun,
+      side: viewRun?.side ?? 'buy',
+    });
+  });
+  const fleet = fleetFill(fleetFills);
   const fill = viewRun && {
-    text:
-      `Fleet fill · ${String(counts.confirmed)} of ${String(viewRun.wallets)} filled` +
-      (counts.inProgress > 0 ? ` · ${String(counts.inProgress)} in flight` : '') +
-      (counts.failedOrSkipped > 0 ? ` · ${String(counts.failedOrSkipped)} failed or skipped` : '') +
-      (viewRun.dryRun ? ' · DRY-RUN' : '') +
-      (viewRun.phase === 'finished' ? ' · finished' : ''),
-    bar: (
-      <ProgressBar
-        label="Confirmed buys"
-        value={counts.confirmed}
-        max={viewRun.wallets}
-        tone={viewRun.phase === 'finished' ? 'ok' : 'run'}
-      />
-    ),
+    text: fleet.text,
+    bar: <FleetSegments tones={fleetFills.map((f) => f.tone)} />,
   };
 
   return (
@@ -956,9 +1069,11 @@ export function FleetScreen({
                 onClick={() => {
                   setConfirm(null);
                   const { group, wallets } = confirm;
-                  if (confirm.kind === 'buy') launchBuy(confirm.mint, group.id, wallets);
-                  else if (confirm.kind === 'sell') launchSell(confirm.mint, group.id, wallets);
-                  else launchArm(confirm.creator, group.id, wallets);
+                  const { stairs } = confirm;
+                  if (confirm.kind === 'buy') launchBuy(confirm.mint, group.id, wallets, stairs);
+                  else if (confirm.kind === 'sell') {
+                    launchSell(confirm.mint, group.id, wallets, stairs);
+                  } else launchArm(confirm.creator, group.id, wallets, stairs);
                 }}
               >
                 {CONFIRM_YES[confirm.kind]}
@@ -1000,6 +1115,8 @@ export function FleetScreen({
                   (global.mode === 'continuous'
                     ? ', a buy for every new token'
                     : ', one buy, then the watcher disarms')}
+                {confirm.stairs &&
+                  `; Stairs: every ${String(confirm.stairs.intervalMs / 1_000)} s, ${String(confirm.stairs.perStep)} per step`}
               </dd>
             </div>
           </dl>
@@ -1023,6 +1140,10 @@ export function FleetScreen({
         onCopy={onCopy}
         probe={rowProbe}
         buy={tableBuy}
+        runDryRun={viewRun?.dryRun ?? global.dryRun}
+        runSide={viewRun?.side ?? 'buy'}
+        runPaused={viewRun?.paused ?? false}
+        now={now}
         onBuyWallet={onBuyWallet}
         rowBuyBlocked={rowBlocked}
         onSellWallet={onSellWallet}
@@ -1067,19 +1188,38 @@ export function FleetScreen({
           <>
             <Segmented
               label="Execution mode"
-              value="immediate"
+              value={execMode}
               options={[
-                { value: 'immediate', label: 'Immediate' },
-                {
-                  value: 'stairs',
-                  label: 'Stairs',
-                  disabled: true,
-                  title: 'Stairs (buying in steps) is not available yet.',
-                },
+                { value: 'immediate', label: 'Immediate', title: 'Every selected wallet at once' },
+                { value: 'stairs', label: 'Stairs', title: 'The selected wallets in timed steps' },
               ]}
-              onChange={() => undefined}
+              onChange={setExecMode}
             />
+            {execMode === 'stairs' && (
+              <StairsStrip
+                every={everyText}
+                perStep={perStepText}
+                onEvery={setEveryText}
+                onPerStep={setPerStepText}
+                plan={planText(
+                  stairsPlan(
+                    groupSelected.length,
+                    parseEvery(everyText) ?? 1,
+                    parsePerStep(perStepText) ?? 1,
+                  ),
+                )}
+              />
+            )}
             <span className="spacer" />
+            {pause && (
+              <Button
+                icon={pause.label === 'Pause' ? <PauseIcon /> : <PlayIcon />}
+                disabled={commandBusy}
+                onClick={onPause}
+              >
+                {pause.label}
+              </Button>
+            )}
             <CommandButtons reasons={reasons} onBuy={onBuy} onSell={onSell} onStop={onStop} />
           </>
         }
@@ -1089,6 +1229,7 @@ export function FleetScreen({
         walletCount={info.wallets.length}
         selectedCount={selectedCount}
         tokenDecimals={balances.token?.decimals ?? null}
+        balancesRead={balances.lamports !== null}
         firstFillMs={buyView.run?.firstConfirmMs ?? null}
         lastFillMs={buyView.run?.lastConfirmMs ?? null}
         fillFrom={fromDetection ? 'detection' : 'start'}
