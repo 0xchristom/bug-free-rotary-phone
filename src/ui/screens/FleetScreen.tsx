@@ -1227,6 +1227,7 @@ export function FleetScreen({
         walletCount={info.wallets.length}
         selectedCount={selectedCount}
         tokenDecimals={balances.token?.decimals ?? null}
+        balancesRead={balances.lamports !== null}
         firstFillMs={buyView.run?.firstConfirmMs ?? null}
         lastFillMs={buyView.run?.lastConfirmMs ?? null}
         fillFrom={fromDetection ? 'detection' : 'start'}
