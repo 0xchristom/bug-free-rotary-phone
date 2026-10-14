@@ -10,6 +10,7 @@ import { toUserMessage } from '../core/errors.ts';
 import { NETWORK_LABELS } from '../core/network.ts';
 import { formatUnits } from './sol.ts';
 import { useVault } from './vault-state.ts';
+import { Button } from './kit/index.ts';
 
 /** USDC has 6 decimals; the test asks for 0.01 SOL (jupiter/quote-check.ts). */
 const USDC_DECIMALS = 6;
@@ -110,15 +111,14 @@ export function ConnectionTest() {
         saved in the vault. Unsaved key changes are not used.
       </p>
       <div className="actions">
-        <button
-          type="button"
+        <Button
           disabled={running}
           onClick={() => {
             void run();
           }}
         >
           {running ? 'Testing…' : 'Test connections'}
-        </button>
+        </Button>
       </div>
       {error && (
         <p className="notice error" role="alert">

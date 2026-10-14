@@ -3,6 +3,7 @@ import { toUserMessage } from '../core/errors.ts';
 import { logFileName, toCsv, toJson } from '../executor/oplog.ts';
 import { downloadTextFile, type StorageEnv } from '../storage/keystore-file.ts';
 import { useOperationsLogSize, type OperationsLog } from './operations-log.ts';
+import { Button } from './kit/index.ts';
 
 export interface OperationsLogPanelProps {
   readonly log: OperationsLog;
@@ -48,24 +49,22 @@ export function OperationsLogPanel({
           : `Entries: ${String(size)}. No keys and no signed transactions; amounts in lamports and token base units.`}
       </p>
       <div className="actions">
-        <button
-          type="button"
+        <Button
           disabled={size === 0}
           onClick={() => {
             save('csv');
           }}
         >
           Download CSV
-        </button>
-        <button
-          type="button"
+        </Button>
+        <Button
           disabled={size === 0}
           onClick={() => {
             save('json');
           }}
         >
           Download JSON
-        </button>
+        </Button>
       </div>
       {error && (
         <p className="error" role="alert">

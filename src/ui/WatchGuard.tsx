@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useVault } from './vault-state.ts';
 import { useWatchRuntime } from './watch-runtime.ts';
 import { connectionLabel } from './watch-labels.ts';
+import { Button } from './kit/index.ts';
 
 /**
  * Mode B on every screen (SPEC 3.4, BUNNDLY-35, D-039): the status follows the watcher's
@@ -71,14 +72,13 @@ export function WatchGuard() {
       </p>
       {!muted && (
         <div className="actions">
-          <button
-            type="button"
+          <Button
             onClick={() => {
               setMuted(true);
             }}
           >
             Mute
-          </button>
+          </Button>
         </div>
       )}
     </div>

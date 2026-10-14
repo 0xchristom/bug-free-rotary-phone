@@ -26,6 +26,7 @@ import { SettingsResetNotice } from '../SettingsResetNotice.tsx';
 import { PLAN_LABELS } from '../plan-labels.ts';
 import { useVault } from '../vault-state.ts';
 import { WATCH_FROZEN } from '../watch-labels.ts';
+import { Button, Checkbox, Input, NumberInput } from '../kit/index.ts';
 
 type KeyName = keyof ApiKeyFlags;
 
@@ -263,19 +264,19 @@ export function SettingsScreen({ info, storage, onUnsavedChange }: SettingsScree
   ) => (
     <>
       <label htmlFor={`${ids}-${key}`}>{label}</label>
-      <div className="inline">
-        <input
-          id={`${ids}-${key}`}
-          type="text"
-          inputMode={inputMode}
-          value={form[key]}
-          aria-invalid={fieldErrors.has(field)}
-          onChange={(e) => {
-            set(key, e.target.value);
-          }}
-        />
-        <span className="muted">{suffix}</span>
-      </div>
+      {/* The unit sits inside the field; screen readers get it as the description. */}
+      <NumberInput
+        id={`${ids}-${key}`}
+        className="settings-number"
+        unit={suffix}
+        inputMode={inputMode}
+        value={form[key]}
+        invalid={fieldErrors.has(field)}
+        aria-description={suffix}
+        onChange={(e) => {
+          set(key, e.target.value);
+        }}
+      />
       {fieldError(field)}
     </>
   );
@@ -283,7 +284,7 @@ export function SettingsScreen({ info, storage, onUnsavedChange }: SettingsScree
   const locked = phase.kind === 'saving' || phase.kind === 'unsaved';
 
   return (
-    <section className="screen" aria-labelledby={`${ids}-title`}>
+    <section className="screen narrow" aria-labelledby={`${ids}-title`}>
       <h2 id={`${ids}-title`}>Settings</h2>
       <p className="muted">
         Settings and API keys are saved in the encrypted fleet file. Keys are never shown: a typed
@@ -308,14 +309,13 @@ export function SettingsScreen({ info, storage, onUnsavedChange }: SettingsScree
             </p>
           )}
           <div className="actions">
-            <button
-              type="button"
-              className="primary"
+            <Button
+              variant="primary"
               disabled={phase.writing}
               onClick={() => void writeFile(phase.fileText)}
             >
               {phase.writing ? 'Saving…' : 'Save the updated fleet file'}
-            </button>
+            </Button>
           </div>
         </div>
       )}
@@ -342,7 +342,7 @@ export function SettingsScreen({ info, storage, onUnsavedChange }: SettingsScree
                       : 'Not set.'}
                 </p>
                 <div className="inline">
-                  <input
+                  <Input
                     id={`${ids}-key-${name}`}
                     type={d.show ? 'text' : 'password'}
                     value={d.text}
@@ -355,8 +355,7 @@ export function SettingsScreen({ info, storage, onUnsavedChange }: SettingsScree
                       setDraft(name, { text: e.target.value });
                     }}
                   />
-                  <button
-                    type="button"
+                  <Button
                     aria-label={`${d.show ? 'Hide' : 'Show'} the typed text: ${label}`}
                     disabled={d.remove || d.text === ''}
                     onClick={() => {
@@ -364,17 +363,16 @@ export function SettingsScreen({ info, storage, onUnsavedChange }: SettingsScree
                     }}
                   >
                     {d.show ? 'Hide' : 'Show'}
-                  </button>
+                  </Button>
                   {isSet && (
-                    <button
-                      type="button"
+                    <Button
                       aria-label={`${d.remove ? 'Keep' : 'Remove'}: ${label}`}
                       onClick={() => {
                         setDraft(name, { remove: !d.remove, text: '', show: false });
                       }}
                     >
                       {d.remove ? 'Undo removal' : 'Remove'}
-                    </button>
+                    </Button>
                   )}
                 </div>
                 {urlErrors.has(name) && <p className="field-error">{urlErrors.get(name)}</p>}
@@ -384,6 +382,7 @@ export function SettingsScreen({ info, storage, onUnsavedChange }: SettingsScree
 
           <label htmlFor={`${ids}-plan`}>Jupiter plan</label>
           <select
+            className="k-input"
             id={`${ids}-plan`}
             value={form.plan}
             onChange={(e) => {
@@ -467,12 +466,11 @@ export function SettingsScreen({ info, storage, onUnsavedChange }: SettingsScree
             </p>
           )}
           <label className="checkbox">
-            <input
-              type="checkbox"
+            <Checkbox
               checked={form.dryRun}
-              onChange={(e) => {
-                if (!e.target.checked && !window.confirm(liveWarning(network))) return;
-                set('dryRun', e.target.checked);
+              onChange={(checked) => {
+                if (!checked && !window.confirm(liveWarning(network))) return;
+                set('dryRun', checked);
               }}
             />
             DRY-RUN: buy without sending transactions (real price requests, no SOL spent)
@@ -486,6 +484,7 @@ export function SettingsScreen({ info, storage, onUnsavedChange }: SettingsScree
           <legend>Application</legend>
           <label htmlFor={`${ids}-explorer`}>Transaction explorer</label>
           <select
+            className="k-input"
             id={`${ids}-explorer`}
             value={form.explorer}
             onChange={(e) => {
@@ -502,9 +501,9 @@ export function SettingsScreen({ info, storage, onUnsavedChange }: SettingsScree
         </fieldset>
 
         <div className="actions">
-          <button type="submit" className="primary" disabled={invalid || locked || watchArmed}>
+          <Button type="submit" variant="primary" disabled={invalid || locked || watchArmed}>
             {phase.kind === 'saving' ? 'Saving…' : 'Save settings'}
-          </button>
+          </Button>
           {watchArmed && <span className="muted">{WATCH_FROZEN}</span>}
         </div>
       </form>

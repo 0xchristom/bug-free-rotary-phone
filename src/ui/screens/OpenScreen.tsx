@@ -3,6 +3,7 @@ import { isAppError, toUserMessage } from '../../core/errors.ts';
 import { openKeystoreFile, type StorageEnv } from '../../storage/keystore-file.ts';
 import type { VaultPreview } from '../../worker/protocol.ts';
 import { useVault } from '../vault-state.ts';
+import { Button, Chip, Input, ProgressBar } from '../kit/index.ts';
 
 type Phase =
   | { readonly kind: 'pick'; readonly picking: boolean }
@@ -109,7 +110,7 @@ export function OpenScreen({ storage, onBack, onUnlocked }: OpenScreenProps) {
 
   if (phase.kind === 'pick') {
     return (
-      <section className="screen" aria-labelledby={`${ids}-title`}>
+      <section className="screen narrow" aria-labelledby={`${ids}-title`}>
         <h2 id={`${ids}-title`}>Open a fleet file</h2>
         <p>
           Choose a “…keystore.json” file. You will see its preview first and enter the password
@@ -117,17 +118,12 @@ export function OpenScreen({ storage, onBack, onUnlocked }: OpenScreenProps) {
         </p>
         {problemBox}
         <div className="actions">
-          <button
-            type="button"
-            className="primary"
-            disabled={phase.picking}
-            onClick={() => void pick()}
-          >
+          <Button variant="primary" disabled={phase.picking} onClick={() => void pick()}>
             {phase.picking ? 'Loading…' : 'Choose a fleet file'}
-          </button>
-          <button type="button" onClick={onBack}>
+          </Button>
+          <Button variant="ghost" onClick={onBack}>
             Back
-          </button>
+          </Button>
         </div>
       </section>
     );
@@ -136,7 +132,7 @@ export function OpenScreen({ storage, onBack, onUnlocked }: OpenScreenProps) {
   const { preview, unlocking } = phase;
   const percent = unlocking === null ? null : Math.round(unlocking * 100);
   return (
-    <section className="screen" aria-labelledby={`${ids}-title`}>
+    <section className="screen narrow" aria-labelledby={`${ids}-title`}>
       <h2 id={`${ids}-title`}>Fleet preview</h2>
       <ul>
         <li>
@@ -157,7 +153,7 @@ export function OpenScreen({ storage, onBack, onUnlocked }: OpenScreenProps) {
       {problemBox}
       <form className="form" onSubmit={(e) => void unlock(e)} noValidate>
         <label htmlFor={`${ids}-pw`}>Password</label>
-        <input
+        <Input
           id={`${ids}-pw`}
           type="password"
           value={password}
@@ -169,16 +165,15 @@ export function OpenScreen({ storage, onBack, onUnlocked }: OpenScreenProps) {
         />
         {percent !== null && (
           <>
-            <progress max={100} value={percent} aria-label="Decryption progress" />
+            <ProgressBar label="Decryption progress" value={percent} max={100} tone="run" />
             <p className="muted">Decrypting the file… {percent}%</p>
           </>
         )}
         <div className="actions">
-          <button type="submit" className="primary" disabled={password === '' || percent !== null}>
+          <Button type="submit" variant="primary" disabled={password === '' || percent !== null}>
             Unlock
-          </button>
-          <button
-            type="button"
+          </Button>
+          <Button
             disabled={percent !== null}
             onClick={() => {
               setPassword('');
@@ -187,10 +182,10 @@ export function OpenScreen({ storage, onBack, onUnlocked }: OpenScreenProps) {
             }}
           >
             Choose another file
-          </button>
-          <button type="button" disabled={percent !== null} onClick={onBack}>
+          </Button>
+          <Button variant="ghost" disabled={percent !== null} onClick={onBack}>
             Back
-          </button>
+          </Button>
         </div>
       </form>
 
@@ -212,17 +207,17 @@ export function OpenScreen({ storage, onBack, onUnlocked }: OpenScreenProps) {
                 <td>{w.label}</td>
                 <td>
                   <code className="address">{w.address}</code>{' '}
-                  <span className="badge unverified" title={UNVERIFIED_HINT}>
+                  <Chip tone="warn" size="sm" title={UNVERIFIED_HINT}>
                     unverified
-                  </span>
+                  </Chip>
                 </td>
                 <td>
-                  <button type="button" disabled title={UNVERIFIED_HINT}>
+                  <Button disabled title={UNVERIFIED_HINT}>
                     Copy
-                  </button>{' '}
-                  <button type="button" disabled title={UNVERIFIED_HINT}>
+                  </Button>{' '}
+                  <Button disabled title={UNVERIFIED_HINT}>
                     QR
-                  </button>
+                  </Button>
                 </td>
               </tr>
             ))}
