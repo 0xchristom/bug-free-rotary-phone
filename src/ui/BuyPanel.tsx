@@ -2,6 +2,7 @@ import { useEffect, useId, useState, type ReactNode } from 'react';
 import { toUserMessage } from '../core/errors.ts';
 import { DEFAULT_NETWORK, NETWORK_LABELS } from '../core/network.ts';
 import type { BuyMode, JupiterPlan } from '../core/settings.ts';
+import { DRY_RUN_NOTE, LIVE_NOTE } from './mode-text.ts';
 import { PLAN_LABELS } from './plan-labels.ts';
 import { formatSol } from './sol.ts';
 import { isBuyRunning, type BuyView } from './use-buy.ts';
@@ -99,11 +100,7 @@ export function BuyPanel({
       <div className="buy-head">
         <h3 id={`${ids}-title`}>Buy</h3>
       </div>
-      <p className="muted">
-        {dryRun
-          ? 'DRY-RUN: real price requests and signatures, but no transaction will be sent.'
-          : 'Live mode: a buy sends real transactions and spends SOL from the wallets.'}
-      </p>
+      <p className="muted">{dryRun ? DRY_RUN_NOTE : LIVE_NOTE}</p>
 
       {watchArmed && !running && <p className="muted">{WATCH_FROZEN}</p>}
       {!running &&

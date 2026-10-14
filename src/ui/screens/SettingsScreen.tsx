@@ -26,7 +26,7 @@ import { SettingsResetNotice } from '../SettingsResetNotice.tsx';
 import { PLAN_LABELS } from '../plan-labels.ts';
 import { useVault } from '../vault-state.ts';
 import { WATCH_FROZEN } from '../watch-labels.ts';
-import { Button, Checkbox, Input } from '../kit/index.ts';
+import { Button, Checkbox, Input, NumberInput } from '../kit/index.ts';
 
 type KeyName = keyof ApiKeyFlags;
 
@@ -264,18 +264,19 @@ export function SettingsScreen({ info, storage, onUnsavedChange }: SettingsScree
   ) => (
     <>
       <label htmlFor={`${ids}-${key}`}>{label}</label>
-      <div className="inline">
-        <Input
-          id={`${ids}-${key}`}
-          inputMode={inputMode}
-          value={form[key]}
-          aria-invalid={fieldErrors.has(field)}
-          onChange={(e) => {
-            set(key, e.target.value);
-          }}
-        />
-        <span className="muted">{suffix}</span>
-      </div>
+      {/* The unit sits inside the field; screen readers get it as the description. */}
+      <NumberInput
+        id={`${ids}-${key}`}
+        className="settings-number"
+        unit={suffix}
+        inputMode={inputMode}
+        value={form[key]}
+        invalid={fieldErrors.has(field)}
+        aria-description={suffix}
+        onChange={(e) => {
+          set(key, e.target.value);
+        }}
+      />
       {fieldError(field)}
     </>
   );
