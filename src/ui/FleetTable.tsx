@@ -1,5 +1,6 @@
-import { memo, useId, useMemo, useState, type ReactNode } from 'react';
+import { memo, useCallback, useId, useMemo, useState, type ReactNode } from 'react';
 import { addressUrl, transactionUrl, type Explorer, type Network } from '../core/network.ts';
+import { walletTrade, type TradeSettingsV1 } from '../core/trade.ts';
 import {
   FAIL_MESSAGES,
   SKIP_MESSAGES,
@@ -11,7 +12,16 @@ import { VERIFY_MESSAGES, type VerifyStatus } from '../executor/verify.ts';
 import { AddressQr } from './AddressQr.tsx';
 import { rowState, type RowState } from './fleet-math.ts';
 import { shortAddress } from './short-address.ts';
-import { formatSol, formatUnits, parseSolAmount } from './sol.ts';
+import { formatSol, formatUnits } from './sol.ts';
+import {
+  amountLabel,
+  amountText,
+  feeLabel,
+  ownAmount,
+  plannedSpend,
+  slippageLabel,
+  type WalletPatch,
+} from './trade-edit.ts';
 import type { BuyRow } from './use-buy.ts';
 import {
   DEFAULT_SORT,
@@ -25,6 +35,7 @@ import {
   type SortKey,
   type WalletFilter,
 } from './wallet-filters.ts';
+import { AmountField, EditWallet } from './WalletTradeFields.tsx';
 import {
   Avatar,
   Checkbox,
@@ -32,8 +43,9 @@ import {
   CopyIcon,
   ExternalIcon,
   IconButton,
+  InIcon,
   Input,
-  NumberInput,
+  OutIcon,
   Popover,
   QrIcon,
   SearchIcon,
@@ -54,11 +66,26 @@ interface RowProps extends FleetRowData {
   readonly balance: bigint | null;
   /** Token balance already formatted with its decimals, or null. */
   readonly token: string | null;
-  readonly maxSpendText: string;
+  /** The wallet's own buy amount as text and its unit; empty text = the fleet default. */
+  readonly amountText: string;
+  readonly amountUnit: 'SOL' | '%';
+  /** The fleet default amount in words, for the empty field. */
+  readonly defaultAmount: string;
+  /** What a buy would spend now (a percent counted from the balance), or null. */
+  readonly spend: bigint | null;
+  /** What the wallet trades with, in words (defaults applied). */
+  readonly amountNow: string;
+  readonly buySlip: string;
+  readonly sellSlip: string;
+  readonly buyFee: string;
+  readonly sellFee: string;
+  readonly sellPart: string;
+  /** In a running buy, sell or armed watch of its group: its trade settings stay. */
+  readonly locked: boolean;
   /** Selected wallets take part in commands; saved as the `active` flag. */
   readonly selected: boolean;
   readonly minReserve: bigint;
-  readonly onMaxSpend: (index: number, text: string) => void;
+  readonly onTrade: (index: number, patch: WalletPatch) => Promise<string | null>;
   readonly onSelect: (index: number, selected: boolean) => void;
   readonly onCopy: (index: number, address: string) => void;
   /** Test hook: called on every render of the row. */
@@ -72,7 +99,7 @@ interface RowProps extends FleetRowData {
 /** Shown where there is no value yet. */
 const NONE = '—';
 /** Columns of the table, for the row that says no wallet matches. */
-const COLUMNS = 8;
+const COLUMNS = 10;
 
 const STATE_LABELS: Record<WalletState, string> = {
   IDLE: 'Waiting',
@@ -155,11 +182,28 @@ function lastMessage(buy: BuyRow | null): { readonly text: string; readonly titl
   return why === null ? null : { text: why, title: why };
 }
 
-/** The amount typed in a row: lamports, null when empty, 'invalid' when it does not parse. */
-function amountOf(text: string): bigint | null | 'invalid' {
-  if (text.trim() === '') return null;
-  const parsed = parseSolAmount(text);
-  return parsed.ok ? parsed.lamports : 'invalid';
+/** A buy value over a sell value, as the mockup's badges (green in, red out). */
+function Pair({
+  what,
+  buy,
+  sell,
+}: {
+  readonly what: string;
+  readonly buy: string;
+  readonly sell: string;
+}) {
+  return (
+    <div className="pair">
+      <span className="mini b" title={`${what} when buying`}>
+        <InIcon />
+        {buy}
+      </span>
+      <span className="mini s" title={`${what} when selling`}>
+        <OutIcon />
+        {sell}
+      </span>
+    </div>
+  );
 }
 
 /**
@@ -169,8 +213,9 @@ function amountOf(text: string): bigint | null | 'invalid' {
 const FleetRow = memo(function FleetRow(p: RowProps) {
   p.probe?.(p.index);
   const [qrOpen, setQrOpen] = useState(false);
-  const input = p.maxSpendText.trim() === '' ? null : parseSolAmount(p.maxSpendText);
-  const maxSpend = input?.ok ? input.lamports : null;
+  const { index, onTrade } = p;
+  const save = useCallback((patch: WalletPatch) => onTrade(index, patch), [index, onTrade]);
+  const maxSpend = p.spend;
   const state = rowState({
     balance: p.balance,
     maxSpend,
@@ -183,14 +228,11 @@ const FleetRow = memo(function FleetRow(p: RowProps) {
   const message = lastMessage(p.buy);
   const signature = p.buy?.result?.signature ?? null;
   const txUrl = signature ? transactionUrl(p.explorer, p.network, signature) : null;
-  const amountError =
-    input !== null && !input.ok
-      ? input.message
-      : state.overBalance
-        ? 'More than the wallet balance.'
-        : state.reserveTooLow && state.reserve !== null
-          ? `Leaves ${formatSol(state.reserve)} SOL; the minimum reserve is ${formatSol(p.minReserve)} SOL.`
-          : null;
+  const amountProblem = state.overBalance
+    ? 'More than the wallet balance.'
+    : state.reserveTooLow && state.reserve !== null
+      ? `Leaves ${formatSol(state.reserve)} SOL; the minimum reserve is ${formatSol(p.minReserve)} SOL.`
+      : null;
   return (
     <tr className={cx(rowClass, !p.selected && 'unsel')} data-ready={state.ready}>
       <td className="c-check">
@@ -246,17 +288,21 @@ const FleetRow = memo(function FleetRow(p: RowProps) {
         )}
       </td>
       <td>
-        <NumberInput
-          unit="SOL"
-          className="amount-input"
-          aria-label={`Max spend ${p.label}`}
-          value={p.maxSpendText}
-          invalid={input !== null && !input.ok}
-          onChange={(e) => {
-            p.onMaxSpend(p.index, e.target.value);
-          }}
+        <AmountField
+          label={p.label}
+          savedText={p.amountText}
+          savedUnit={p.amountUnit}
+          placeholder={p.defaultAmount}
+          locked={p.locked}
+          problem={amountProblem}
+          onSave={save}
         />
-        {amountError && <p className="field-error">{amountError}</p>}
+      </td>
+      <td>
+        <Pair what="Priority fee" buy={p.buyFee} sell={p.sellFee} />
+      </td>
+      <td>
+        <Pair what="Slippage" buy={p.buySlip} sell={p.sellSlip} />
       </td>
       <td className="num">{p.token ?? NONE}</td>
       <td>
@@ -287,6 +333,17 @@ const FleetRow = memo(function FleetRow(p: RowProps) {
       </td>
       <td className="c-acts">
         <div className="acts">
+          <EditWallet
+            label={p.label}
+            placeholders={{
+              amount: p.amountNow,
+              buySlip: p.buySlip,
+              sellSlip: p.sellSlip,
+              sellPart: p.sellPart,
+            }}
+            locked={p.locked}
+            onSave={save}
+          />
           <Popover
             open={qrOpen}
             onClose={() => {
@@ -325,11 +382,16 @@ export interface FleetTableProps {
     readonly decimals: number;
     readonly program: 'spl-token' | 'token-2022';
   } | null;
-  readonly maxSpendText: Readonly<Record<number, string>>;
+  /** SOL buy amounts saved in the vault (`maxSpend`). */
+  readonly maxSpend: ReadonlyMap<number, bigint>;
+  /** Trade parameters saved in the vault (D-045). */
+  readonly trade: TradeSettingsV1;
+  /** Wallets in a running action of their group (BUNNDLY-71). */
+  readonly locked?: ReadonlySet<number>;
   /** Wallets without an entry are selected (D-019). */
   readonly selected: Readonly<Record<number, boolean>>;
   readonly minReserve: bigint;
-  readonly onMaxSpend: RowProps['onMaxSpend'];
+  readonly onTrade: RowProps['onTrade'];
   readonly onSelect: RowProps['onSelect'];
   /** Selects or clears the given wallets: the ones the filter and the search show. */
   readonly onSelectAll: (indices: readonly number[], selected: boolean) => void;
@@ -402,8 +464,10 @@ export function FleetTable(t: FleetTableProps) {
   }, [t.token]);
 
   const rows = t.wallets.map((w) => {
-    const amount = amountOf(t.maxSpendText[w.index] ?? '');
     const balance = t.lamports?.get(w.index) ?? null;
+    const own = ownAmount(t.trade, w.index, t.maxSpend.get(w.index));
+    const effective = walletTrade(t.trade, w.index, t.maxSpend.get(w.index));
+    const amount = plannedSpend(effective.buyAmount, balance, t.minReserve);
     const selected = t.selected[w.index] ?? true;
     const buy = t.buy?.get(w.index) ?? null;
     const filterable: FilterWallet = {
@@ -411,18 +475,21 @@ export function FleetTable(t: FleetTableProps) {
       buy,
       reserveTooLow: rowState({
         balance,
-        maxSpend: typeof amount === 'bigint' ? amount : null,
+        maxSpend: amount,
         minReserve: t.minReserve,
         active: selected,
       }).reserveTooLow,
     };
     return {
       wallet: w,
+      own,
+      effective,
+      spend: amount,
       filterable,
       sortable: {
         index: w.index,
         balance,
-        amount: typeof amount === 'bigint' ? amount : null,
+        amount,
         tokens: t.token?.amounts.get(w.index) ?? null,
       },
     };
@@ -437,15 +504,19 @@ export function FleetTable(t: FleetTableProps) {
     (r) =>
       matchesFilter(filter, r.filterable) && matchesSearch(query, r.wallet.label, r.wallet.address),
   );
-  const byIndex = new Map(shown.map((r) => [r.wallet.index, r.wallet]));
+  const byIndex = new Map(shown.map((r) => [r.wallet.index, r]));
   const order = sortWallets(
     shown.map((r) => r.sortable),
     sort,
   );
-  const visible = order.flatMap((i) => {
-    const w = byIndex.get(i);
-    return w ? [w] : [];
+  const visibleRows = order.flatMap((i) => {
+    const r = byIndex.get(i);
+    return r ? [r] : [];
   });
+  const visible = visibleRows.map((r) => r.wallet);
+  const fleet = t.trade.fleet;
+  const defaultAmount =
+    fleet.buyAmount === null ? 'No amount' : `Default ${amountLabel(fleet.buyAmount)}`;
 
   const selectedCount = t.wallets.filter((w) => t.selected[w.index] ?? true).length;
   const visibleSelected = visible.filter((w) => t.selected[w.index] ?? true).length;
@@ -531,11 +602,13 @@ export function FleetTable(t: FleetTableProps) {
               />
               <SortHeader
                 label="Buy amount"
-                name="Buy amount (max spend, SOL)"
+                name="Buy amount (SOL or % of balance)"
                 sortKey="amount"
                 sort={sort}
                 onSort={onSort}
               />
+              <th scope="col">Priority fee</th>
+              <th scope="col">Slippage</th>
               <SortHeader
                 label={
                   t.token
@@ -556,7 +629,7 @@ export function FleetTable(t: FleetTableProps) {
             </tr>
           </thead>
           <tbody>
-            {visible.map((w) => (
+            {visibleRows.map(({ wallet: w, own, effective, spend }) => (
               <FleetRow
                 key={w.index}
                 index={w.index}
@@ -564,10 +637,20 @@ export function FleetTable(t: FleetTableProps) {
                 address={w.address}
                 balance={t.lamports?.get(w.index) ?? null}
                 token={tokenText?.get(w.index) ?? null}
-                maxSpendText={t.maxSpendText[w.index] ?? ''}
+                amountText={amountText(own)}
+                amountUnit={own?.kind === 'percent' ? '%' : 'SOL'}
+                defaultAmount={defaultAmount}
+                spend={spend}
+                amountNow={amountLabel(effective.buyAmount)}
+                buySlip={slippageLabel(effective.buySlippageBps)}
+                sellSlip={slippageLabel(effective.sellSlippageBps)}
+                buyFee={feeLabel(effective.buyPriorityFeeLamports)}
+                sellFee={feeLabel(effective.sellPriorityFeeLamports)}
+                sellPart={`${String(effective.sellPercent)} %`}
+                locked={t.locked?.has(w.index) ?? false}
                 selected={t.selected[w.index] ?? true}
                 minReserve={t.minReserve}
-                onMaxSpend={t.onMaxSpend}
+                onTrade={t.onTrade}
                 onSelect={t.onSelect}
                 onCopy={t.onCopy}
                 probe={t.probe}

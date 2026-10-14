@@ -19,12 +19,21 @@ import {
   supportsDirectoryPicker,
   type StorageEnv,
 } from '../../storage/keystore-file.ts';
+import type { FleetTradeV1 } from '../../core/trade.ts';
 import type { ApiKeyChanges, ApiKeyFlags, VaultInfo } from '../../worker/protocol.ts';
 import { formatSol, parseSol } from '../sol.ts';
 import { ConnectionTest } from '../ConnectionTest.tsx';
 import { SettingsResetNotice } from '../SettingsResetNotice.tsx';
 import { PLAN_LABELS } from '../plan-labels.ts';
 import { useVault } from '../vault-state.ts';
+import {
+  DEFAULT,
+  amountText,
+  parseAmount,
+  parseSellPercent,
+  parseSlippage,
+  slippageText,
+} from '../trade-edit.ts';
 import { WATCH_FROZEN } from '../watch-labels.ts';
 import { Button, Checkbox, Input, NumberInput } from '../kit/index.ts';
 
@@ -76,6 +85,47 @@ interface Form {
   autoLock: string;
   plan: JupiterPlan;
   customRpm: string;
+  /** Fleet trade defaults (D-045): what a wallet without its own value uses. */
+  tradeAmount: string;
+  tradeUnit: 'SOL' | '%';
+  tradeSellPart: string;
+  tradeBuySlip: string;
+  tradeSellSlip: string;
+}
+
+type TradeKey = 'tradeAmount' | 'tradeSellPart' | 'tradeBuySlip' | 'tradeSellSlip';
+
+/** The fleet defaults from the form, or a message per field that is wrong. */
+function fleetTradeOf(
+  f: Form,
+  saved: FleetTradeV1,
+): { readonly fleet: FleetTradeV1 | null; readonly errors: Map<TradeKey, string> } {
+  const errors = new Map<TradeKey, string>();
+  const amount = parseAmount(f.tradeAmount, f.tradeUnit);
+  if (!amount.ok) errors.set('tradeAmount', amount.message);
+  const sell = f.tradeSellPart.trim() === '' ? null : parseSellPercent(f.tradeSellPart);
+  if (sell === null) errors.set('tradeSellPart', 'Enter a whole number from 1 to 100.');
+  else if (!sell.ok) errors.set('tradeSellPart', sell.message);
+  // For the fleet there is no default above it: an empty slippage field is Auto.
+  const buySlip = parseSlippage(f.tradeBuySlip);
+  if (!buySlip.ok) errors.set('tradeBuySlip', buySlip.message);
+  const sellSlip = parseSlippage(f.tradeSellSlip);
+  if (!sellSlip.ok) errors.set('tradeSellSlip', sellSlip.message);
+  if (errors.size > 0 || !amount.ok || !sell?.ok || !buySlip.ok || !sellSlip.ok) {
+    return { fleet: null, errors };
+  }
+  return {
+    fleet: {
+      buyAmount: amount.value === DEFAULT ? null : amount.value,
+      sellPercent: sell.value === DEFAULT ? saved.sellPercent : sell.value,
+      buySlippageBps: buySlip.value === DEFAULT ? null : buySlip.value,
+      sellSlippageBps: sellSlip.value === DEFAULT ? null : sellSlip.value,
+      // Not edited here: on the Jupiter route the fee is not sent (D-045).
+      buyPriorityFeeLamports: saved.buyPriorityFeeLamports,
+      sellPriorityFeeLamports: saved.sellPriorityFeeLamports,
+    },
+    errors,
+  };
 }
 
 /** Form fields edited as text. */
@@ -91,8 +141,14 @@ type SavePhase =
   | { readonly kind: 'unsaved'; readonly fileText: string; readonly writing: boolean }
   | { readonly kind: 'written'; readonly fileName: string };
 
-function formOf(g: GlobalSettingsV1): Form {
+function formOf(g: GlobalSettingsV1, t: FleetTradeV1): Form {
   return {
+    tradeAmount: amountText(t.buyAmount),
+    tradeUnit: t.buyAmount?.kind === 'percent' ? '%' : 'SOL',
+    tradeSellPart: String(t.sellPercent),
+    // Auto is the empty field here: the fleet has no default above it.
+    tradeBuySlip: t.buySlippageBps === null ? '' : slippageText(t.buySlippageBps),
+    tradeSellSlip: t.sellSlippageBps === null ? '' : slippageText(t.sellSlippageBps),
     dryRun: g.dryRun,
     minReserve: formatSol(g.minReserveLamports),
     maxAttempts: String(g.maxAttempts),
@@ -167,7 +223,9 @@ export function SettingsScreen({ info, storage, onUnsavedChange }: SettingsScree
   const { client, status, refresh } = useVault();
   const watchArmed = status?.watch?.armed ?? false;
   const ids = useId();
-  const [form, setForm] = useState<Form>(() => formOf(info.settings.global));
+  const [form, setForm] = useState<Form>(() =>
+    formOf(info.settings.global, info.settings.trade.fleet),
+  );
   const [drafts, setDrafts] = useState<Record<KeyName, KeyDraft>>(EMPTY_DRAFTS);
   const [phase, setPhase] = useState<SavePhase>({ kind: 'idle' });
   const [error, setError] = useState<string | null>(null);
@@ -195,7 +253,8 @@ export function SettingsScreen({ info, storage, onUnsavedChange }: SettingsScree
     const problem = text === '' ? null : endpointUrlProblem(text, protocol);
     if (problem !== null) urlErrors.set(name, problem);
   }
-  const invalid = fieldErrors.size > 0 || urlErrors.size > 0;
+  const tradeForm = fleetTradeOf(form, info.settings.trade.fleet);
+  const invalid = fieldErrors.size > 0 || urlErrors.size > 0 || tradeForm.fleet === null;
 
   const set = <K extends keyof Form>(key: K, value: Form[K]): void => {
     setForm((f) => ({ ...f, [key]: value }));
@@ -208,6 +267,7 @@ export function SettingsScreen({ info, storage, onUnsavedChange }: SettingsScree
   const save = async (event: SyntheticEvent): Promise<void> => {
     event.preventDefault();
     if (invalid || phase.kind === 'saving' || phase.kind === 'unsaved') return;
+    const fleetTrade = tradeForm.fleet;
     const apiKeys: { -readonly [K in KeyName]?: string | null } = {};
     for (const { name } of KEY_FIELDS) {
       const d = drafts[name];
@@ -225,6 +285,7 @@ export function SettingsScreen({ info, storage, onUnsavedChange }: SettingsScree
           maxSpend: info.settings.maxSpend,
           active: info.settings.active,
           global: candidate,
+          trade: { fleet: fleetTrade, wallets: info.settings.trade.wallets },
         },
         apiKeys: apiKeys satisfies ApiKeyChanges,
       });
@@ -278,6 +339,28 @@ export function SettingsScreen({ info, storage, onUnsavedChange }: SettingsScree
         }}
       />
       {fieldError(field)}
+    </>
+  );
+
+  const tradeField = (key: TradeKey, label: string, unit: string, hint: string) => (
+    <>
+      <label htmlFor={`${ids}-${key}`}>{label}</label>
+      <NumberInput
+        id={`${ids}-${key}`}
+        className="settings-number"
+        unit={unit}
+        value={form[key]}
+        invalid={tradeForm.errors.has(key)}
+        aria-description={unit}
+        onChange={(e) => {
+          set(key, e.target.value);
+        }}
+      />
+      {tradeForm.errors.has(key) ? (
+        <p className="field-error">{tradeForm.errors.get(key)}</p>
+      ) : (
+        <p className="hint">{hint}</p>
+      )}
     </>
   );
 
@@ -478,6 +561,57 @@ export function SettingsScreen({ info, storage, onUnsavedChange }: SettingsScree
           {!form.dryRun && (
             <p className="notice warning">DRY-RUN is off: a buy will send real transactions.</p>
           )}
+        </fieldset>
+
+        <fieldset disabled={locked}>
+          <legend>Trade defaults</legend>
+          <p className="muted">
+            A wallet without its own value in the table uses these. A wallet in a running buy, sell
+            or armed watch keeps its values until the action ends.
+          </p>
+          <label htmlFor={`${ids}-tradeAmount`}>Buy amount</label>
+          <span className="amount-row">
+            <NumberInput
+              id={`${ids}-tradeAmount`}
+              className="settings-number"
+              unit=""
+              value={form.tradeAmount}
+              placeholder="None"
+              invalid={tradeForm.errors.has('tradeAmount')}
+              onChange={(e) => {
+                set('tradeAmount', e.target.value);
+              }}
+            />
+            <button
+              type="button"
+              className="unit-toggle"
+              aria-label={`Unit of the default buy amount: ${form.tradeUnit === 'SOL' ? 'SOL' : 'percent of balance'}. Switch`}
+              onClick={() => {
+                set('tradeUnit', form.tradeUnit === 'SOL' ? '%' : 'SOL');
+              }}
+            >
+              {form.tradeUnit}
+            </button>
+          </span>
+          {tradeForm.errors.has('tradeAmount') ? (
+            <p className="field-error">{tradeForm.errors.get('tradeAmount')}</p>
+          ) : (
+            <p className="hint">Empty: a wallet without its own amount does not buy.</p>
+          )}
+          {tradeField('tradeSellPart', 'Sell part', '%', 'Part of the token balance a sell sells.')}
+          {tradeField('tradeBuySlip', 'Buy slippage', '%', 'Empty or “Auto”: Jupiter picks it.')}
+          {tradeField('tradeSellSlip', 'Sell slippage', '%', 'Empty or “Auto”: Jupiter picks it.')}
+          <label htmlFor={`${ids}-tradeFee`}>Priority fee</label>
+          <NumberInput
+            id={`${ids}-tradeFee`}
+            className="settings-number"
+            unit="SOL"
+            value=""
+            placeholder="Auto"
+            aria-description="SOL"
+            disabled
+          />
+          <p className="hint">Auto: on the Jupiter route the priority fee is not sent (D-045).</p>
         </fieldset>
 
         <fieldset disabled={locked}>

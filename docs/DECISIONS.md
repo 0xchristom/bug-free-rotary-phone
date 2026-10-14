@@ -1016,3 +1016,20 @@ Rejestr decyzji i rozbieżności z dokumentacją zewnętrzną. Nowe wpisy dopisu
   - Wiersz jest cięższy niż dawny (ok. 40 węzłów DOM zamiast ok. 15). W przeglądarce bez znaczenia; w jsdom zapytania po roli na stronie ze 100 portfelami są wolne, więc testy „100 wallets” szukają wierszy zapytaniem DOM (BUNNDLY-65).
   - Filtr i wyszukiwanie nie renderują ponownie wierszy, które zostają na ekranie (`memo`, test z sondą przy 100 portfelach).
   - Odrzucone: własny kontener przewijania tabeli jak w makiecie (przycinałby Popover kodu QR w krótkiej tabeli albo wymagał pozycjonowania `fixed` liczonego w skrypcie), przemianowanie etykiet w istniejących plikach (zadanie tego zabrania), keystore jako plik fixture w repo (zasada „żadnych keystore w repo”; test buduje plik z etykietą `W03` zapisaną jawnie).
+
+## D-048: Parametry handlu w tabeli (etap 2): zapis od razu, blokada w trakcie akcji, „Edit selected”
+
+- Data: 2026-10-14
+- Zadanie: BUNNDLY-71
+- Decyzja:
+  - **Zapis od razu:** kwota w wierszu zapisuje się w sejfie (`saveSettings` z `maxSpend` i `trade`) po Enter albo po wyjściu z pola i przycisku jednostki. Popover „Trade settings” (przycisk edycji w wierszu i „Edit selected” nad tabelą, układ z makiety `fleet-dashboard.html`) zapisuje przyciskiem „Apply” jeden portfel albo wszystkie zaznaczone jednym żądaniem. Szkice kwot i „Save table changes” dla kwot zniknęły; przycisk zapisuje już tylko zaznaczenie (**decyzja tymczasowa:** zaznaczenie zostaje szkicem, jak dotąd). Plik floty nadal zapisuje się osobnym kliknięciem (D-017).
+  - **Kolejka zapisów:** zapisy idą po kolei, każdy z ustawień, które zostawił poprzedni. Dwie szybkie zmiany nie nadpisują się nawzajem.
+  - **Wartość domyślna:** puste pole kwoty w wierszu to wartość domyślna floty (wpis znika). W Popoverze puste pole zostawia obecną wartość każdego portfela (jak w makiecie), a słowo „Default” przywraca wartość floty. „Auto” w polu slippage to `null` (D-045). Kwota w SOL usuwa procent i odwrotnie.
+  - **Blokada:** pole kwoty i Popover są wyłączone dla portfeli z trwającego zakupu albo sprzedaży swojej grupy (wiersze przebiegu w `buyView` i `buy` grupy w statusie) i dla wszystkich portfeli grupy z uzbrojonym watcherem. Podpowiedź: „Can be changed after the run finishes or after STOP.”. Odpowiedź `WALLET_IN_RUN` z workera przywraca zapisaną wartość i pokazuje tę samą podpowiedź.
+  - **Kolumny** jak w makiecie: Priority fee i Slippage za kwotą, każda jako dwie plakietki (kupno zielona ze strzałką do środka, sprzedaż czerwona ze strzałką na zewnątrz; `title` mówi to samo). Opłata priorytetowa jest tylko do odczytu, bo na drodze Jupitera nie jest wysyłana (D-045); pola w Popoverze i w Ustawieniach są wyłączone. Części sprzedaży nie ma w makiecie: nie ma kolumny, jest pole „Sell part” w Popoverze pod siatką.
+  - **Kwota w wierszu zostaje polem** (wymóg zadania), choć makieta pokazuje w tej kolumnie sam tekst. **Decyzja tymczasowa (2026-10-14):** pole z przyciskiem jednostki — do potwierdzenia przez Andy'ego przy odbiorze zrzutami.
+  - **„Max spend for all” i „% of balance”** (dawne akcje zbiorcze, BUNNDLY-14) zastępuje „Edit selected” z kwotą w SOL albo w %. Procent jest teraz parametrem portfela liczonym na starcie przebiegu (D-045), a nie kwotą wyliczoną z salda w chwili kliknięcia.
+  - **Wartości domyślne floty** w Ustawieniach („Trade defaults”) zapisuje „Save settings” razem z resztą ustawień. Puste pole slippage oznacza Auto, a pusta kwota oznacza brak kwoty domyślnej.
+- Konsekwencje / alternatywy:
+  - Każda zmiana kwoty daje nowy tekst pliku do zapisania; „Create wallets” czeka na zapis pliku jak dotąd.
+  - Odrzucone: zapis kwot przyciskiem „Save table changes” (zadanie wymaga zapisu po Enter) i blokada całej tabeli w trakcie przebiegu (portfele spoza przebiegu i spoza uzbrojonej grupy wolno zmieniać, D-046).

@@ -1,5 +1,15 @@
-import { useCallback, useEffect, useId, useMemo, useState, type SyntheticEvent } from 'react';
-import { toUserMessage } from '../../core/errors.ts';
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  type SyntheticEvent,
+} from 'react';
+import { isAppError, toUserMessage } from '../../core/errors.ts';
+import type { FleetSettingsV1 } from '../../core/keystore/format.ts';
+import { walletTrade } from '../../core/trade.ts';
 import { NO_BUY_ROUTE_MESSAGE, buyRouteOf } from '../../core/network.ts';
 import { effectiveJupiterPlan } from '../../core/settings.ts';
 import {
@@ -12,17 +22,18 @@ import type { VaultInfo } from '../../worker/protocol.ts';
 import { BuyPanel } from '../BuyPanel.tsx';
 import { CreateWallets } from '../CreateWallets.tsx';
 import { ExportDialog } from '../ExportDialog.tsx';
-import { FleetBulk, FleetSummaryBar } from '../FleetBulk.tsx';
-import { shareOf, summarize } from '../fleet-math.ts';
+import { FleetSummaryBar } from '../FleetSummaryBar.tsx';
+import { summarize } from '../fleet-math.ts';
 import { FleetTable } from '../FleetTable.tsx';
 import type { OperationsLog } from '../operations-log.ts';
 import { OperationsLogPanel } from '../OperationsLogPanel.tsx';
 import { SettingsResetNotice } from '../SettingsResetNotice.tsx';
-import { formatSol, parseSolAmount } from '../sol.ts';
+import { LOCKED_HINT, applyWalletPatch, plannedSpend, type WalletPatch } from '../trade-edit.ts';
 import { useBalances } from '../use-balances.ts';
 import { EMPTY_BUY, type BuyView } from '../use-buy.ts';
 import { useVault } from '../vault-state.ts';
 import { WATCH_FROZEN } from '../watch-labels.ts';
+import { EditSelected } from '../WalletTradeFields.tsx';
 import { Button, Input, useToast } from '../kit/index.ts';
 
 const MAX_WALLETS = 100;
@@ -61,12 +72,7 @@ export interface FleetScreenProps {
   readonly onMintDecimals?: (mint: string, decimals: number) => void;
 }
 
-type Drafts = Readonly<Record<number, string>>;
 type ActiveDrafts = Readonly<Record<number, boolean>>;
-
-function maxSpendDrafts(info: VaultInfo): Drafts {
-  return Object.fromEntries(info.settings.maxSpend.map((m) => [m.index, formatSol(m.lamports)]));
-}
 
 function activeDrafts(info: VaultInfo): ActiveDrafts {
   return Object.fromEntries(info.settings.active.map((a) => [a.index, a.active]));
@@ -111,7 +117,6 @@ export function FleetScreen({
     onBadMint,
     info.settings.global.network,
   );
-  const [maxSpendText, setMaxSpendText] = useState<Drafts>(() => maxSpendDrafts(info));
   const [active, setActive] = useState<ActiveDrafts>(() => activeDrafts(info));
   const ids = useId();
   const [exportOpen, setExportOpen] = useState(false);
@@ -119,28 +124,16 @@ export function FleetScreen({
   const [phase, setPhase] = useState<AddPhase>({ kind: 'idle' });
   const [error, setError] = useState<string | null>(null);
 
-  // Edits compared with what the vault holds, by value ("0.5" equals "0,5"); an empty
-  // field means "no max spend".
+  // Trade parameters are saved in the vault as soon as they are entered (BUNNDLY-71); only
+  // the selection waits for "Save table changes".
   const savedMaxSpend = useMemo(
     () => new Map(info.settings.maxSpend.map((m) => [m.index, m.lamports])),
     [info],
   );
   const savedActive = useMemo(() => activeDrafts(info), [info]);
-  const draftLamports = (index: number): bigint | null | 'invalid' => {
-    const text = (maxSpendText[index] ?? '').trim();
-    if (text === '') return null;
-    const parsed = parseSolAmount(text);
-    return parsed.ok ? parsed.lamports : 'invalid';
-  };
   const tableDirty = info.wallets.some(
-    (w) =>
-      draftLamports(w.index) !== (savedMaxSpend.get(w.index) ?? null) ||
-      (active[w.index] ?? true) !== (savedActive[w.index] ?? true),
+    (w) => (active[w.index] ?? true) !== (savedActive[w.index] ?? true),
   );
-  const tableInvalid = info.wallets.some((w) => {
-    const text = (maxSpendText[w.index] ?? '').trim();
-    return text !== '' && !parseSolAmount(text).ok;
-  });
 
   const unsaved = phase.kind === 'unsaved' || tableDirty;
   useEffect(() => {
@@ -152,9 +145,55 @@ export function FleetScreen({
 
   const room = MAX_WALLETS - info.wallets.length;
 
-  const onMaxSpend = useCallback((index: number, text: string) => {
-    setMaxSpendText((d) => ({ ...d, [index]: text }));
-  }, []);
+  // Saves run one after another, each on top of the settings the previous one left, so two
+  // quick edits never overwrite each other.
+  const latest = useRef<FleetSettingsV1>(info.settings);
+  useEffect(() => {
+    latest.current = info.settings;
+  }, [info.settings]);
+  const queue = useRef<Promise<unknown>>(Promise.resolve());
+  const saveTrade = useCallback(
+    (indices: readonly number[], patch: WalletPatch): Promise<string | null> => {
+      const run = async (): Promise<string | null> => {
+        const current = latest.current;
+        const next = applyWalletPatch(current.maxSpend, current.trade, indices, patch);
+        try {
+          const result = await client.request({
+            type: 'saveSettings',
+            settings: {
+              maxSpend: next.maxSpend,
+              active: current.active,
+              global: current.global,
+              trade: next.trade,
+            },
+          });
+          latest.current = result.info.settings;
+          setPhase({
+            kind: 'unsaved',
+            fileText: result.fileText,
+            fleetName: result.info.fleetName,
+            note: 'The trade settings are saved in the vault.',
+            savedNote: 'with the new trade settings',
+            saving: false,
+          });
+          await refresh();
+          return null;
+        } catch (e) {
+          // The worker refuses a wallet of a running action (D-045, D-046).
+          if (isAppError(e) && e.code === 'WALLET_IN_RUN') return LOCKED_HINT;
+          return toUserMessage(e);
+        }
+      };
+      const result = queue.current.then(run, run);
+      queue.current = result;
+      return result;
+    },
+    [client, refresh],
+  );
+  const onTrade = useCallback(
+    (index: number, patch: WalletPatch) => saveTrade([index], patch),
+    [saveTrade],
+  );
   const onSelect = useCallback((index: number, value: boolean) => {
     setActive((d) => ({ ...d, [index]: value }));
   }, []);
@@ -179,29 +218,18 @@ export function FleetScreen({
     [toast],
   );
 
-  // Bulk actions change only the drafts; saving stays a separate, explicit step.
-  const setAllAmount = (lamports: bigint): void => {
-    setMaxSpendText(Object.fromEntries(info.wallets.map((w) => [w.index, formatSol(lamports)])));
-  };
-  const setAllPercent = (basisPoints: number): void => {
-    setMaxSpendText((d) => {
-      const next: Record<number, string> = { ...d };
-      for (const w of info.wallets) {
-        const balance = balances.lamports?.get(w.index);
-        if (balance !== undefined) next[w.index] = formatSol(shareOf(balance, basisPoints));
-      }
-      return next;
-    });
-  };
-  const unknownBalances = info.wallets.filter((w) => !balances.lamports?.has(w.index)).length;
-
-  const selectedCount = info.wallets.filter((w) => active[w.index] ?? true).length;
+  const selectedIndices = info.wallets.filter((w) => active[w.index] ?? true).map((w) => w.index);
+  const selectedCount = selectedIndices.length;
   const summary = summarize(
     info.wallets.map((w) => {
-      const lamports = draftLamports(w.index);
+      const balance = balances.lamports?.get(w.index) ?? null;
       return {
-        balance: balances.lamports?.get(w.index) ?? null,
-        maxSpend: typeof lamports === 'bigint' ? lamports : null,
+        balance,
+        maxSpend: plannedSpend(
+          walletTrade(info.settings.trade, w.index, savedMaxSpend.get(w.index)).buyAmount,
+          balance,
+          info.settings.global.minReserveLamports,
+        ),
         minReserve: info.settings.global.minReserveLamports,
         active: active[w.index] ?? true,
         token: balances.token?.amounts.get(w.index) ?? null,
@@ -278,12 +306,28 @@ export function FleetScreen({
   };
   const fleetAddresses = useMemo(() => info.wallets.map((w) => w.address), [info.wallets]);
 
+  // Wallets whose trade settings stay until their group's action ends: every wallet of an
+  // armed watcher's group, and the wallets of a running buy or sell (D-045, D-046).
+  const groupsStatus = status?.groups;
+  const runRows = buyView.rows;
+  const locked = useMemo(() => {
+    const out = new Set<number>();
+    if (!groupsStatus) return out;
+    const groups =
+      info.settings.groups.length > 0
+        ? info.settings.groups
+        : [{ id: 'g1', wallets: info.wallets.map((w) => w.index) }];
+    for (const g of groupsStatus) {
+      const members = groups.find((x) => x.id === g.id)?.wallets ?? [];
+      for (const index of members) {
+        if (g.watch?.armed === true || (g.buy !== null && runRows.has(index))) out.add(index);
+      }
+    }
+    return out;
+  }, [groupsStatus, runRows, info.settings.groups, info.wallets]);
+
   const saveTable = async (): Promise<void> => {
-    if (!tableDirty || tableInvalid || phase.kind === 'unsaved' || phase.kind === 'adding') return;
-    const maxSpend = info.wallets.flatMap((w) => {
-      const parsed = parseSolAmount(maxSpendText[w.index] ?? '');
-      return parsed.ok ? [{ index: w.index, lamports: parsed.lamports }] : [];
-    });
+    if (!tableDirty || phase.kind === 'unsaved' || phase.kind === 'adding') return;
     // Wallets without an entry are active (D-019): store only the inactive ones.
     const inactive = info.wallets
       .filter((w) => active[w.index] === false)
@@ -293,13 +337,17 @@ export function FleetScreen({
     try {
       const result = await client.request({
         type: 'saveSettings',
-        settings: { maxSpend, active: inactive, global: info.settings.global },
+        settings: {
+          maxSpend: info.settings.maxSpend,
+          active: inactive,
+          global: info.settings.global,
+        },
       });
       setPhase({
         kind: 'unsaved',
         fileText: result.fileText,
         fleetName: result.info.fleetName,
-        note: 'The table changes (max spend, selected wallets) are saved in the vault.',
+        note: 'The selected wallets are saved in the vault.',
         savedNote: 'with the new fleet settings',
         saving: false,
       });
@@ -438,20 +486,16 @@ export function FleetScreen({
         )}
       </BuyPanel>
 
-      <FleetBulk
-        onAmount={setAllAmount}
-        onPercent={setAllPercent}
-        unknownBalances={unknownBalances}
-      />
-
       <FleetTable
         wallets={info.wallets}
         lamports={balances.lamports}
         token={balances.token}
-        maxSpendText={maxSpendText}
+        maxSpend={savedMaxSpend}
+        trade={info.settings.trade}
+        locked={locked}
         selected={active}
         minReserve={info.settings.global.minReserveLamports}
-        onMaxSpend={onMaxSpend}
+        onTrade={onTrade}
         onSelect={onSelect}
         onSelectAll={onSelectAll}
         onCopy={onCopy}
@@ -460,7 +504,13 @@ export function FleetScreen({
         explorer={global.explorer}
         network={global.network}
         tools={
-          <CreateWallets room={room} limit={MAX_WALLETS} blocked={createBlocked} onCreate={add} />
+          <>
+            <CreateWallets room={room} limit={MAX_WALLETS} blocked={createBlocked} onCreate={add} />
+            <EditSelected
+              count={selectedCount}
+              onSave={(patch) => saveTrade(selectedIndices, patch)}
+            />
+          </>
         }
       />
       <FleetSummaryBar
@@ -474,12 +524,7 @@ export function FleetScreen({
       <div className="actions">
         <Button
           variant="primary"
-          disabled={
-            watchArmed ||
-            !tableDirty ||
-            tableInvalid ||
-            (phase.kind !== 'idle' && phase.kind !== 'saved')
-          }
+          disabled={watchArmed || !tableDirty || (phase.kind !== 'idle' && phase.kind !== 'saved')}
           onClick={() => void saveTable()}
         >
           {phase.kind === 'savingTable' ? 'Saving…' : 'Save table changes'}
