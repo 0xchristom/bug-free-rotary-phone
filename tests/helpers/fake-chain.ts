@@ -27,9 +27,9 @@ export interface Landed {
   readonly signature: string;
   readonly ok: boolean;
   readonly at: number;
-  /** Lamports the swap took (0 when it failed on the chain). */
+  /** Lamports the swap took (0 when it failed on the chain); a sell: token units. */
   readonly spent: bigint;
-  /** Tokens it put in the taker's account (0 when it failed). */
+  /** Tokens it put in the taker's account (0 when it failed); a sell: lamports. */
   readonly received: bigint;
 }
 
@@ -96,6 +96,34 @@ export class FakeChain {
       ),
       slot: this.height(),
     });
+  };
+
+  /**
+   * The same chain seen by a sell (BUNNDLY-60): `deposits` are the tokens the wallets hold,
+   * a landed sell takes `spent` units out and pays `received` lamports.
+   */
+  readonly tokensAfterSells = (owners: readonly string[]) => {
+    const visible = this.visible();
+    return Promise.resolve({
+      amounts: owners.map(
+        (o) =>
+          (this.deposits.get(o) ?? 0n) -
+          visible.filter((l) => l.taker === o).reduce((sum, l) => sum + l.spent, 0n),
+      ),
+      slot: this.height(),
+    });
+  };
+  /** Lamports every wallet starts with in `solAfterSells`. */
+  static readonly SOL_BEFORE = 1_000_000_000n;
+  readonly solAfterSells = (owners: readonly string[]) => {
+    const visible = this.visible();
+    return Promise.resolve(
+      owners.map(
+        (o) =>
+          FakeChain.SOL_BEFORE +
+          visible.filter((l) => l.taker === o).reduce((sum, l) => sum + l.received, 0n),
+      ),
+    );
   };
 
   readonly checker = (query: LandingQuery): Promise<Landing> => {

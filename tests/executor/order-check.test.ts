@@ -132,3 +132,55 @@ describe('every refusal has its own code', () => {
     expect(r.ok).toBe(true);
   });
 });
+
+describe('a sell order (BUNNDLY-60)', () => {
+  const SOL_MINT = 'So11111111111111111111111111111111111111112';
+  const own = buildTransaction({ feePayer: TAKER });
+  const sold = (inAmount: bigint, overrides: Parameters<typeof orderFor>[2] = {}) =>
+    orderFor(TAKER, own, { inputMint: USDC, outputMint: SOL_MINT, inAmount, ...overrides });
+  const expectSell = (amount: bigint, plan = amount) => ({
+    taker: TAKER,
+    inputMint: USDC,
+    outputMint: SOL_MINT,
+    amount,
+    maxSpend: plan,
+  });
+
+  it('the token for SOL, for the amount asked and within the plan → passes', () => {
+    expect(checkOrderTransaction(sold(500n), expectSell(500n)).ok).toBe(true);
+    expect(checkOrderTransaction(sold(500n), expectSell(500n, 501n)).ok).toBe(true);
+  });
+
+  it('one unit above the plan is refused, also when that is what was asked', () => {
+    expect(checkOrderTransaction(sold(501n), expectSell(501n, 500n))).toEqual({
+      ok: false,
+      problem: 'OVER_MAX_SPEND',
+    });
+  });
+
+  it('another input token, a buy instead of the sale, or another output are refused', () => {
+    expect(checkOrderTransaction(sold(500n, { inputMint: MAKER }), expectSell(500n))).toEqual({
+      ok: false,
+      problem: 'INPUT_MINT_MISMATCH',
+    });
+    expect(checkOrderTransaction(sold(500n, { inputMint: SOL_MINT }), expectSell(500n))).toEqual({
+      ok: false,
+      problem: 'INPUT_MINT_MISMATCH',
+    });
+    expect(checkOrderTransaction(sold(500n, { outputMint: MAKER }), expectSell(500n))).toEqual({
+      ok: false,
+      problem: 'OUTPUT_MINT_MISMATCH',
+    });
+    expect(checkOrderTransaction(sold(499n), expectSell(500n))).toEqual({
+      ok: false,
+      problem: 'AMOUNT_MISMATCH',
+    });
+  });
+
+  it('a sell-shaped order does not pass as a buy', () => {
+    expect(checkOrderTransaction(sold(500n), expectFor(500n))).toEqual({
+      ok: false,
+      problem: 'INPUT_MINT_MISMATCH',
+    });
+  });
+});

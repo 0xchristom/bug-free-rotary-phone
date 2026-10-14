@@ -19,10 +19,15 @@ import { SOL_MINT, type JupiterOrder } from '../jupiter/client.ts';
 export interface OrderExpectation {
   /** The wallet's address. */
   readonly taker: string;
+  /** The token sold (BUNNDLY-60); omitted for a buy, which pays in SOL. */
+  readonly inputMint?: string;
   readonly outputMint: string;
-  /** Lamports asked for. */
+  /** Input units asked for: lamports for a buy, raw token units for a sell. */
   readonly amount: bigint;
-  /** The wallet's max spend; inAmount may not exceed it. */
+  /**
+   * The most this wallet may put in: its max spend for a buy, the planned part of its
+   * token balance for a sell. inAmount may not exceed it.
+   */
   readonly maxSpend: bigint;
 }
 
@@ -86,7 +91,7 @@ export function checkOrderTransaction(
 ): OrderCheckResult {
   if (order.transaction === null) return fail('NO_TRANSACTION');
   if (order.taker !== expected.taker) return fail('TAKER_MISMATCH');
-  if (order.inputMint !== SOL_MINT) return fail('INPUT_MINT_MISMATCH');
+  if (order.inputMint !== (expected.inputMint ?? SOL_MINT)) return fail('INPUT_MINT_MISMATCH');
   if (order.outputMint !== expected.outputMint) return fail('OUTPUT_MINT_MISMATCH');
   if (order.inAmount > expected.maxSpend) return fail('OVER_MAX_SPEND');
   if (order.inAmount !== expected.amount) return fail('AMOUNT_MISMATCH');

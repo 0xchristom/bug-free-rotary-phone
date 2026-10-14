@@ -290,3 +290,66 @@ describe('mode B entries (BUNNDLY-34)', () => {
     expect(csv[2]).toContain(',4'); // reactionMs is the last column
   });
 });
+
+describe('side of the order (BUNNDLY-60)', () => {
+  const sold = (): WalletEvent => ({
+    ...confirmed(),
+    side: 'sell',
+    quote: { inAmount: 2_500_000n, outAmount: 30_000_000n, router: 'metis' },
+    result: {
+      signature: null,
+      slot: 5n,
+      totalInputAmount: 2_500_000n,
+      totalOutputAmount: 30_000_000n,
+    },
+  });
+
+  it('entries of a buy say "buy", entries of a sell "sell", watcher entries nothing', () => {
+    expect(logEntry(confirmed(), context).side).toBe('buy');
+    expect(logEntry(sold(), context).side).toBe('sell');
+    const armed: WatchEvent = {
+      kind: 'watch',
+      at: T0,
+      type: 'armed',
+      creator: 'Creator1',
+      mode: 'one-shot',
+    };
+    expect(logEntry(armed, context).side).toBeNull();
+  });
+
+  it('a sell: tokens spent, lamports received, price still in SOL per token', () => {
+    // 2.5 tokens (6 decimals) for 0.03 SOL: 0.03 / 2.5 = 0.012 SOL per token
+    expect(logEntry(sold(), context)).toMatchObject({
+      spent: 2_500_000n,
+      received: 30_000_000n,
+      price: '0.012',
+    });
+    // the same numbers as a buy would be 2.5e6 lamports for 30 tokens: another price
+    expect(logEntry({ ...sold(), side: 'buy' }, context).price).toBe('0.000083333333');
+  });
+
+  it('the verification of a sell has its own messages and keeps solChange out of the columns', () => {
+    const verify: ExecutorEvent = {
+      kind: 'verify',
+      side: 'sell',
+      runId: 2,
+      at: T0,
+      index: 3,
+      status: 'MISMATCH',
+      expected: 500n,
+      observed: 400n,
+      solChange: 7n,
+    };
+    const entry = logEntry(verify, context);
+    expect(entry).toMatchObject({ side: 'sell', expected: 500n, observed: 400n });
+    expect(entry.message).toMatch(/token balance fell by a different amount/u);
+  });
+
+  it('CSV and JSON carry the side in its own column, before the network', () => {
+    expect(LOG_COLUMNS.slice(-2)).toEqual(['side', 'network']);
+    const csv = toCsv([logEntry(sold(), context)]).split('\r\n');
+    expect(csv[1]?.endsWith(',sell,mainnet')).toBe(true);
+    const json = JSON.parse(toJson([logEntry(sold(), context)])) as { side: string }[];
+    expect(json[0]?.side).toBe('sell');
+  });
+});
