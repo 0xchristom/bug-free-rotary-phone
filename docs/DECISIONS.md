@@ -1199,7 +1199,7 @@ Rejestr decyzji i rozbieżności z dokumentacją zewnętrzną. Nowe wpisy dopisu
   - Nowe żądanie `pendingFile` zwraca tekst i nazwę floty albo `null`. App pyta o nie po każdym otwarciu floty i za każdym razem, gdy żaden ekran ani przełącznik sieci nie trzyma własnego, nowszego pliku. Pokazuje wtedy ostrzeżenie z przyciskiem zapisu; Lock pyta, a zamknięcie karty prosi przeglądarkę o potwierdzenie.
   - Wszystkie cztery zapisy pliku (kreator, flota, ustawienia, sieć) wysyłają `fileSaved` przed zdjęciem własnego znacznika ekranu. Żądania idą jedną kolejką, więc następne `pendingFile` widzi już zapis.
   - „Forget this device” na starcie i w ustawieniach oraz wyłączenie „Remember this fleet on this device” czytają znacznik od nowa i przy `unsaved` pytają zdaniem, że przeglądarka ma jedyną kopię zmian.
-- Konsekwencje: otwarcie innego pliku albo utworzenie nowej floty z zapamiętaniem nadal zastępuje zapamiętaną flotę bez pytania o znacznik; poza zakresem BUNNDLY-80.
+- Konsekwencje: otwarcie innego pliku albo utworzenie nowej floty z zapamiętaniem nadal zastępuje zapamiętaną flotę bez pytania o znacznik; poza zakresem BUNNDLY-80. Od BUNNDLY-84 oba wejścia pytają, gdy rekord ma `unsaved`.
 
 ## D-059: STOP rozbraja grupę z uzbrojonym watcherem
 
