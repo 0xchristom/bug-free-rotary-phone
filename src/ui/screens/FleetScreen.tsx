@@ -871,7 +871,7 @@ export function FleetScreen({
     );
   };
 
-  // Why "Create wallets" is off right now, in words next to the button.
+  // Why "Create wallets" is off right now: the button's description and tooltip.
   const createBlocked = watchArmed
     ? WATCH_FROZEN
     : phase.kind === 'unsaved' || tableDirty
