@@ -43,7 +43,15 @@ export function fleetInfo(count = 3, fleetName = 'Flota testowa'): VaultInfo {
 }
 
 export function unlocked(armed = false): VaultStatus {
-  return { locked: false, network: 'mainnet', armed, info: fleetInfo(), buy: null, watch: null, groups: [] };
+  return {
+    locked: false,
+    network: 'mainnet',
+    armed,
+    info: fleetInfo(),
+    buy: null,
+    watch: null,
+    groups: [],
+  };
 }
 
 type CreateHandler = (
