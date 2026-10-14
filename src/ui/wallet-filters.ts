@@ -1,3 +1,4 @@
+import { fillOf, fleetPart } from './fill.ts';
 import type { BuyRow } from './use-buy.ts';
 
 /**
@@ -21,23 +22,18 @@ export interface FilterWallet {
   readonly buy: BuyRow | null;
   /** The amount set leaves less than the minimum reserve. */
   readonly reserveTooLow: boolean;
+  /** Selected in an armed group, waiting for the creator's token (BUNNDLY-88). */
+  readonly armed: boolean;
 }
 
-/** Still on its way: waiting, quoting, signing, sent, or sent with the chain being checked. */
+/**
+ * Still on its way, exactly as Fleet fill counts it (BUNNDLY-88): scheduled, queued,
+ * quoting, signing, sent, the chain being checked or read. One rule in `fleetPart`.
+ */
 export function inFlight(buy: BuyRow | null): boolean {
   if (buy === null) return false;
-  switch (buy.state) {
-    case 'IDLE':
-    case 'QUEUED':
-    case 'QUOTING':
-    case 'SIGNING':
-    case 'SUBMITTED':
-      return true;
-    case 'UNKNOWN':
-      return buy.reason?.code === 'EXECUTE_NO_ANSWER';
-    default:
-      return false;
-  }
+  // DRY-RUN and the side change only how an end looks, never whether it is still on its way.
+  return fleetPart(fillOf({ ...buy, dryRun: false, side: 'buy' })) === 'inFlight';
 }
 
 /** Bought and the token balance grew on the chain: nothing less counts as filled. */
@@ -69,7 +65,7 @@ export function matchesFilter(filter: WalletFilter, w: FilterWallet): boolean {
     case 'selected':
       return w.selected;
     case 'flight':
-      return inFlight(w.buy);
+      return w.buy === null ? w.armed : inFlight(w.buy);
     case 'filled':
       return filled(w.buy);
     case 'attention':
