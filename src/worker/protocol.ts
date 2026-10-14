@@ -246,7 +246,7 @@ export interface BuyStatus {
   readonly accepting: boolean;
   /** Present for a Stairs run only (BUNNDLY-61). */
   readonly stairs?: StairsOptions;
-  /** Stairs: paused with `pause`. */
+  /** Stairs: paused with `pauseStairs`. */
   readonly paused?: boolean;
 }
 

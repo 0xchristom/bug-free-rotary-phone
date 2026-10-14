@@ -191,6 +191,29 @@ describe('two groups at once', () => {
     expect((await t.group('g2'))?.buy?.paused).toBe(false);
   });
 
+  it('pauseStairs and resumeStairs of A never touch B, whichever group started first', async () => {
+    const t = await setup(100);
+    const stairs = { intervalMs: 60_000, perStep: 1 };
+    await t.startBuy('g1', USDC, stairs);
+    await t.startBuy('g2', MINT, stairs);
+    const paused = async () => [
+      (await t.group('g1'))?.buy?.paused,
+      (await t.group('g2'))?.buy?.paused,
+    ];
+    await t.h.handle({ type: 'pauseStairs', group: 'g1' });
+    expect(await paused()).toEqual([true, false]);
+    await t.h.handle({ type: 'pauseStairs', group: 'g2' });
+    expect(await paused()).toEqual([true, true]);
+    await t.h.handle({ type: 'resumeStairs', group: 'g1' });
+    expect(await paused()).toEqual([false, true]);
+    // B stays held while A's next steps go on
+    await t.clock.runUntil(t.clock.now() + 150_000);
+    expect(t.askedBy(USDC)).toEqual([0, 1, 2]);
+    expect(t.askedBy(MINT)).toEqual([3]);
+    await t.h.handle({ type: 'resumeStairs', group: 'g2' });
+    expect(await paused()).toEqual([undefined, false]); // A has finished
+  });
+
   it('DISARM of one group leaves the watcher of the other armed', async () => {
     const t = await setup();
     const a = await t.arm('g1');

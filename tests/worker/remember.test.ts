@@ -12,7 +12,13 @@ import {
   type PublicWalletV1,
 } from '../../src/core/index.ts';
 import type { RememberedView, VaultFileResult, VaultStatus } from '../../src/worker/protocol.ts';
-import { sealSession, type RememberStore, type SessionRecord } from '../../src/worker/remember.ts';
+import { scryptAsync } from '@noble/hashes/scrypt.js';
+import {
+  sealSession,
+  sessionValid,
+  type RememberStore,
+  type SessionRecord,
+} from '../../src/worker/remember.ts';
 import { createVaultHandler, type VaultHandler } from '../../src/worker/vault.ts';
 import {
   failingRememberStore,
@@ -319,6 +325,43 @@ describe('passwordless window', () => {
     const resumed = await call<VaultStatus>(vault(store), { type: 'resume' });
     expect(resumed.locked).toBe(true);
     expect(await session(store)).toBeUndefined();
+  });
+
+  it('the same key, but extractable, with a valid tag: refused, removed, the password is needed', async () => {
+    const store = memoryRememberStore();
+    const created = await create(vault(store), true);
+    const record = await session(store);
+    if (record === undefined) throw new Error('no session record');
+    // The file key rebuilt apart from the vault: scrypt (the test stand-in) over the
+    // password and the file's salt and cost, imported as extractable this time.
+    const file = JSON.parse(created.fileText) as {
+      kdf: { N: number; r: number; p: number; salt: string };
+    };
+    const salt = Uint8Array.from(atob(file.kdf.salt), (c) => c.charCodeAt(0));
+    const bytes = await scryptAsync(new TextEncoder().encode(PASSWORD.normalize('NFKC')), salt, {
+      N: file.kdf.N,
+      r: file.kdf.r,
+      p: file.kdf.p,
+      dkLen: 32,
+    });
+    const extractable = await crypto.subtle.importKey(
+      'raw',
+      new Uint8Array(bytes),
+      'AES-GCM',
+      true,
+      ['encrypt', 'decrypt'],
+    );
+    const forged = await sealSession(extractable, record.fileId, record.expiresAt);
+    // It is the file's key: the record's own key checks the forged tag.
+    expect(await sessionValid({ ...forged, key: record.key }, record.fileId, t)).toBe(true);
+    await store.put('session', forged);
+
+    const h = vault(store);
+    const resumed = await call<VaultStatus>(h, { type: 'resume' });
+    expect(resumed.locked).toBe(true);
+    expect(await session(store)).toBeUndefined();
+    const opened = await call<VaultStatus>(h, { type: 'unlockRemembered', password: PASSWORD });
+    expect(addresses(opened.info?.wallets)).toEqual(addresses(created.info.wallets));
   });
 
   it('Lock removes the record: the next visit needs the password', async () => {
