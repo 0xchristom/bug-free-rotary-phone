@@ -101,7 +101,7 @@ interface RowProps extends FleetRowData {
   readonly buyBlocked: string | null;
   /** The wallet's group name, shown in the "All" view (BUNNDLY-69); undefined: no column. */
   readonly group?: string | undefined;
-  /** Why the wallet's group keeps its amount and its buy now (it runs), or null. */
+  /** Why the wallet's group keeps its row buy now (it runs), or null; the amount follows `locked`. */
   readonly frozen: string | null;
 }
 
@@ -308,7 +308,7 @@ const FleetRow = memo(function FleetRow(p: RowProps) {
           savedText={p.amountText}
           savedUnit={p.amountUnit}
           placeholder={p.defaultAmount}
-          locked={p.locked || p.frozen !== null}
+          locked={p.locked}
           problem={amountProblem}
           onSave={save}
         />
