@@ -85,12 +85,36 @@ describe('SOL balance refresh on the fleet screen', () => {
     expect(vault.calls('refreshBalances')).toBe(before);
   });
 
-  it('"Refresh balances" reads on demand', async () => {
+  it('the fleet-balance chip in the top bar reads on demand', async () => {
     const vault = renderFleet();
     await tick(0);
-    fireEvent.click(screen.getByRole('button', { name: 'Refresh balances' }));
+    fireEvent.click(screen.getByRole('button', { name: /^Fleet balance:/u }));
     await tick(0);
     expect(vault.calls('refreshBalances')).toBe(2);
+  });
+
+  it('the fleet-balance chip shows the sum of all wallets, counted by hand', async () => {
+    renderFleet();
+    await tick(0);
+    // The fake fleet: wallets 0, 1, 2 with 1.5 SOL + index lamports each.
+    // 1_500_000_000 + 1_500_000_001 + 1_500_000_002 = 4_500_000_003 lamports = 4.500000003 SOL.
+    expect(screen.getByTestId('fleet-balance').textContent).toBe('4.500000003');
+    expect(
+      screen.getByRole('button', { name: /^Fleet balance:/u }).getAttribute('aria-label'),
+    ).toBe('Fleet balance: 4.500000003 SOL. Read again');
+  });
+
+  it('the fleet-balance chip shows "—" before the first read', async () => {
+    const vault = mockVault(unlocked());
+    vault.request.mockImplementation((req) =>
+      req.type === 'refreshBalances' ? new Promise(() => undefined) : Promise.resolve(unlocked()),
+    );
+    renderFleet(vault);
+    await tick(0);
+    expect(screen.getByTestId('fleet-balance').textContent).toBe('—');
+    expect(
+      screen.getByRole('button', { name: /^Fleet balance:/u }).getAttribute('aria-label'),
+    ).toBe('Fleet balance: not read yet. Read again');
   });
 
   it('shows the fallback and errors in English', async () => {

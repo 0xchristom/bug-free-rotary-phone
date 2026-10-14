@@ -250,7 +250,7 @@ describe('wallet groups (BUNNDLY-69)', () => {
     const { user, requests } = setup({ groups: TWO_GROUPS });
     await ready();
     await typeMint(user);
-    await user.click(screen.getByRole('button', { name: 'BUY' }));
+    await user.click(screen.getByRole('button', { name: 'Buy' }));
     expect(sent(requests, 'startBuy')).toEqual([
       { type: 'startBuy', mint: MINT, wallets: [0, 1, 2, 3, 4], group: 'g1' },
     ]);
@@ -264,8 +264,8 @@ describe('wallet groups (BUNNDLY-69)', () => {
     expect(screen.getByLabelText<HTMLInputElement>(TARGET_LABEL).value).toBe('');
     expect(sent(requests, 'stop')).toEqual([]);
     await typeMint(user);
-    expect(screen.getByRole('button', { name: 'BUY' })).toHaveProperty('disabled', false);
-    await user.click(screen.getByRole('button', { name: 'BUY' }));
+    expect(screen.getByRole('button', { name: 'Buy' })).toHaveProperty('disabled', false);
+    await user.click(screen.getByRole('button', { name: 'Buy' }));
     expect(sent(requests, 'startBuy').at(-1)).toEqual({
       type: 'startBuy',
       mint: MINT,
@@ -275,7 +275,7 @@ describe('wallet groups (BUNNDLY-69)', () => {
 
     await user.click(groupTab('Team A'));
     expect(screen.getByLabelText<HTMLInputElement>(TARGET_LABEL).value).toBe(MINT);
-    await user.click(screen.getByRole('button', { name: 'STOP' }));
+    await user.click(screen.getByRole('button', { name: 'Stop' }));
     expect(sent(requests, 'stop')).toEqual([{ type: 'stop', group: 'g1' }]);
     await eventually(() => {
       expect(tabText('Team A').state).toBe('Stopped');
@@ -289,7 +289,7 @@ describe('wallet groups (BUNNDLY-69)', () => {
     await user.click(groupTab('All'));
     expect(screen.getByRole('columnheader', { name: 'Group' })).toBeTruthy();
     // with two groups the bar's commands wait for a tab
-    expect(screen.getByRole('button', { name: 'BUY' })).toHaveProperty('disabled', true);
+    expect(screen.getByRole('button', { name: 'Buy' })).toHaveProperty('disabled', true);
     await typeMint(user);
     await user.click(screen.getByRole('button', { name: 'Buy W07' }));
     expect(sent(requests, 'startBuy')).toEqual([
@@ -396,7 +396,7 @@ describe('wallet groups (BUNNDLY-69)', () => {
     await ready();
     await user.click(groupTab('Team B'));
     await typeMint(user);
-    await user.click(screen.getByRole('button', { name: 'BUY' }));
+    await user.click(screen.getByRole('button', { name: 'Buy' }));
     const dialog = screen.getByRole('alertdialog', { name: 'Buy in live mode?' });
     const value = (term: string): string =>
       within(dialog).getByText(term).nextElementSibling?.textContent ?? '';

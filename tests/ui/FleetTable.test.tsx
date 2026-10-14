@@ -340,7 +340,7 @@ describe('fleet table', () => {
       expect(refreshes().at(-1)?.mint).toBeUndefined();
     });
     setBalances(() => 3n * SOL);
-    await user.click(screen.getByRole('button', { name: 'Refresh balances' }));
+    await user.click(screen.getByRole('button', { name: /^Fleet balance:/u }));
     await waitFor(() => {
       expect(cells('W01')[BALANCE]).toBe('3');
     });
@@ -552,13 +552,13 @@ describe('100 wallets', () => {
     const before = new Map(renders);
 
     // same balances: no row renders again
-    await user.click(screen.getByRole('button', { name: 'Refresh balances' }));
+    await user.click(screen.getByRole('button', { name: /^Fleet balance:/u }));
     await act(() => Promise.resolve());
     expect(renders).toEqual(before);
 
     // one wallet changed: only that row renders, once
     setBalances((i) => (i === 42 ? 2n * SOL : SOL));
-    await user.click(screen.getByRole('button', { name: 'Refresh balances' }));
+    await user.click(screen.getByRole('button', { name: /^Fleet balance:/u }));
     await waitFor(() => {
       expect(cells('W43')[BALANCE]).toBe('2');
     });
@@ -701,9 +701,15 @@ describe('create wallets', () => {
 });
 
 describe('bulk actions and summary', () => {
+  // The bulk amounts sit in the "Set amounts" popover of the toolbar (BUNNDLY-73).
+  async function openBulk(user: ReturnType<typeof setup>['user']): Promise<void> {
+    await user.click(screen.getByRole('button', { name: 'Set amounts' }));
+  }
+
   it('sets the same max spend on all wallets (drafts only, saved on click)', async () => {
     const { user, saved } = setup();
     await ready();
+    await openBulk(user);
     await user.type(screen.getByLabelText('Max spend for all (SOL)'), '0,5');
     await user.click(screen.getByRole('button', { name: 'Set amount' }));
     for (const label of ['W01', 'W02', 'W03']) {
@@ -725,6 +731,7 @@ describe('bulk actions and summary', () => {
   it('a wrong amount or percent gives an English message and changes nothing', async () => {
     const { user } = setup();
     await ready();
+    await openBulk(user);
     await user.type(screen.getByLabelText('Max spend for all (SOL)'), '-1');
     await user.click(screen.getByRole('button', { name: 'Set amount' }));
     expect(screen.getByText('The amount cannot be negative.')).toBeTruthy();
@@ -737,6 +744,7 @@ describe('bulk actions and summary', () => {
   it('sets max spend as a % of each balance (rounded down)', async () => {
     const { user } = setup({ lamports: (i) => SOL + BigInt(i) * 333n });
     await ready();
+    await openBulk(user);
     await user.type(screen.getByLabelText('Max spend as % of balance'), '90');
     await user.click(screen.getByRole('button', { name: 'Set percent' }));
     expect(within(row('W01')).getByLabelText<HTMLInputElement>('Max spend W01').value).toBe('0.9');

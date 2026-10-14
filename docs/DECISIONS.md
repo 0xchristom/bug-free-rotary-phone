@@ -1049,3 +1049,19 @@ Rejestr decyzji i rozbieżności z dokumentacją zewnętrzną. Nowe wpisy dopisu
   - Postęp w tabeli dalej pokazuje najnowszy przebieg (D-032). Gdy dwie grupy kupują naraz, wiersze starszego przebiegu wracają do stanu spoczynku, a jego stan widać na zakładce grupy.
   - Domyślna grupa floty sprzed grup nazywa się „All wallets” (D-046) i po pierwszym podziale zostaje pod tą nazwą, dopóki właściciel jej nie zmieni.
   - Odrzucone: komendy w **All** dla wszystkich grup naraz (jedno kliknięcie uruchamiałoby kilka grup z jednym celem) i usuwanie grupy razem z jej portfelami (portfel musi należeć do grupy, D-046).
+
+## D-050: Dashboard w układzie makiety v2, dziennik i wykrycia na ekranie Activity
+
+- Data: 2026-10-14
+- Zadanie: BUNNDLY-73
+- Kontekst: ekran floty miał pod paskiem komend panel zakupu (tryb, plan Jupitera, postęp, przełącznik trybu na żywo), panel obserwatora (tryb one-shot/continuous, stan połączenia, tabela wykryć), pole bulk i dziennik operacji. Makieta `fleet-dashboard.html` ma jeden ekran: górny pasek → pasek celu → zakładki → pasek narzędzi → tabela → podsumowanie → stopka.
+- Decyzja:
+  - Ekran nazywa się w nawigacji **Dashboard**, obok są **Activity** i **Settings**. Na Dashboardzie górny pasek ma przełącznik **DRY-RUN** (`role="switch"`; tryb na żywo przez to samo okno potwierdzenia co wcześniej, powrót bez pytania) i chip salda floty: suma znanych sald wszystkich portfeli, „—” przed pierwszym odczytem, kliknięcie czyta salda od nowa. Na pozostałych ekranach zostaje sam chip „Mode: DRY-RUN/LIVE”. Oba elementy renderuje ekran floty w miejscach górnego paska (portal), żeby stan trybu i sald miał jedno źródło.
+  - Pasek celu: pole **Target**, etykieta rodzaju adresu, chip wykrycia, linia stanu (puls, „Armed · watching … · połączenie · last message N s ago”) i **Arm**/**Disarm**. **Arm** pojawia się tylko, gdy celem jest portfel twórcy, jak w makiecie. Komunikaty paska (powód wyłączenia, adres z floty, uzbrojony watcher, trwający zakup) są krótkimi liniami pod nim.
+  - Pasek narzędzi: **Create wallets**, **Set amounts** (popover z dawnym polem bulk), tryb wykonania (**Immediate**; **Stairs** wyłączone do zadania Stairs), **Buy**, **Sell**, **Stop** ze skrótami B, S, Esc. Etykiety przycisków jak w makiecie, z wielkiej litery.
+  - Postęp przebiegu (potwierdzone, w trakcie, nieudane, czasy od startu albo od wykrycia) jest polem **Run** w pasku podsumowania, a czas odczytu sald polem **Balances**. Komunikaty zapisu pliku floty, zapasowego RPC i błędów są liniami pod podsumowaniem.
+  - **Activity**: dziennik operacji z **Download CSV**/**Download JSON** i tabela **Detections** wszystkich grup z kolumną Group, najnowsze na górze.
+  - Tryb one-shot/continuous ustawia się tylko w **Settings** (był w obu miejscach). Limit Jupitera, z którym pójdzie zakup (Keyless bez klucza, D-033), pokazuje **Settings** przy planie Jupitera. **Plain export** przechodzi do stopki, do pozycji Backup.
+- Konsekwencje / alternatywy:
+  - Stare elementy → nowe miejsca: Buy Mode A/B → jedno pole **Target** (D-048); przełącznik trybu na żywo → przełącznik **DRY-RUN** w górnym pasku; panel obserwatora → linia stanu na pasku celu i **Arm**; one-shot/continuous → **Settings**; pole mintu z „Show token balance” → pole **Target** (kolumna tokenu po rozpoznaniu mintu); „Refresh balances” → chip salda floty; podsumowanie „Before the buy” → **Planned buy** w podsumowaniu i limit Jupitera w **Settings**; postęp → pole **Run**; Operations log i Detections → **Activity**; bulk → **Set amounts**; Plain export → stopka.
+  - Odrzucone: zostawienie panelu zakupu pod tabelą (makieta go nie ma, a tabela przy 1920 px zaczynała się poniżej pierwszego ekranu) i osobny ekran obserwatora (stan uzbrojenia musi być widać przy komendach).

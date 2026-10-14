@@ -6,6 +6,7 @@ import {
   JUPITER_PLANS,
   JUPITER_PLAN_RPM,
   JUPITER_RATE_LIMITS_URL,
+  effectiveJupiterPlan,
   endpointUrlProblem,
   orderRps,
   validateGlobalSettings,
@@ -181,6 +182,7 @@ export function SettingsScreen({ info, storage, onUnsavedChange }: SettingsScree
   }, [unsaved, onUnsavedChange]);
 
   const { network } = info.settings.global;
+  const appliedPlan = effectiveJupiterPlan(info.settings.global, info.apiKeys.jupiter);
   const candidate = settingsOf(form, network);
   const fieldErrors = new Map<SettingsField, string>(
     validateGlobalSettings(candidate).map((p) => [p.field, p.message]),
@@ -407,6 +409,12 @@ export function SettingsScreen({ info, storage, onUnsavedChange }: SettingsScree
             </p>
           )}
           {fieldError('jupiterPlan')}
+          {/* The limit buys run with now: Keyless while no Jupiter key is saved (D-033). It
+              stood above the Buy button until the Dashboard of BUNNDLY-73. */}
+          <p className="muted" aria-label="Jupiter limit for buys">
+            Buys use now: {PLAN_LABELS[appliedPlan.plan]}, {appliedPlan.orderRpm} /order per minute
+            {!info.apiKeys.jupiter && ' (no Jupiter API key saved)'}.
+          </p>
           <p className="hint">
             Limits per the Jupiter documentation:{' '}
             <a href={JUPITER_RATE_LIMITS_URL} target="_blank" rel="noreferrer noopener">

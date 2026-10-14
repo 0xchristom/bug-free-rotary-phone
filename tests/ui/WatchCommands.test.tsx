@@ -231,13 +231,18 @@ async function typeCreator(user: UserEvent, creator = CREATOR): Promise<void> {
   await screen.findByText('Creator wallet', {}, TARGET_WAIT);
 }
 
-const armButton = () => screen.getByRole('button', { name: 'ARM' });
+const armButton = () => screen.getByRole('button', { name: 'Arm' });
+
+/** Opens a screen from the top bar (Dashboard, Activity, Settings). */
+async function goTo(user: UserEvent, name: string): Promise<void> {
+  await user.click(within(screen.getByRole('navigation')).getByRole('button', { name }));
+}
 
 async function arm(user: UserEvent): Promise<void> {
   await openTabB();
   await typeCreator(user);
   await user.click(armButton());
-  await screen.findByRole('button', { name: 'DISARM' });
+  await screen.findByRole('button', { name: 'Disarm' });
 }
 
 describe('creator address and arming conditions', () => {
@@ -245,10 +250,12 @@ describe('creator address and arming conditions', () => {
     const { user } = setup();
     await openTabB();
     const input = screen.getByLabelText(TARGET_LABEL);
+    // Arm appears only for a creator wallet (mockup v2, BUNNDLY-73)
+    expect(screen.queryByRole('button', { name: 'Arm' })).toBeNull();
+    expect(screen.getByText('Paste a target to begin')).toBeTruthy();
     await user.type(input, 'not-an-address');
     expect(screen.getByRole('alert').textContent).toMatch(/Paste a full Solana address/u);
-    expect(armButton()).toHaveProperty('disabled', true);
-    expect(armButton().getAttribute('aria-description')).toBe('Paste a creator wallet first.');
+    expect(screen.queryByRole('button', { name: 'Arm' })).toBeNull();
     await user.clear(input);
     await user.type(input, 'So11111111111111111111111111111111111111112');
     expect(input.getAttribute('aria-invalid')).toBe('true');
@@ -261,14 +268,13 @@ describe('creator address and arming conditions', () => {
     await typeCreator(user);
     expect(input.getAttribute('aria-invalid')).toBeNull();
     expect(armButton()).toHaveProperty('disabled', false);
-    // a token is not a creator: ARM says so
+    expect(screen.getByText('Arm the fleet to buy the creator’s next token')).toBeTruthy();
+    // a token is not a creator: no Arm, the strip offers Buy and Sell instead
     await user.clear(input);
     await user.type(input, MINT);
     await screen.findByText('Token · SPL', {}, TARGET_WAIT);
-    expect(armButton()).toHaveProperty('disabled', true);
-    expect(armButton().getAttribute('aria-description')).toBe(
-      'ARM needs a creator wallet, not a token.',
-    );
+    expect(screen.queryByRole('button', { name: 'Arm' })).toBeNull();
+    expect(screen.getByText(/Buy and Sell act on the selected wallets/u)).toBeTruthy();
   });
 
   it('without a Helius key or a ready wallet the button says what is missing', async () => {
@@ -294,9 +300,9 @@ describe('ARM / DISARM', () => {
       { type: 'arm', creator: CREATOR, wallets: [0, 1, 2], group: 'g1' },
     ]);
     expect(screen.getByText(/The watcher is armed. Do not close/u)).toBeTruthy();
-    await user.click(screen.getByRole('button', { name: 'DISARM' }));
+    await user.click(screen.getByRole('button', { name: 'Disarm' }));
     expect(requests.some((r) => r.type === 'disarm')).toBe(true);
-    await screen.findByRole('button', { name: 'ARM' });
+    await screen.findByRole('button', { name: 'Arm' });
   });
 
   it('live mode: only after the confirmation; "Cancel" sends nothing', async () => {
@@ -315,22 +321,36 @@ describe('ARM / DISARM', () => {
     expect(requests.some((r) => r.type === 'arm')).toBe(false);
     await user.click(armButton());
     await user.click(screen.getByRole('button', { name: 'Yes, arm' }));
-    await screen.findByRole('button', { name: 'DISARM' });
+    await screen.findByRole('button', { name: 'Disarm' });
     expect(requests.filter((r) => r.type === 'arm')).toHaveLength(1);
   });
 
+  // Since BUNNDLY-73 the mode is set in Settings only (it was on the watch panel too).
   it('continuous mode needs a confirmation and is saved as a setting', async () => {
     const { user, requests } = setup();
     await openTabB();
-    await user.click(screen.getByRole('radio', { name: 'continuous' }));
-    expect(screen.getByRole('alertdialog').textContent).toMatch(/Turn on continuous mode/u);
+    await goTo(user, 'Settings');
+    const confirm = vi
+      .spyOn(window, 'confirm')
+      .mockReturnValueOnce(false)
+      .mockReturnValueOnce(true);
+    const continuous = await screen.findByRole<HTMLInputElement>('radio', {
+      name: 'Continuous (the watcher buys each new detected token)',
+    });
+    await user.click(continuous);
+    expect(confirm).toHaveBeenCalledTimes(1);
+    expect(confirm.mock.calls[0]?.[0]).toMatch(/Turn on continuous mode/u);
+    expect(continuous.checked).toBe(false);
+    await user.click(continuous);
+    expect(continuous.checked).toBe(true);
     expect(requests.some((r) => r.type === 'saveSettings')).toBe(false);
-    await user.click(screen.getByRole('button', { name: 'Yes, continuous mode' }));
+    await user.click(screen.getByRole('button', { name: 'Save settings' }));
     await waitFor(() => {
       expect(requests.find((r) => r.type === 'saveSettings')).toMatchObject({
         settings: { global: { mode: 'continuous' } },
       });
     });
+    confirm.mockRestore();
   });
 });
 
@@ -338,11 +358,15 @@ describe('an armed watcher freezes the settings', () => {
   it('no mode switch, no table, wallet or settings save until DISARM', async () => {
     const { user } = setup();
     await arm(user);
-    expect(screen.queryByRole('button', { name: 'Switch to live mode…' })).toBeNull();
+    const modeSwitch = screen.getByRole('switch', { name: 'DRY-RUN' });
+    expect(modeSwitch).toHaveProperty('disabled', true);
+    expect(modeSwitch.getAttribute('aria-description')).toMatch(
+      /Disarm the watcher to change the mode or the settings/u,
+    );
     expect(
       screen.getAllByText(/Disarm the watcher to change the mode or the settings/u).length,
     ).toBe(
-      3, // mode, table, wallets
+      2, // table, wallets (the mode switch says it in its description)
     );
     expect(screen.getByRole('button', { name: 'Save table changes' })).toHaveProperty(
       'disabled',
@@ -357,9 +381,11 @@ describe('an armed watcher freezes the settings', () => {
       true,
     );
     expect(screen.getByText(/Disarm the watcher to change/u)).toBeTruthy();
-    await user.click(within(screen.getByRole('navigation')).getByRole('button', { name: 'Fleet' }));
-    await user.click(screen.getByRole('button', { name: 'DISARM' }));
-    expect(await screen.findByRole('button', { name: 'Switch to live mode…' })).toBeTruthy();
+    await goTo(user, 'Dashboard');
+    await user.click(screen.getByRole('button', { name: 'Disarm' }));
+    await waitFor(() => {
+      expect(screen.getByRole('switch', { name: 'DRY-RUN' })).toHaveProperty('disabled', false);
+    });
     expect(screen.queryByText(/Disarm the watcher to change/u)).toBeNull();
   });
 });
@@ -428,7 +454,7 @@ describe('connection, alarm and Wake Lock', () => {
     await waitFor(() => {
       expect(wake.request).toHaveBeenCalledTimes(2);
     });
-    await user.click(screen.getByRole('button', { name: 'DISARM' }));
+    await user.click(screen.getByRole('button', { name: 'Disarm' }));
     await waitFor(() => {
       expect(wake.releases).toHaveBeenCalledWith(1);
     });
@@ -476,10 +502,13 @@ describe('detections and progress', () => {
       ],
       queued: ['Cv3DkGpXCiMeacQSWrshtrZjWkzVKpPUxfYz5RMQpump'],
     });
+    // the list is on the Activity screen since BUNNDLY-73, with the group of each detection
+    await screen.findByLabelText(/^Detected token/u);
+    await goTo(user, 'Activity');
     const table = await screen.findByRole('table', { name: 'Detections' });
     const rows = within(table).getAllByRole('row').slice(1);
     expect(rows.map((r) => r.textContent)).toEqual([
-      expect.stringMatching(/HEhu…pump.*pump\.fun.*log.*4 ms.*verified.*buy #1/u),
+      expect.stringMatching(/HEhu…pump.*All wallets.*pump\.fun.*log.*4 ms.*verified.*buy #1/u),
       expect.stringMatching(/Cv3D…pump.*LaunchLab.*transaction.*–.*queued/u),
       expect.stringMatching(/5vxZ…pump.*InitializeMint.*catch-up.*from before arming/u),
     ]);
@@ -489,7 +518,7 @@ describe('detections and progress', () => {
   it('the bar shows the newest usable detection; BUY can buy it (BUNNDLY-59)', async () => {
     const { user, update } = setup();
     await arm(user);
-    const buy = screen.getByRole('button', { name: 'BUY' });
+    const buy = screen.getByRole('button', { name: 'Buy' });
     expect(buy).toHaveProperty('disabled', true);
     expect(screen.queryByLabelText(/^Detected token/u)).toBeNull();
     const usable = 'Cv3DkGpXCiMeacQSWrshtrZjWkzVKpPUxfYz5RMQpump';
@@ -508,9 +537,9 @@ describe('detections and progress', () => {
     });
     const chip = await screen.findByLabelText(`Detected token ${usable}`);
     expect(chip.textContent).toBe('Detected Cv3D…pump · LaunchLab');
-    expect(screen.getByRole('button', { name: 'BUY' })).toHaveProperty('disabled', false);
+    expect(screen.getByRole('button', { name: 'Buy' })).toHaveProperty('disabled', false);
     // the armed watcher may buy this token at any moment: no sell meanwhile
-    const sell = screen.getByRole('button', { name: 'SELL' });
+    const sell = screen.getByRole('button', { name: 'Sell' });
     expect(sell).toHaveProperty('disabled', true);
     expect(sell.getAttribute('aria-description')).toBe(
       'DISARM first: the armed watcher may buy this token at any moment.',
@@ -521,7 +550,9 @@ describe('detections and progress', () => {
     const { user, update, vault } = setup();
     await arm(user);
     update({ connection: 'connected', detections: [detection()] });
+    await goTo(user, 'Activity');
     await screen.findByRole('table', { name: 'Detections' });
+    await goTo(user, 'Dashboard');
     const started: RunEvent = {
       kind: 'run',
       runId: 1,

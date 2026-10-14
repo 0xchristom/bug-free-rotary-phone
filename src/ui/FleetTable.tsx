@@ -371,6 +371,10 @@ export interface FleetTableProps {
   readonly network?: Network;
   /** Controls on the right of the filter tabs. */
   readonly tools?: ReactNode;
+  /** Shown above the filter tabs: the wallet groups (BUNNDLY-69). */
+  readonly above?: ReactNode;
+  /** The rest of the toolbar after the search: the run mode and the commands (BUNNDLY-73). */
+  readonly toolbar?: ReactNode;
   /** Row action "Buy" with that wallet alone (BUNNDLY-59). */
   readonly onBuyWallet?: (index: number) => void;
   /** Why no buy can start now, for every row; null when rows may buy. */
@@ -492,6 +496,7 @@ export function FleetTable(t: FleetTableProps) {
 
   return (
     <div className="wallets-block">
+      {t.above}
       <div className="tabsrow">
         <div className="tabs" role="group" aria-label="Wallet filters">
           {WALLET_FILTERS.map((f) => (
@@ -530,6 +535,7 @@ export function FleetTable(t: FleetTableProps) {
         <span className="sel-count" aria-live="polite">
           {selectedCount} of {t.wallets.length} selected
         </span>
+        {t.toolbar}
       </div>
       <div className="wallets-wrap">
         <table className="wallets">

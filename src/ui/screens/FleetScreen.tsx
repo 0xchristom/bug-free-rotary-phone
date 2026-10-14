@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { toUserMessage } from '../../core/errors.ts';
 import { effectiveGroups, groupOf, type WalletGroupV1 } from '../../core/groups.ts';
 import { NETWORK_LABELS, NO_BUY_ROUTE_MESSAGE, buyRouteOf } from '../../core/network.ts';
-import { effectiveJupiterPlan } from '../../core/settings.ts';
 import { walletTrade } from '../../core/trade.ts';
 import {
   saveKeystoreFile,
@@ -11,10 +11,8 @@ import {
   type StorageEnv,
 } from '../../storage/keystore-file.ts';
 import type { GroupStatus, VaultInfo } from '../../worker/protocol.ts';
-import { BuyPanel } from '../BuyPanel.tsx';
-import { CommandBar, type CommandReasons, type Target } from '../CommandBar.tsx';
+import { CommandBar, CommandButtons, type CommandReasons, type Target } from '../CommandBar.tsx';
 import { CreateWallets } from '../CreateWallets.tsx';
-import { ExportDialog } from '../ExportDialog.tsx';
 import { FleetBulk, FleetSummaryBar } from '../FleetBulk.tsx';
 import { shareOf, summarize } from '../fleet-math.ts';
 import { FleetTable } from '../FleetTable.tsx';
@@ -27,8 +25,8 @@ import {
   type MoveTarget,
 } from '../group-view.ts';
 import { GroupTabs } from '../GroupTabs.tsx';
-import type { OperationsLog } from '../operations-log.ts';
-import { OperationsLogPanel } from '../OperationsLogPanel.tsx';
+import { ModeSwitch } from '../ModeSwitch.tsx';
+import { useHeaderSlots } from '../header-slots.ts';
 import { SettingsResetNotice } from '../SettingsResetNotice.tsx';
 import { formatSol, parseSolAmount } from '../sol.ts';
 import { useBalances } from '../use-balances.ts';
@@ -36,7 +34,16 @@ import { EMPTY_BUY, type BuyRow, type BuyView } from '../use-buy.ts';
 import { useVault } from '../vault-state.ts';
 import { WATCH_FROZEN } from '../watch-labels.ts';
 import { useWatchRuntime } from '../watch-runtime.ts';
-import { Button, Modal, useToast } from '../kit/index.ts';
+import {
+  Button,
+  Modal,
+  Popover,
+  ProgressBar,
+  Segmented,
+  SlidersIcon,
+  SolIcon,
+  useToast,
+} from '../kit/index.ts';
 
 const MAX_WALLETS = 100;
 
@@ -65,12 +72,8 @@ export interface FleetScreenProps {
   readonly balanceRefreshMs?: number;
   /** Test hook for the row render counter (see FleetTable). */
   readonly rowProbe?: (index: number) => void;
-  /** Session log of buys (BUNNDLY-25); the panel is hidden without it. */
-  readonly operationsLog?: OperationsLog;
   /** Progress of the current or last buy (BUNNDLY-27), kept by the app across screens. */
   readonly buyView?: BuyView;
-  /** Decimals of every mint the worker read this session (the bought one may differ from the field). */
-  readonly mintDecimals?: ReadonlyMap<string, number>;
   readonly onMintDecimals?: (mint: string, decimals: number) => void;
 }
 
@@ -133,9 +136,7 @@ export function FleetScreen({
   onUnsavedChange,
   balanceRefreshMs,
   rowProbe,
-  operationsLog,
   buyView = EMPTY_BUY,
-  mintDecimals,
   onMintDecimals,
 }: FleetScreenProps) {
   const { client, status, refresh } = useVault();
@@ -159,7 +160,6 @@ export function FleetScreen({
   const [maxSpendText, setMaxSpendText] = useState<Drafts>(() => maxSpendDrafts(info));
   const [active, setActive] = useState<ActiveDrafts>(() => activeDrafts(info));
   const ids = useId();
-  const [exportOpen, setExportOpen] = useState(false);
   const toast = useToast();
   const [phase, setPhase] = useState<AddPhase>({ kind: 'idle' });
   const [error, setError] = useState<string | null>(null);
@@ -314,13 +314,6 @@ export function FleetScreen({
   useEffect(() => {
     if (token) onMintDecimals?.(token.mint, token.decimals);
   }, [token, onMintDecimals]);
-  // Decimals of the mint the buy used, not of whatever the mint field shows now.
-  const buyDecimals =
-    buyView.run === null
-      ? null
-      : (mintDecimals?.get(buyView.run.mint) ??
-        (token?.mint === buyView.run.mint ? token.decimals : null));
-
   /** DRY-RUN or live mode: saved in the vault, then the fleet file waits to be saved. */
   const setDryRun = async (dryRun: boolean): Promise<void> => {
     const result = await client.request({
@@ -342,29 +335,6 @@ export function FleetScreen({
     await refresh();
   };
 
-  /** One-shot or continuous (mode B): saved like the DRY-RUN switch. */
-  const setWatchMode = async (mode: typeof global.mode): Promise<void> => {
-    const result = await client.request({
-      type: 'saveSettings',
-      settings: {
-        maxSpend: info.settings.maxSpend,
-        active: info.settings.active,
-        global: { ...global, mode },
-      },
-    });
-    setPhase({
-      kind: 'unsaved',
-      fileText: result.fileText,
-      fleetName: result.info.fleetName,
-      note:
-        mode === 'continuous'
-          ? 'Continuous mode is saved in the vault.'
-          : 'One-shot mode is saved in the vault.',
-      savedNote: 'with the new watcher mode',
-      saving: false,
-    });
-    await refresh();
-  };
   const fleetAddresses = useMemo(() => info.wallets.map((w) => w.address), [info.wallets]);
 
   const saveTable = async (): Promise<void> => {
@@ -778,100 +748,139 @@ export function FleetScreen({
     }
   };
 
-  return (
-    <section className="screen" aria-labelledby={`${ids}-title`}>
-      <h2 id={`${ids}-title`}>Fleet</h2>
-      <div className="inline balances-bar">
-        <span className="muted" aria-live="polite">
-          {balances.fetchedAt
-            ? `Balances as of ${new Date(balances.fetchedAt).toLocaleTimeString('en-GB')}`
-            : 'Balances: loading…'}
-        </span>
-        <Button onClick={balances.refresh}>Refresh balances</Button>
-      </div>
-      {balances.source === 'fallback' && (
-        <p className="notice warning">
-          Helius is not responding. The balances come from the public Solana RPC and may be delayed.
-        </p>
-      )}
-      {balances.error && (
-        <p className="notice error" role="alert">
-          {balances.error}
-        </p>
-      )}
-      {error && (
-        <p className="notice error" role="alert">
-          {error}
-        </p>
-      )}
-
-      <SettingsResetNotice fields={info.settings.resetFields} />
-
-      {mintError && (
-        <p className="notice error" role="alert">
-          {mintError}
-        </p>
-      )}
-
-      <BuyPanel
-        view={buyView}
-        readyCount={summary.readyCount}
-        toSpend={summary.toSpendLamports}
-        dryRun={global.dryRun}
-        plan={effectiveJupiterPlan(global, info.apiKeys.jupiter)}
-        onDryRun={setDryRun}
-        watchMode={global.mode}
-        onWatchMode={setWatchMode}
-      >
-        {operationsLog && (
-          <OperationsLogPanel log={operationsLog} storage={storage} decimals={buyDecimals} />
-        )}
-      </BuyPanel>
-
-      <GroupTabs
-        groups={groupTabs}
-        tab={tab}
-        onTab={setTabChoice}
-        allCount={info.wallets.length}
-        allLamports={groupLamports(
-          info.wallets.map((w) => w.index),
-          balances.lamports,
-        )}
-        moveCount={viewSelected.length}
-        moveBlocked={moveBlocked}
-        targetBlocked={targetBlocked}
-        onMove={onMove}
-        renameBlocked={shownGroup ? busyBlock(shownGroup.id) : null}
-        deleteBlocked={deleteBlocked}
-        onRename={onRename}
-        onDelete={onDelete}
+  // --- Dashboard layout (BUNNDLY-73, mockup v2) ---
+  const slots = useHeaderSlots();
+  const { wake } = useWatchRuntime();
+  const [bulkOpen, setBulkOpen] = useState(false);
+  const fleetLamports = groupLamports(
+    info.wallets.map((w) => w.index),
+    balances.lamports,
+  );
+  // The vault leaves the armed state when the run ends: show it without waiting for a poll.
+  const runFinished = buyView.run?.phase === 'finished';
+  useEffect(() => {
+    if (runFinished) void refresh();
+  }, [runFinished, refresh]);
+  // Closing the tab stops the worker mid-buy: ask the browser to confirm.
+  const anyRunning = groupRunning(undefined) || (status?.groups ?? []).some((g) => g.buy !== null);
+  useEffect(() => {
+    if (!anyRunning) return;
+    const onBeforeUnload = (event: BeforeUnloadEvent): void => {
+      event.preventDefault();
+    };
+    window.addEventListener('beforeunload', onBeforeUnload);
+    return () => {
+      window.removeEventListener('beforeunload', onBeforeUnload);
+    };
+  }, [anyRunning]);
+  // A buy started by a detection counts its times from the detection (SPEC 3.6).
+  const fromDetection =
+    viewRun !== null &&
+    (status?.groups ?? []).some(
+      (g) => g.watch?.detections.some((d) => d.runId === viewRun.runId) ?? false,
+    );
+  const modeBlocked = watchArmed
+    ? WATCH_FROZEN
+    : anyRunning
+      ? 'A buy is running: change the mode when it ends.'
+      : null;
+  const { counts } = buyView;
+  const progress = viewRun && (
+    <span className="progress-bar" role="status" aria-live="polite">
+      <ProgressBar
+        label="Confirmed buys"
+        value={counts.confirmed}
+        max={viewRun.wallets}
+        tone={viewRun.phase === 'finished' ? 'ok' : 'run'}
       />
+      <span>
+        <strong>
+          {counts.confirmed}/{viewRun.wallets} confirmed
+        </strong>
+        {' · '}
+        {counts.inProgress} in progress{' · '}
+        {counts.failedOrSkipped} failed or skipped
+        {viewRun.dryRun && ' · DRY-RUN'}
+        {viewRun.phase === 'finished' && ' · finished'}
+      </span>
+      <span className="muted">
+        {fromDetection ? 'From detection' : 'From start'} to the first confirmation:{' '}
+        {seconds(viewRun.firstConfirmMs)}, to the last: {seconds(viewRun.lastConfirmMs)}
+      </span>
+    </span>
+  );
+
+  return (
+    <section className="screen dash" aria-labelledby={`${ids}-title`}>
+      <h2 id={`${ids}-title`} className="sr-only">
+        Fleet
+      </h2>
+      {slots.mode &&
+        createPortal(
+          <ModeSwitch
+            dryRun={global.dryRun}
+            network={global.network}
+            readyCount={summary.readyCount}
+            toSpend={summary.toSpendLamports}
+            blocked={modeBlocked}
+            onDryRun={setDryRun}
+            onError={setError}
+          />,
+          slots.mode,
+        )}
+      {slots.balance &&
+        createPortal(
+          <button
+            type="button"
+            className="top-chip"
+            title="Sum of all wallets. Click to read the balances again."
+            aria-label={`Fleet balance: ${fleetLamports === null ? 'not read yet' : `${formatSol(fleetLamports)} SOL`}. Read again`}
+            onClick={balances.refresh}
+          >
+            <SolIcon />
+            <b className="num" data-testid="fleet-balance">
+              {fleetLamports === null ? '—' : formatSol(fleetLamports)}
+            </b>
+            <span className="muted">fleet</span>
+          </button>,
+          slots.balance,
+        )}
+
       <CommandBar
         text={targetTexts[barKey] ?? ''}
         onText={onTargetText}
-        dryRun={global.dryRun}
-        armed={groupArmed}
+        watch={commandStatus?.watch ?? null}
+        wakeUnavailable={wake === 'unavailable'}
         busy={commandBusy}
         reasons={reasons}
         blocked={buyBlocked}
         detected={detected}
         onTarget={onTarget}
-        onBuy={onBuy}
-        onSell={onSell}
         onArm={onArm}
         onDisarm={onDisarm}
-        onStop={onStop}
-      />
-      {inFleet && (
-        <p className="notice warning" role="status">
-          This is a wallet from this fleet. Make sure you want to watch your own wallet.
-        </p>
-      )}
-      {commandError && (
-        <p className="notice error" role="alert">
-          {commandError}
-        </p>
-      )}
+      >
+        {mintError && (
+          <p className="field-error" role="alert">
+            {mintError}
+          </p>
+        )}
+        {inFleet && (
+          <p className="warn-line" role="status">
+            This is a wallet from this fleet. Make sure you want to watch your own wallet.
+          </p>
+        )}
+        {commandError && (
+          <p className="field-error" role="alert">
+            {commandError}
+          </p>
+        )}
+        {anyRunning && (
+          <p className="warn-line" role="status">
+            A buy is running. Do not close or reload this tab until it ends: the keys and the buy
+            live only in it.
+          </p>
+        )}
+      </CommandBar>
       {confirm && (
         <Modal
           open
@@ -947,12 +956,6 @@ export function FleetScreen({
         </Modal>
       )}
 
-      <FleetBulk
-        onAmount={setAllAmount}
-        onPercent={setAllPercent}
-        unknownBalances={unknownBalances}
-      />
-
       <FleetTable
         wallets={tableWallets}
         lamports={balances.lamports}
@@ -972,8 +975,72 @@ export function FleetScreen({
         groupNames={tab === null ? groupNames : undefined}
         explorer={global.explorer}
         network={global.network}
+        above={
+          <GroupTabs
+            groups={groupTabs}
+            tab={tab}
+            onTab={setTabChoice}
+            allCount={info.wallets.length}
+            allLamports={fleetLamports}
+            moveCount={viewSelected.length}
+            moveBlocked={moveBlocked}
+            targetBlocked={targetBlocked}
+            onMove={onMove}
+            renameBlocked={shownGroup ? busyBlock(shownGroup.id) : null}
+            deleteBlocked={deleteBlocked}
+            onRename={onRename}
+            onDelete={onDelete}
+          />
+        }
         tools={
-          <CreateWallets room={room} limit={MAX_WALLETS} blocked={createBlocked} onCreate={add} />
+          <>
+            <CreateWallets room={room} limit={MAX_WALLETS} blocked={createBlocked} onCreate={add} />
+            <Popover
+              open={bulkOpen}
+              onClose={() => {
+                setBulkOpen(false);
+              }}
+              label="Bulk actions"
+              trigger={
+                <Button
+                  size="sm"
+                  icon={<SlidersIcon />}
+                  aria-expanded={bulkOpen}
+                  onClick={() => {
+                    setBulkOpen((open) => !open);
+                  }}
+                >
+                  Set amounts
+                </Button>
+              }
+            >
+              <FleetBulk
+                onAmount={setAllAmount}
+                onPercent={setAllPercent}
+                unknownBalances={unknownBalances}
+              />
+            </Popover>
+          </>
+        }
+        toolbar={
+          <>
+            <Segmented
+              label="Execution mode"
+              value="immediate"
+              options={[
+                { value: 'immediate', label: 'Immediate' },
+                {
+                  value: 'stairs',
+                  label: 'Stairs',
+                  disabled: true,
+                  title: 'Stairs (buying in steps) is not available yet.',
+                },
+              ]}
+              onChange={() => undefined}
+            />
+            <span className="spacer" />
+            <CommandButtons reasons={reasons} onBuy={onBuy} onSell={onSell} onStop={onStop} />
+          </>
         }
       />
       <FleetSummaryBar
@@ -983,72 +1050,83 @@ export function FleetScreen({
         tokenDecimals={balances.token?.decimals ?? null}
         firstFillMs={buyView.run?.firstConfirmMs ?? null}
         lastFillMs={buyView.run?.lastConfirmMs ?? null}
+        progress={progress}
+        readAt={
+          <span aria-live="polite">
+            {balances.fetchedAt
+              ? `Balances as of ${new Date(balances.fetchedAt).toLocaleTimeString('en-GB')}`
+              : 'Balances: loading…'}
+          </span>
+        }
       />
-      <div className="actions">
-        <Button
-          variant="primary"
-          disabled={
-            watchArmed ||
-            !tableDirty ||
-            tableInvalid ||
-            (phase.kind !== 'idle' && phase.kind !== 'saved')
-          }
-          onClick={() => void saveTable()}
-        >
-          {phase.kind === 'savingTable' ? 'Saving…' : 'Save table changes'}
-        </Button>
-        {watchArmed ? (
-          <span className="muted">{WATCH_FROZEN}</span>
-        ) : (
-          tableDirty && <span className="muted">You have unsaved table changes.</span>
-        )}
-      </div>
 
-      {phase.kind === 'unsaved' && (
-        <div className="notice warning" role="status">
-          <p>{phase.note} The updated fleet file is not saved yet.</p>
-          {!supportsDirectoryPicker(storage) && (
-            <p className="muted">
-              Your browser will download the file. Then check the “Downloads” folder.
-            </p>
-          )}
-          <div className="actions">
-            <Button variant="primary" disabled={phase.saving} onClick={() => void save(phase)}>
+      <div className="dash-notes">
+        {balances.source === 'fallback' && (
+          <p className="warn-line">
+            Helius is not responding. The balances come from the public Solana RPC and may be
+            delayed.
+          </p>
+        )}
+        {balances.error && (
+          <p className="field-error" role="alert">
+            {balances.error}
+          </p>
+        )}
+        {error && (
+          <p className="field-error" role="alert">
+            {error}
+          </p>
+        )}
+        <SettingsResetNotice fields={info.settings.resetFields} />
+        {(tableDirty || watchArmed) && (
+          <div className="note-line">
+            <Button
+              size="sm"
+              variant="primary"
+              disabled={
+                watchArmed ||
+                !tableDirty ||
+                tableInvalid ||
+                (phase.kind !== 'idle' && phase.kind !== 'saved')
+              }
+              onClick={() => void saveTable()}
+            >
+              {phase.kind === 'savingTable' ? 'Saving…' : 'Save table changes'}
+            </Button>
+            {watchArmed ? (
+              <span className="muted">{WATCH_FROZEN}</span>
+            ) : (
+              <span className="muted">You have unsaved table changes.</span>
+            )}
+          </div>
+        )}
+        {phase.kind === 'unsaved' && (
+          <div className="note-line warn" role="status">
+            <span>
+              {phase.note} The updated fleet file is not saved yet.
+              {!supportsDirectoryPicker(storage) &&
+                ' Your browser will download the file. Then check the “Downloads” folder.'}
+            </span>
+            <Button
+              size="sm"
+              variant="primary"
+              disabled={phase.saving}
+              onClick={() => void save(phase)}
+            >
               {phase.saving ? 'Saving…' : 'Save the updated fleet file'}
             </Button>
           </div>
-        </div>
-      )}
-      {phase.kind === 'saved' && (
-        <p className="notice" role="status">
-          Saved {phase.result.fileName} {phase.savedNote}.
-        </p>
-      )}
-
-      <h3>Backup</h3>
-      <p className="muted">
-        The only way to get a copy of the recovery phrase and the private keys is a plain export
-        after typing the password again.
-      </p>
-      {/* The opener stays mounted: the dialog gives the focus back to it. */}
-      <div className="actions">
-        <Button
-          aria-expanded={exportOpen}
-          onClick={() => {
-            setExportOpen(true);
-          }}
-        >
-          Plain export (recovery phrase and keys)
-        </Button>
+        )}
+        {phase.kind === 'saved' && (
+          <p className="muted" role="status">
+            Saved {phase.result.fileName} {phase.savedNote}.
+          </p>
+        )}
       </div>
-      {exportOpen && (
-        <ExportDialog
-          storage={storage}
-          onClose={() => {
-            setExportOpen(false);
-          }}
-        />
-      )}
     </section>
   );
+}
+
+function seconds(ms: number | null): string {
+  return ms === null ? '–' : `${(ms / 1000).toFixed(1)} s`;
 }

@@ -1,4 +1,4 @@
-import { useId, useState, type SyntheticEvent } from 'react';
+import { useId, useState, type ReactNode, type SyntheticEvent } from 'react';
 import { parsePercent, type FleetSummary } from './fleet-math.ts';
 import { formatSol, formatUnits, parseSolAmount } from './sol.ts';
 import { Button, Input, SolIcon } from './kit/index.ts';
@@ -94,6 +94,10 @@ export interface FleetSummaryBarProps {
   /** Since the start of the last buy: its first and its last confirmed wallet. */
   readonly firstFillMs: number | null;
   readonly lastFillMs: number | null;
+  /** The run in progress or the last one (BUNNDLY-73: it moved here from the buy panel). */
+  readonly progress?: ReactNode;
+  /** When the balances were read, or that they are loading. */
+  readonly readAt?: ReactNode;
 }
 
 function sinceStart(ms: number): string {
@@ -111,6 +115,8 @@ export function FleetSummaryBar({
   tokenDecimals,
   firstFillMs,
   lastFillMs,
+  progress,
+  readAt,
 }: FleetSummaryBarProps) {
   return (
     <dl className="summary" aria-label="Fleet summary">
@@ -136,6 +142,10 @@ export function FleetSummaryBar({
           <span className="sr-only"> SOL</span>
         </dd>
       </div>
+      <div className="wide">
+        <dt>Run</dt>
+        <dd>{progress ?? <span className="muted">No buy or sell yet</span>}</dd>
+      </div>
       <div>
         <dt>Tokens held</dt>
         <dd>
@@ -152,6 +162,12 @@ export function FleetSummaryBar({
             : `${sinceStart(firstFillMs)} · ${sinceStart(lastFillMs)}`}
         </dd>
       </div>
+      {readAt !== undefined && (
+        <div>
+          <dt>Balances</dt>
+          <dd className="muted">{readAt}</dd>
+        </div>
+      )}
     </dl>
   );
 }

@@ -267,7 +267,7 @@ describe('balances follow the network', () => {
     expect(await screen.findAllByText('1.5')).toHaveLength(3);
 
     holdNext = true;
-    await user.click(screen.getByRole('button', { name: 'Refresh balances' }));
+    await user.click(screen.getByRole('button', { name: /^Fleet balance:/u }));
     await waitFor(() => {
       expect(lateMainnet).not.toBeNull();
     });
@@ -337,7 +337,7 @@ describe('balances follow the network', () => {
     expect(screen.queryAllByText('7')).toEqual([]);
     expect(screen.getByText('Balances: loading…')).toBeTruthy();
 
-    await user.click(screen.getByRole('button', { name: 'Refresh balances' }));
+    await user.click(screen.getByRole('button', { name: /^Fleet balance:/u }));
     expect(await screen.findAllByText('1.5')).toHaveLength(3);
     expect(screen.queryAllByText('7')).toEqual([]);
     expect(answered).toBe(2);
@@ -396,14 +396,14 @@ describe('devnet has no buy', () => {
   it('BUY and ARM are off with one sentence; no startBuy and no arm leave the UI', async () => {
     const { user, requests } = setup(onDevnet());
     const sentence = 'Buying and the watcher are off on Devnet: Jupiter works on Mainnet only.';
-    const buy = await screen.findByRole<HTMLButtonElement>('button', { name: 'BUY' });
+    const buy = await screen.findByRole<HTMLButtonElement>('button', { name: 'Buy' });
     expect(buy.disabled).toBe(true);
     expect(screen.getByText(sentence)).toBeTruthy();
     await user.click(buy);
 
     await user.type(screen.getByLabelText(TARGET_LABEL), CREATOR);
     await screen.findByText('Creator wallet', {}, TARGET_WAIT);
-    const arm = screen.getByRole<HTMLButtonElement>('button', { name: 'ARM' });
+    const arm = screen.getByRole<HTMLButtonElement>('button', { name: 'Arm' });
     expect(arm.disabled).toBe(true);
     expect(screen.getByText(sentence)).toBeTruthy();
     await user.click(arm);
@@ -424,7 +424,7 @@ describe('devnet has no buy', () => {
         settings: { ...settings, global: { ...settings.global, network: 'mainnet' } },
       },
     });
-    await screen.findByRole('button', { name: 'BUY' });
+    await screen.findByRole('button', { name: 'Buy' });
     expect(screen.queryByText(/off on Devnet/u)).toBeNull();
   });
 });
@@ -432,7 +432,7 @@ describe('devnet has no buy', () => {
 describe('confirmations name the network', () => {
   it('switching to live mode says which network will spend SOL', async () => {
     const { user } = setup(unlocked());
-    await user.click(await screen.findByRole('button', { name: 'Switch to live mode…' }));
+    await user.click(await screen.findByRole('switch', { name: 'DRY-RUN' }));
     expect(screen.getByRole('alertdialog').textContent).toContain('Network: Mainnet.');
   });
 });

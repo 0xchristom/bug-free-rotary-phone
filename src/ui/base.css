@@ -838,80 +838,281 @@ dl.summary dd {
   font-variant-numeric: tabular-nums;
 }
 
-/* Command bar (BUNNDLY-59): target field on the left, commands on the right */
-.cmd-bar {
-  display: grid;
-  gap: var(--s-1);
-  padding: var(--s-3);
-  background: var(--surface-panel);
-  border: 1px solid var(--line);
-  border-radius: var(--r-pop);
+/* Dashboard (BUNNDLY-73, mockup v2): edge-to-edge strips, top to bottom: target, tabs,
+   toolbar, table, summary. The content area has no padding of its own here. */
+.content.dash-content {
+  padding: 0;
+  gap: 0;
 }
 
-.cmd-row {
-  display: flex;
-  flex-wrap: wrap;
+.screen.dash {
+  gap: 0;
+}
+
+.dash .wallets-block {
+  gap: 0;
+}
+
+.dash .tabsrow {
+  padding: 0 var(--s-4);
+}
+
+.dash .table-bar {
+  padding: var(--s-3) var(--s-4);
+}
+
+.dash .wallets-wrap {
+  margin: 0 var(--s-4);
+}
+
+.dash table.wallets th {
+  top: 0;
+}
+
+.dash dl.summary {
+  margin: var(--s-2) var(--s-4) var(--s-3);
+  min-height: 56px;
   align-items: center;
-  gap: var(--s-2);
 }
 
-.cmd-row .spacer {
-  flex: 1;
-}
-
-.cmd-target {
-  display: flex;
-  align-items: center;
-  gap: var(--s-2);
-  flex: 0 1 560px;
+dl.summary div.wide {
+  flex: 1 1 260px;
   min-width: 0;
 }
 
-.cmd-target .cmd-input {
-  flex: 1 1 0;
-  min-width: 0;
-}
-
-.cmd-target .k-chip,
-.cmd-row > .k-chip {
-  flex: none;
-}
-
-.cmd-bar .hint,
-.cmd-bar .field-error,
-.cmd-why {
-  margin: 0;
-}
-
-/* Buy and watch panels */
-.buy-panel,
-.watch-panel {
-  display: grid;
-  gap: var(--s-3);
-  min-width: 0;
-}
-
-.buy-panel {
-  padding: var(--s-4);
-  background: var(--surface-panel);
-  border: 1px solid var(--line);
-  border-radius: var(--r-pop);
-}
-
-.buy-head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--s-2) var(--s-3);
+dl.summary div.wide dd {
+  display: block;
+  font-weight: 500;
 }
 
 .progress-bar {
   display: grid;
+  gap: var(--s-1);
+  font-size: var(--fs-note);
+}
+
+/* Target strip */
+.target {
+  min-height: 58px;
+  padding: 10px var(--s-4);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-2) var(--s-3);
+  border-bottom: 1px solid var(--line);
+}
+
+.target-label {
+  color: var(--fg-3);
+  font-size: var(--fs-note);
+  font-weight: 500;
+}
+
+.target .field {
+  flex: 1 1 380px;
+  max-width: 590px;
+  min-width: 0;
+  height: 38px;
+  padding: 0 6px 0 var(--s-3);
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  background: var(--surface-panel);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+}
+
+.target .field:focus-within {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.target .field.invalid {
+  border-color: var(--danger);
+}
+
+.target .field input {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: 0;
+  outline: none;
+  color: var(--fg);
+  font: inherit;
+}
+
+.target .field input::placeholder {
+  color: var(--fg-3);
+}
+
+.target .field .k-chip {
+  flex: none;
+}
+
+.watchline {
+  margin-left: auto;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  color: var(--fg-2);
+  font-size: var(--fs-control);
+}
+
+.watchline b {
+  color: var(--fg);
+  font-weight: 600;
+}
+
+.watchline .conn[data-tone='ok'] {
+  color: var(--ok);
+}
+
+.watchline .conn[data-tone='wait'] {
+  color: var(--warn);
+}
+
+.watchline .conn[data-tone='bad'] {
+  color: var(--danger);
+}
+
+.pulse {
+  width: 8px;
+  height: 8px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--fg-3);
+}
+
+.pulse.live {
+  background: var(--ok);
+}
+
+.pulse.armed {
+  background: var(--watch);
+}
+
+/* Messages that belong to the strip: one short line each, under it. */
+.target-notes {
+  flex: 1 0 100%;
+  display: grid;
+  gap: var(--s-1);
+}
+
+.target-notes:empty {
+  display: none;
+}
+
+.target-notes p,
+.dash-notes p {
+  margin: 0;
+  font-size: var(--fs-note);
+}
+
+.warn-line {
+  color: var(--warn);
+}
+
+/* Short messages under the summary: the file to save, a fallback RPC, an error. */
+.dash-notes {
+  padding: 0 var(--s-4) var(--s-3);
+  display: grid;
   gap: var(--s-2);
 }
 
-.watch-panel .field .k-input {
-  max-width: 520px;
+.dash-notes:empty {
+  display: none;
+}
+
+.note-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-2) var(--s-3);
+  font-size: var(--fs-note);
+}
+
+.note-line.warn {
+  color: var(--warn);
+}
+
+/* DRY-RUN switch in the top bar */
+.top-slot {
+  display: contents;
+}
+
+.top-chip.switch {
+  color: var(--fg-2);
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.top-chip.switch i {
+  position: relative;
+  width: 28px;
+  height: 16px;
+  border-radius: 8px;
+  background: var(--surface-raised);
+  border: 1px solid var(--line-2);
+}
+
+.top-chip.switch i::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--fg-3);
+  transition: transform var(--t-fast);
+}
+
+.top-chip.switch.on {
+  color: var(--sim);
+}
+
+.top-chip.switch.on i {
+  background: var(--sim-bg);
+  border-color: var(--sim);
+}
+
+.top-chip.switch.on i::after {
+  transform: translateX(12px);
+  background: var(--sim);
+}
+
+.top-chip.switch:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+button.top-chip {
+  color: var(--fg);
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.top-chip .muted {
+  color: var(--fg-3);
+}
+
+.linkbtn {
+  padding: 0;
+  background: none;
+  border: 0;
+  color: var(--fg-2);
+  font: inherit;
+  text-decoration: underline;
+  text-decoration-color: var(--line-2);
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.linkbtn:hover {
+  color: var(--fg);
 }
 
 .reason {
@@ -921,24 +1122,6 @@ dl.summary dd {
   color: var(--fg-2);
   font-size: var(--fs-small);
   white-space: normal;
-}
-
-.connection {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--s-2);
-}
-
-.connection.ok strong {
-  color: var(--ok);
-}
-
-.connection.wait strong {
-  color: var(--warn);
-}
-
-.connection.bad strong {
-  color: var(--danger);
 }
 
 /* Start screen */

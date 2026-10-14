@@ -1,6 +1,9 @@
 // @vitest-environment jsdom
-/** Operations log panel on the fleet screen (BUNNDLY-25): counts events, downloads CSV/JSON. */
-import { act, cleanup, render, screen } from '@testing-library/react';
+/**
+ * Operations log (BUNNDLY-25): counts events, downloads CSV/JSON. Since BUNNDLY-73 it lives on
+ * the Activity screen; the Dashboard has none of the old panels.
+ */
+import { act, cleanup, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { WalletEvent } from '../../src/executor/index.ts';
@@ -45,11 +48,51 @@ async function setup() {
       balanceRefreshMs={60_000}
     />,
   );
+  await screen.findByRole('heading', { name: 'Fleet' });
+  const user = userEvent.setup();
+  await user.click(
+    within(screen.getByRole('navigation')).getByRole('button', { name: 'Activity' }),
+  );
   await screen.findByRole('heading', { name: 'Operations log' });
-  return { vault, storage, blobs, user: userEvent.setup() };
+  return { vault, storage, blobs, user };
 }
 
-describe('operations log panel', () => {
+// The texts of the panels the Dashboard had before mockup v2 (BUNNDLY-73).
+const OLD_PANELS = ['Mode A', 'Mode B', 'Show token balance', 'Operations log', 'Refresh balances'];
+
+describe('the Dashboard and the Activity screen (BUNNDLY-73)', () => {
+  it('the Dashboard has none of the old panels', async () => {
+    const vault = mockVault(unlocked());
+    render(<App vault={vault.client} storage={mockStorage().env} />);
+    await screen.findByRole('heading', { name: 'Fleet' });
+    await screen.findByText('1.5');
+    const text = document.body.textContent;
+    for (const old of OLD_PANELS) expect(text, old).not.toContain(old);
+    for (const old of OLD_PANELS) {
+      expect(screen.queryByRole('button', { name: old }), old).toBeNull();
+      expect(screen.queryByRole('heading', { name: old }), old).toBeNull();
+    }
+  });
+
+  it('Activity shows the log with its download buttons, the Dashboard comes back from the nav', async () => {
+    const { user } = await setup();
+    const nav = screen.getByRole('navigation');
+    expect(within(nav).getByRole('button', { name: 'Activity' }).getAttribute('aria-current')).toBe(
+      'page',
+    );
+    expect(screen.getByRole('heading', { name: 'Activity' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Download CSV' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Download JSON' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Watcher detections' })).toBeTruthy();
+    // No commands on Activity: the target strip and the table stay on the Dashboard.
+    expect(screen.queryByRole('region', { name: 'Commands' })).toBeNull();
+    await user.click(within(nav).getByRole('button', { name: 'Dashboard' }));
+    await screen.findByRole('heading', { name: 'Fleet' });
+    expect(screen.queryByRole('heading', { name: 'Operations log' })).toBeNull();
+  });
+});
+
+describe('operations log on the Activity screen', () => {
   it('empty: download buttons disabled', async () => {
     await setup();
     expect(screen.getByText(/No entries/u)).toBeTruthy();
