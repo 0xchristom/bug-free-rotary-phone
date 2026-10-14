@@ -1,10 +1,11 @@
 /**
- * Meteora DBC buy-side quote math (BUNNDLY-47, D-053): a bigint port of the exact-in path
+ * Meteora DBC quote math (BUNNDLY-47 and -63, D-053): a bigint port of the exact-in path
  * of `@meteora-ag/dynamic-bonding-curve-sdk` 1.5.13 (MIT), files `src/math/swapQuote.ts`
- * (`swapQuoteExactIn`, `getSwapResultFromExactInput`, `calculateQuoteToBaseFromAmountIn`),
- * `curve.ts`, `feeMath.ts`, `utilsMath.ts`, `safeMath.ts` (`pow`) and `poolFees/*`.
- * Only the quote → base direction (a buy) is ported; names follow the SDK so the two can
- * be read side by side. Commit of the SDK: see D-053.
+ * (`swapQuoteExactIn`, `getSwapResultFromExactInput`, `calculateQuoteToBaseFromAmountIn`,
+ * `calculateBaseToQuoteFromAmountIn`), `curve.ts`, `feeMath.ts`, `utilsMath.ts`,
+ * `safeMath.ts` (`pow`) and `poolFees/*`. Both directions, exact in only: quote → base (a
+ * buy) and base → quote (a sell); names follow the SDK so the two can be read side by
+ * side. Commit of the SDK: see D-053.
  *
  * Original copyright and licence of the ported code:
  *
@@ -226,13 +227,14 @@ function getRateLimiterNumerator(
   currentPoint: bigint,
   activationPoint: bigint,
   includedFeeAmount: bigint,
+  baseToQuote: boolean,
 ): bigint {
   const feeIncrementBps = BigInt(fee.firstFactor);
   const maxLimiterDuration = fee.secondFactor;
   const referenceAmount = fee.thirdFactor;
   const isZero = referenceAmount === 0n && maxLimiterDuration === 0n && feeIncrementBps === 0n;
-  // isRateLimiterApplied: a buy is quote → base, so only the point window is checked.
-  if (isZero || currentPoint > activationPoint + maxLimiterDuration) {
+  // isRateLimiterApplied: never for base → quote (a sell); for a buy only the point window.
+  if (isZero || baseToQuote || currentPoint > activationPoint + maxLimiterDuration) {
     return fee.cliffFeeNumerator;
   }
   return getRateLimiterNumeratorFromIncludedAmount(
@@ -245,19 +247,29 @@ function getRateLimiterNumerator(
 
 // ---- feeMath.ts ----
 
-/** poolFees/baseFee.ts `getBaseFeeNumeratorFromIncludedFeeAmount`, buy side. */
+/**
+ * poolFees/baseFee.ts `getBaseFeeNumeratorFromIncludedFeeAmount`; `baseToQuote` is the
+ * SDK's `TradeDirection.BaseToQuote` (a sell).
+ */
 export function getBaseFeeNumerator(
   fee: BaseFeeConfig,
   currentPoint: bigint,
   activationPoint: bigint,
   includedFeeAmount: bigint,
+  baseToQuote = false,
 ): bigint {
   switch (fee.baseFeeMode) {
     case BaseFeeMode.FeeSchedulerLinear:
     case BaseFeeMode.FeeSchedulerExponential:
       return getFeeSchedulerNumerator(fee, currentPoint, activationPoint);
     case BaseFeeMode.RateLimiter:
-      return getRateLimiterNumerator(fee, currentPoint, activationPoint, includedFeeAmount);
+      return getRateLimiterNumerator(
+        fee,
+        currentPoint,
+        activationPoint,
+        includedFeeAmount,
+        baseToQuote,
+      );
     default:
       throw new DbcMathError('Invalid base fee mode');
   }
@@ -281,10 +293,17 @@ export function getTotalFeeNumerator(
   pool: QuotePool,
   currentPoint: bigint,
   includedFeeAmount: bigint,
+  baseToQuote = false,
 ): bigint {
   const total =
     getVariableFeeNumerator(poolFees.dynamicFee, pool.volatilityAccumulator) +
-    getBaseFeeNumerator(poolFees.baseFee, currentPoint, pool.activationPoint, includedFeeAmount);
+    getBaseFeeNumerator(
+      poolFees.baseFee,
+      currentPoint,
+      pool.activationPoint,
+      includedFeeAmount,
+      baseToQuote,
+    );
   return total > MAX_FEE_NUMERATOR ? MAX_FEE_NUMERATOR : total;
 }
 
@@ -353,6 +372,25 @@ export function getNextSqrtPriceFromQuoteInput(
   return sqrtPrice + div(amountIn << (RESOLUTION * 2n), liquidity);
 }
 
+/**
+ * `getNextSqrtPriceFromBaseAmountInRoundingUp`: √P' = √P * L / (L + Δx * √P), rounded up;
+ * when Δx * √P overflows u128, the alternate form √P' = L / (L/√P + Δx).
+ */
+export function getNextSqrtPriceFromBaseInput(
+  sqrtPrice: bigint,
+  liquidity: bigint,
+  amountIn: bigint,
+): bigint {
+  if (sqrtPrice === 0n) throw new DbcMathError('sqrt_price must be greater than 0');
+  if (liquidity === 0n) throw new DbcMathError('liquidity must be greater than 0');
+  if (amountIn === 0n) return sqrtPrice;
+  const product = amountIn * sqrtPrice;
+  if (product > U128_MAX) {
+    return div(liquidity, div(liquidity, sqrtPrice) + amountIn);
+  }
+  return mulDiv(liquidity, sqrtPrice, liquidity + product, true);
+}
+
 export interface SwapAmount {
   readonly outputAmount: bigint;
   readonly nextSqrtPrice: bigint;
@@ -403,6 +441,67 @@ export function calculateQuoteToBaseFromAmountIn(
     current = referenceSqrtPrice;
     amountLeft = sub(amountLeft, maxAmountIn);
     if (referenceSqrtPrice === stopSqrtPrice) break;
+  }
+  return { outputAmount: totalOutputAmount, nextSqrtPrice: current, amountLeft };
+}
+
+/** swapQuote.ts `calculateBaseToQuoteFromAmountIn`: walks the curve down from √P. */
+export function calculateBaseToQuoteFromAmountIn(
+  curve: readonly CurvePoint[],
+  sqrtStartPrice: bigint,
+  currentSqrtPrice: bigint,
+  amountIn: bigint,
+): SwapAmount {
+  let totalOutputAmount = 0n;
+  let current = currentSqrtPrice;
+  let amountLeft = amountIn;
+  for (let i = curve.length - 2; i >= 0; i--) {
+    const point = curve[i];
+    const upper = curve[i + 1];
+    if (point === undefined || upper === undefined) continue;
+    if (point.sqrtPrice === 0n || point.liquidity === 0n) continue;
+    if (point.sqrtPrice >= current) continue;
+    const maxAmountIn = getDeltaAmountBaseUnsigned(point.sqrtPrice, current, upper.liquidity, true);
+    if (amountLeft < maxAmountIn) {
+      const nextSqrtPrice = getNextSqrtPriceFromBaseInput(current, upper.liquidity, amountLeft);
+      totalOutputAmount += getDeltaAmountQuoteUnsigned(
+        nextSqrtPrice,
+        current,
+        upper.liquidity,
+        false,
+      );
+      current = nextSqrtPrice;
+      amountLeft = 0n;
+      break;
+    }
+    totalOutputAmount += getDeltaAmountQuoteUnsigned(
+      point.sqrtPrice,
+      current,
+      upper.liquidity,
+      false,
+    );
+    current = point.sqrtPrice;
+    amountLeft = sub(amountLeft, maxAmountIn);
+  }
+  const first = curve[0];
+  if (amountLeft !== 0n && first !== undefined) {
+    let nextSqrtPrice = getNextSqrtPriceFromBaseInput(current, first.liquidity, amountLeft);
+    if (nextSqrtPrice < sqrtStartPrice) {
+      nextSqrtPrice = sqrtStartPrice;
+      amountLeft = sub(
+        amountLeft,
+        getDeltaAmountBaseUnsigned(nextSqrtPrice, current, first.liquidity, true),
+      );
+    } else {
+      amountLeft = 0n;
+    }
+    totalOutputAmount += getDeltaAmountQuoteUnsigned(
+      nextSqrtPrice,
+      current,
+      first.liquidity,
+      false,
+    );
+    current = nextSqrtPrice;
   }
   return { outputAmount: totalOutputAmount, nextSqrtPrice: current, amountLeft };
 }
@@ -479,6 +578,76 @@ export function quoteBuyExactIn(
       tradingFee: fees.tradingFee,
       protocolFee: fees.protocolFee,
       referralFee: fees.referralFee,
+    },
+  };
+}
+
+/** The config fields the sell quote reads: the buy ones plus the bottom of the curve. */
+export interface SellQuoteConfig extends QuoteConfig {
+  readonly sqrtStartPrice: bigint;
+}
+
+export interface SellQuote {
+  /** Base token units sold. */
+  readonly inputAmount: bigint;
+  /** Lamports the seller receives, fees taken off (`output_amount`). */
+  readonly outputAmount: bigint;
+  /** Lamports the curve gave before fees. */
+  readonly grossOutputAmount: bigint;
+  readonly nextSqrtPrice: bigint;
+  readonly tradingFee: bigint;
+  readonly protocolFee: bigint;
+  readonly referralFee: bigint;
+}
+
+export type SellQuoteResult =
+  | { readonly kind: 'ok'; readonly quote: SellQuote }
+  /** quote reserve reached the migration threshold: the curve is complete. */
+  | { readonly kind: 'completed' }
+  /** the curve cannot take the whole amount (SDK: "Insufficient Liquidity"). */
+  | { readonly kind: 'insufficient-liquidity'; readonly amountLeft: bigint };
+
+/**
+ * swapQuote.ts `swapQuoteExactIn` for a sell (base → quote). `getFeeMode` gives fees on the
+ * output (SOL) for a sell in both collect fee modes, and the rate limiter never applies.
+ */
+export function quoteSellExactIn(
+  pool: QuotePool,
+  config: SellQuoteConfig,
+  amountIn: bigint,
+  currentPoint: bigint,
+  hasReferral = false,
+): SellQuoteResult {
+  if (pool.quoteReserve >= config.migrationQuoteThreshold) return { kind: 'completed' };
+  if (amountIn <= 0n) throw new RangeError('amountIn must be positive');
+  if (amountIn > (1n << 64n) - 1n) throw new RangeError('amountIn must fit in u64');
+  const tradeFeeNumerator = getTotalFeeNumerator(
+    config.poolFees,
+    pool,
+    currentPoint,
+    amountIn,
+    true,
+  );
+  const swap = calculateBaseToQuoteFromAmountIn(
+    config.curve,
+    config.sqrtStartPrice,
+    pool.sqrtPrice,
+    amountIn,
+  );
+  if (swap.amountLeft !== 0n) {
+    return { kind: 'insufficient-liquidity', amountLeft: swap.amountLeft };
+  }
+  const fee = getFeeOnAmount(tradeFeeNumerator, swap.outputAmount, hasReferral);
+  return {
+    kind: 'ok',
+    quote: {
+      inputAmount: amountIn,
+      outputAmount: fee.amount,
+      grossOutputAmount: swap.outputAmount,
+      nextSqrtPrice: swap.nextSqrtPrice,
+      tradingFee: fee.tradingFee,
+      protocolFee: fee.protocolFee,
+      referralFee: fee.referralFee,
     },
   };
 }

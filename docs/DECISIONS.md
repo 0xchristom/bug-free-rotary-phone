@@ -1118,7 +1118,7 @@ Rejestr decyzji i rozbieżności z dokumentacją zewnętrzną. Nowe wpisy dopisu
   - **Bez podpisu i bez wysyłki w etapie 1:** `src/worker/**` nietknięte. Devnet sprawdzony `simulateTransaction` bez podpisów (`sigVerify: false`) z publicznym adresem portfela głównego devnet jako płatnikiem.
 - Konsekwencje / alternatywy:
   - Fixtures (`tests/fixtures/meteora-dbc.mainnet.json`: 4 zakupy, opłata z tokenu; `meteora-dbc.devnet.json`: 2 zakupy, opłata z SOL, tryb PartialFill, który przy kwocie mieszczącej się na krzywej daje to samo co ExactIn): stan puli odczytany po jej najnowszej sygnaturze i pierwsza udana transakcja po tym odczycie. Oczekiwana liczba tokenów pochodzi z sald płatnika w meta transakcji. Przy zbieraniu każda wycena zgadzała się też z `output_amount` i `next_sqrt_price` ze zdarzenia `EvtSwap2`.
-  - Sprzedaż, pule po migracji (DAMM) i tokeny z hookiem transferowym są poza zakresem.
+  - Sprzedaż (od BUNNDLY-63: D-054), pule po migracji (DAMM) i tokeny z hookiem transferowym są poza zakresem.
   - Odrzucone: SDK jako zależność (drugi stos Solany, `bn.js`), `swap` v1 (prawdziwe zakupy używają `swap2`).
 
 ## D-054: Dashboard w układzie makiety v2, dziennik i wykrycia na ekranie Activity

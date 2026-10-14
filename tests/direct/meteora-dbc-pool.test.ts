@@ -10,7 +10,9 @@ import {
   decodeVirtualPool,
   fetchDbcPool,
   quoteDbcBuy,
+  quoteDbcSell,
   quoteFromState,
+  sellQuoteFromState,
   type DbcPoolState,
   type DbcRpc,
 } from '../../src/direct/meteora-dbc/index.ts';
@@ -189,5 +191,112 @@ describe('checkBaseMint', () => {
 
   it('an account of another program is not a token mint', () => {
     expect(checkBaseMint(DBC, new Uint8Array(82))).toEqual({ unsupported: 'not-a-token-mint' });
+  });
+});
+
+describe('sell: explicit results and the slippage floor', () => {
+  const real: DbcPoolState = {
+    address: c.pool,
+    pool: decodeVirtualPool(bytes(c.poolData), encode),
+    config: decodePoolConfig(bytes(c.configData), encode),
+    baseTokenProgram: 'token-2022',
+  };
+  const now = BigInt(c.blockTime);
+  // The hand-made curve of meteora-dbc-sell.test.ts on the real accounts: √P 1 → 2 with
+  // L = 1e9·2^64, the pool at the top, a flat 1% fee. 1e8 tokens → 329 999 999 lamports.
+  const Q64 = 1n << 64n;
+  const state: DbcPoolState = {
+    ...real,
+    pool: {
+      ...real.pool,
+      sqrtPrice: 2n * Q64,
+      quoteReserve: 1_000_000_000n,
+      activationPoint: 0n,
+      volatilityAccumulator: 0n,
+      isMigrated: false,
+    },
+    config: {
+      ...real.config,
+      migrationQuoteThreshold: 10n ** 12n,
+      migrationSqrtPrice: 2n * Q64,
+      sqrtStartPrice: Q64,
+      curve: [{ sqrtPrice: 2n * Q64, liquidity: 1_000_000_000n * Q64 }],
+      poolFees: {
+        baseFee: {
+          cliffFeeNumerator: 10_000_000n,
+          firstFactor: 0,
+          secondFactor: 0n,
+          thirdFactor: 0n,
+          baseFeeMode: 0,
+        },
+        dynamicFee: { ...real.config.poolFees.dynamicFee, initialized: 0 },
+      },
+    },
+  };
+
+  it('minimum SOL for slippage 0, 1% and 50%, rounded down', () => {
+    const at = (bps: number) => {
+      const r = sellQuoteFromState(state, 100_000_000n, bps, now);
+      if (r.kind !== 'ok') throw new Error(r.kind);
+      expect(r.quote.outputAmount).toBe(329_999_999n);
+      return r.minimumAmountOut;
+    };
+    expect(at(0)).toBe(329_999_999n);
+    // 329 999 999 · 0.99 = 326 699 999.01 → 326 699 999
+    expect(at(100)).toBe(326_699_999n);
+    // 329 999 999 · 0.5 = 164 999 999.5 → 164 999 999
+    expect(at(5000)).toBe(164_999_999n);
+  });
+
+  it('zero tokens: zero-amount, before any RPC read', async () => {
+    expect(sellQuoteFromState(state, 0n, 0, now)).toEqual({ kind: 'zero-amount' });
+    const { rpc, calls } = fakeRpc([{ pubkey: c.pool, account: poolAccount }], known);
+    expect(await quoteDbcSell(rpc, c.baseMint, 0n, 100)).toEqual({ kind: 'zero-amount' });
+    expect(calls).toEqual([]);
+  });
+
+  it('no pool for the mint: no-pool', async () => {
+    const { rpc } = fakeRpc([], known);
+    expect(await quoteDbcSell(rpc, c.baseMint, 1_000n, 100)).toEqual({ kind: 'no-pool' });
+  });
+
+  it('a migrated pool and a full curve are "graduated", with no quote', () => {
+    const migrated = { ...state, pool: { ...state.pool, isMigrated: true } };
+    expect(sellQuoteFromState(migrated, 1n, 0, now).kind).toBe('graduated');
+    const full = {
+      ...state,
+      pool: { ...state.pool, quoteReserve: state.config.migrationQuoteThreshold },
+    };
+    expect(sellQuoteFromState(full, 1n, 0, now).kind).toBe('graduated');
+  });
+
+  it('more tokens than the pool has SOL for: insufficient liquidity with the rest', () => {
+    // the segment takes 5e8 tokens down to the curve start; 6e8 leaves 1e8
+    expect(sellQuoteFromState(state, 600_000_000n, 0, now)).toMatchObject({
+      kind: 'insufficient-liquidity',
+      amountLeft: 100_000_000n,
+    });
+  });
+
+  it('before activation: not-active; another quote token: unsupported-quote', () => {
+    const later = { ...state, pool: { ...state.pool, activationPoint: now + 10n } };
+    expect(sellQuoteFromState(later, 1_000n, 0, now)).toMatchObject({
+      kind: 'not-active',
+      activationPoint: now + 10n,
+    });
+    const usdc = {
+      ...state,
+      config: { ...state.config, quoteMint: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v' },
+    };
+    expect(sellQuoteFromState(usdc, 1n, 0, now).kind).toBe('unsupported-quote');
+  });
+
+  it('quoteDbcSell on the real pool reads the point the config counts in', async () => {
+    const { rpc } = fakeRpc([{ pubkey: c.pool, account: poolAccount }], known);
+    const r = await quoteDbcSell(rpc, c.baseMint, 1_000_000n, 100);
+    if (r.kind !== 'ok') throw new Error(r.kind);
+    expect(r.currentPoint).toBe(
+      real.config.activationType === 0 ? BigInt(c.slot) : BigInt(c.blockTime),
+    );
   });
 });
