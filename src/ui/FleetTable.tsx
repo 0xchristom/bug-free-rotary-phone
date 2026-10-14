@@ -1,6 +1,7 @@
 import {
   memo,
   useCallback,
+  useEffect,
   useId,
   useLayoutEffect,
   useMemo,
@@ -21,11 +22,11 @@ import { VERIFY_MESSAGES, type VerifyStatus } from '../executor/verify.ts';
 import type { FeedState } from '../chain/balance-stream.ts';
 import type { Side } from '../executor/executor.ts';
 import { AddressQr } from './AddressQr.tsx';
-import { fillOf, type FillTone } from './fill.ts';
+import { fillOf, tokensText, type FillTone } from './fill.ts';
 import { FEED_LABELS } from './shell-status.ts';
 import { rowState, type RowState } from './fleet-math.ts';
 import { shortAddress } from './short-address.ts';
-import { formatSol, formatUnits } from './sol.ts';
+import { formatSol, formatSolChange, formatUnits } from './sol.ts';
 import {
   amountLabel,
   amountText,
@@ -130,6 +131,8 @@ interface RowProps extends FleetRowData {
 
 /** Shown where there is no value yet. */
 const NONE = '—';
+/** How long a balance change stays under the balance (BUNNDLY-92, the mockup's 4 s). */
+const DELTA_MS = 4_000;
 /** Columns of the table without the group column, for the row that says no wallet matches. */
 const COLUMNS = 11;
 
@@ -300,7 +303,11 @@ const FleetRow = memo(function FleetRow(p: RowProps) {
   // A changed balance flashes its cell once (BUNNDLY-57); the first value does not. Done
   // on the element, so the row still renders once per change; CSS turns the animation off
   // with prefers-reduced-motion.
+  // The change itself shows under the number for DELTA_MS (BUNNDLY-92): the difference of
+  // the two reads in lamports, never of the shown text.
   const balanceRef = useRef<HTMLSpanElement>(null);
+  const deltaRef = useRef<HTMLSpanElement>(null);
+  const deltaTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const shownBalance = useRef(p.balance);
   useLayoutEffect(() => {
     const before = shownBalance.current;
@@ -310,7 +317,23 @@ const FleetRow = memo(function FleetRow(p: RowProps) {
     el.classList.remove('bal-flash');
     el.getBoundingClientRect(); // a reflow restarts the animation of a quick second change
     el.classList.add('bal-flash');
+    const delta = deltaRef.current;
+    if (delta === null) return;
+    delta.textContent = formatSolChange(p.balance - before);
+    delta.dataset.sign = p.balance > before ? 'up' : 'down';
+    if (deltaTimer.current !== null) clearTimeout(deltaTimer.current);
+    deltaTimer.current = setTimeout(() => {
+      deltaTimer.current = null;
+      delta.textContent = '';
+      delete delta.dataset.sign;
+    }, DELTA_MS);
   }, [p.balance]);
+  useEffect(
+    () => () => {
+      if (deltaTimer.current !== null) clearTimeout(deltaTimer.current);
+    },
+    [],
+  );
   const { index, onTrade } = p;
   const save = useCallback((patch: WalletPatch) => onTrade(index, patch), [index, onTrade]);
   const maxSpend = p.spend;
@@ -409,10 +432,13 @@ const FleetRow = memo(function FleetRow(p: RowProps) {
         {p.balance === null ? (
           NONE
         ) : (
-          <span ref={balanceRef} className="bal">
-            <SolIcon />
-            {formatSol(p.balance)}
-          </span>
+          <>
+            <span ref={balanceRef} className="bal">
+              <SolIcon />
+              {formatSol(p.balance)}
+            </span>
+            <span ref={deltaRef} className="bal-delta" aria-live="off" />
+          </>
         )}
       </td>
       <td>
@@ -578,6 +604,7 @@ function SortHeader({
   sort,
   onSort,
   note,
+  className,
 }: {
   readonly label: string;
   /** Accessible name of the column when it differs from the visible label. */
@@ -587,11 +614,13 @@ function SortHeader({
   readonly onSort: (key: SortKey) => void;
   /** Shown next to the sort button, outside it (the column's name stays `name`). */
   readonly note?: ReactNode;
+  readonly className?: string;
 }) {
   const active = sort.key === sortKey;
   return (
     <th
       scope="col"
+      className={className}
       aria-label={name}
       aria-sort={active ? (sort.dir === 1 ? 'ascending' : 'descending') : 'none'}
     >
@@ -638,6 +667,26 @@ export function FleetTable(t: FleetTableProps) {
     const amount = plannedSpend(effective.buyAmount, balance, t.minReserve);
     const selected = t.selected[w.index] ?? true;
     const buy = t.buy?.get(w.index) ?? null;
+    const fill =
+      buy === null
+        ? null
+        : fillOf({
+            state: buy.state,
+            reason: buy.reason,
+            verify: buy.verify,
+            dryRun: t.runDryRun ?? false,
+            side: t.runSide ?? 'buy',
+            attempt: buy.attempt,
+            scheduledAt: buy.scheduledAt ?? null,
+            // only a scheduled row counts down: the others keep their props (memo)
+            now: buy.state === 'SCHEDULED' ? (t.now ?? buy.scheduledAt ?? 0) : 0,
+            paused: t.runPaused ?? false,
+          });
+    // DRY-RUN sends nothing, so the chain balance does not move: the quote's amount, "≈".
+    const estimate =
+      buy !== null && t.runDryRun === true && t.token
+        ? tokensText(buy, t.token.decimals, true, t.runSide ?? 'buy')
+        : null;
     const filterable: FilterWallet = {
       selected,
       buy,
@@ -653,12 +702,15 @@ export function FleetTable(t: FleetTableProps) {
       own,
       effective,
       spend: amount,
+      fill,
+      tokens: estimate?.text ?? tokenText?.get(w.index) ?? null,
       filterable,
       sortable: {
         index: w.index,
         balance,
         amount,
         tokens: t.token?.amounts.get(w.index) ?? null,
+        fill: fill === null ? null : BigInt(fill.percent),
       },
     };
   });
@@ -801,9 +853,13 @@ export function FleetTable(t: FleetTableProps) {
               />
               <th scope="col">Priority fee</th>
               <th scope="col">Slippage</th>
-              <th scope="col" className="c-fill">
-                Fill
-              </th>
+              <SortHeader
+                label="Fill"
+                className="c-fill"
+                sortKey="fill"
+                sort={sort}
+                onSort={onSort}
+              />
               <SortHeader
                 label={
                   t.token
@@ -824,23 +880,9 @@ export function FleetTable(t: FleetTableProps) {
             </tr>
           </thead>
           <tbody>
-            {visibleRows.map(({ wallet: w, own, effective, spend }) => {
+            {visibleRows.map(({ wallet: w, own, effective, spend, fill: rowFill, tokens }) => {
               const buy = t.buy?.get(w.index) ?? null;
-              const fill =
-                buy === null
-                  ? { percent: 0, tone: 'idle' as const, label: '' }
-                  : fillOf({
-                      state: buy.state,
-                      reason: buy.reason,
-                      verify: buy.verify,
-                      dryRun: t.runDryRun ?? false,
-                      side: t.runSide ?? 'buy',
-                      attempt: buy.attempt,
-                      scheduledAt: buy.scheduledAt ?? null,
-                      // only a scheduled row counts down: the others keep their props (memo)
-                      now: buy.state === 'SCHEDULED' ? (t.now ?? buy.scheduledAt ?? 0) : 0,
-                      paused: t.runPaused ?? false,
-                    });
+              const fill = rowFill ?? { percent: 0, tone: 'idle' as const, label: '' };
               return (
                 <FleetRow
                   key={w.index}
@@ -848,7 +890,7 @@ export function FleetTable(t: FleetTableProps) {
                   label={w.label}
                   address={w.address}
                   balance={t.lamports?.get(w.index) ?? null}
-                  token={tokenText?.get(w.index) ?? null}
+                  token={tokens}
                   amountText={amountText(own)}
                   amountUnit={own?.kind === 'percent' ? '%' : 'SOL'}
                   defaultAmount={defaultAmount}

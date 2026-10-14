@@ -106,10 +106,10 @@ describe('search', () => {
 describe('sorting', () => {
   const SOL = 1_000_000_000n;
   const wallets = [
-    { index: 0, balance: 2n * SOL, amount: null, tokens: 5n },
-    { index: 1, balance: null, amount: 100n, tokens: null },
-    { index: 2, balance: SOL, amount: 300n, tokens: 5n },
-    { index: 3, balance: 3n * SOL, amount: 100n, tokens: 1n },
+    { index: 0, balance: 2n * SOL, amount: null, tokens: 5n, fill: 20n },
+    { index: 1, balance: null, amount: 100n, tokens: null, fill: 100n },
+    { index: 2, balance: SOL, amount: 300n, tokens: 5n, fill: null },
+    { index: 3, balance: 3n * SOL, amount: 100n, tokens: 1n, fill: 0n },
   ];
 
   it('the wallet order by default', () => {
@@ -122,6 +122,14 @@ describe('sorting', () => {
     expect(sortWallets(wallets, { key: 'amount', dir: -1 })).toEqual([2, 1, 3, 0]);
     expect(sortWallets(wallets, { key: 'amount', dir: 1 })).toEqual([1, 3, 2, 0]);
     expect(sortWallets(wallets, { key: 'tokens', dir: -1 })).toEqual([0, 2, 3, 1]);
+  });
+
+  // BUNNDLY-92: Fill sorts like the other value columns; a wallet without a buy goes last.
+  it('Fill: the fullest first, then turned round; no buy yet goes last both ways', () => {
+    expect(sortWallets(wallets, { key: 'fill', dir: -1 })).toEqual([1, 0, 3, 2]);
+    expect(sortWallets(wallets, { key: 'fill', dir: 1 })).toEqual([3, 0, 1, 2]);
+    expect(nextSort(DEFAULT_SORT, 'fill')).toEqual({ key: 'fill', dir: -1 });
+    expect(nextSort({ key: 'fill', dir: -1 }, 'fill')).toEqual({ key: 'fill', dir: 1 });
   });
 
   it('a click on the same column turns it round; another column starts high, Wallet low', () => {

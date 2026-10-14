@@ -21,6 +21,11 @@ export function formatSol(lamports: bigint): string {
   return fraction === '' ? whole.toString() : `${whole.toString()}.${fraction}`;
 }
 
+/** A change in lamports → "+0.25" or "−0.1001" (a minus sign, not a hyphen). */
+export function formatSolChange(change: bigint): string {
+  return change >= 0n ? `+${formatSol(change)}` : `−${formatSol(-change)}`;
+}
+
 export type SolInput =
   | { readonly ok: true; readonly lamports: bigint }
   | { readonly ok: false; readonly message: string };

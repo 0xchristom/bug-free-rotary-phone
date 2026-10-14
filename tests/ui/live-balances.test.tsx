@@ -117,8 +117,9 @@ describe('live balances in the table', () => {
     });
     const before = new Map(renders);
     t.sol(42, 2_718_281_828n);
+    // the balance and, under it, the change from 1 SOL (BUNNDLY-92)
     await waitFor(() => {
-      expect(cells('W43')[BALANCE]).toBe('2.718281828');
+      expect(cells('W43')[BALANCE]).toBe('2.718281828+1.718281828');
     });
     const changed = [...renders].filter(([i, n]) => n !== before.get(i)).map(([i]) => i);
     expect(changed).toEqual([42]);
@@ -127,6 +128,43 @@ describe('live balances in the table', () => {
     expect(cells('W44')[BALANCE]).toBe('1');
     expect(flashing()).toEqual(['W43']);
   }, 30_000);
+
+  // BUNNDLY-92: the change of the two reads in lamports, for 4 s, then gone.
+  it('a change shows under the balance for 4 s: +0.25, then −0.1001, then nothing', async () => {
+    const t = setup();
+    await ready();
+    await waitFor(() => {
+      expect(cells('W01')[BALANCE]).toBe('1');
+    });
+    const delta = (): HTMLElement => {
+      const el = row('W01').querySelector<HTMLElement>('.bal-delta');
+      if (!el) throw new Error('no delta');
+      return el;
+    };
+    expect(delta().textContent).toBe('');
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      t.sol(0, 1_250_000_000n);
+      await act(() => vi.advanceTimersByTimeAsync(0));
+      expect(delta().textContent).toBe('+0.25');
+      expect(delta().dataset.sign).toBe('up');
+      expect(row('W02').querySelector('.bal-delta')?.textContent).toBe('');
+      await act(() => vi.advanceTimersByTimeAsync(3_000));
+      // a second change within the 4 s: its own difference, and its own 4 s
+      t.sol(0, 1_149_900_000n);
+      await act(() => vi.advanceTimersByTimeAsync(0));
+      expect(delta().textContent).toBe('−0.1001');
+      expect(delta().dataset.sign).toBe('down');
+      await act(() => vi.advanceTimersByTimeAsync(3_999));
+      expect(delta().textContent).toBe('−0.1001');
+      await act(() => vi.advanceTimersByTimeAsync(1));
+      expect(delta().textContent).toBe('');
+      expect(delta().dataset.sign).toBeUndefined();
+      expect(cells('W01')[BALANCE]).toBe('1.1499');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 
   it('the same value again changes nothing and renders nothing', async () => {
     const renders = new Map<number, number>();
@@ -155,8 +193,9 @@ describe('live balances in the table', () => {
     await act(() => Promise.resolve());
     expect(cells('W02')[BALANCE]).toBe('1');
     t.sol(1, 9n * SOL, 'mainnet');
+    // 9 SOL, and the change from 1 under it
     await waitFor(() => {
-      expect(cells('W02')[BALANCE]).toBe('9');
+      expect(cells('W02')[BALANCE]).toBe('9+8');
     });
   });
 });
