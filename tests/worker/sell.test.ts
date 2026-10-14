@@ -73,6 +73,8 @@ async function setup(o: Setup = {}) {
   });
   const reads: string[][] = [];
   const failing = { tokens: false };
+  /** While set, token reads wait for it: the moment between the read and its answer. */
+  const held: { tokens: Promise<void> | null } = { tokens: null };
   const h = createVaultHandler({
     chain,
     executor: {
@@ -82,8 +84,9 @@ async function setup(o: Setup = {}) {
       ...(o.noRpc
         ? {}
         : {
-            tokens: (owners) => {
+            tokens: async (owners) => {
               reads.push([...owners]);
+              await held.tokens;
               return failing.tokens
                 ? Promise.reject(new Error('https://rpc.example/?api-key=heliusSellKey'))
                 : fakeChain.tokensAfterSells(owners);
@@ -164,6 +167,7 @@ async function setup(o: Setup = {}) {
     asked,
     reads,
     failing,
+    held,
   };
 }
 
@@ -449,6 +453,26 @@ describe('startSell refusals', () => {
     expect(await codeOf(t.h.handle({ type: 'lock' }))).toBe('BUY_RUNNING');
     await runToEnd(t.clock, t.events);
     expect(await codeOf(t.h.handle({ type: 'lock' }))).toBe('ok');
+  });
+
+  it('auto-lock while the balances are read: no plan, no order, nothing signed', async () => {
+    const t = await setup();
+    t.hold(0, 100n);
+    let answer = (): void => undefined;
+    t.held.tokens = new Promise((resolve) => {
+      answer = resolve;
+    });
+    const selling = codeOf(t.sell([0]));
+    await vi.waitFor(() => {
+      expect(t.reads).toHaveLength(1);
+    });
+    await t.clock.runUntil(t.clock.now() + 60_000);
+    expect(t.h.checkAutoLock()).toBe(true);
+    answer();
+    expect(await selling).toBe('VAULT_LOCKED');
+    await t.clock.runUntil();
+    expect(t.jupiter.calls).toHaveLength(0);
+    expect(t.events).toEqual([]);
   });
 
   it('locked vault, no way to read balances, and a failed read', async () => {

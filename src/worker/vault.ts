@@ -395,8 +395,6 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
   /** SOL balances from the last refresh of this session (pre-check before `/order`). */
   let balances = new Map<number, bigint>();
   let buy: { readonly run: ExecutorRun; status: BuyStatus } | null = null;
-  /** Read through a call, so a check after an await is not narrowed away by the one before it. */
-  const buyRunning = (): boolean => buy !== null;
   /**
    * The running sell: the mint and what each wallet may put in, from the balance read at
    * its start. The signer checks every sell order against it (BUNNDLY-60).
@@ -740,9 +738,9 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
       // Only our own codes cross; anything else may carry the URL with the key.
       throw isAppError(e) ? e : new AppError('RPC_UNAVAILABLE');
     }
-    // Locked while reading, or a detection (mode B) started a buy meanwhile.
+    // Auto-lock runs outside the request queue and may lock the vault while it reads. A buy
+    // cannot start meanwhile: requests are queued and a watcher armed before is refused.
     if (session !== readSession || unlocked === null) throw new AppError('VAULT_LOCKED');
-    if (buyRunning()) throw new AppError('BUY_RUNNING');
     const wallets = picked.map((w, i) => ({
       index: w.index,
       address: w.address,
