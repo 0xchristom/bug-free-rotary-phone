@@ -438,6 +438,9 @@ describe('selected wallets and the target (BUNNDLY-59)', () => {
   it('ARM on a token mint → TARGET_KIND_MISMATCH, no socket and no buy', async () => {
     const t = await setup();
     const armed = t.h.handle({ type: 'arm', creator: MINT, wallets: all(t.h) });
+    // Time for the target check and for the balance read an arming without it would do:
+    // the answer must be the refusal, not a hang.
+    await t.clock.runUntil(t.clock.now() + RPC_DELAY_MS);
     await t.clock.runUntil(t.clock.now() + RPC_DELAY_MS);
     await rejectsWith(armed, 'TARGET_KIND_MISMATCH');
     expect(t.sockets).toHaveLength(0);
