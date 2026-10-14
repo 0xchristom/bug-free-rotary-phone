@@ -416,7 +416,7 @@ describe('settings and write-only API keys (BUNNDLY-15)', () => {
     noRouteBackoffMaxMs: 4_000,
     mode: 'continuous' as const,
     explorer: 'orb' as const,
-    autoLockMinutes: 30,
+    autoLockMinutes: 60 as const,
     jupiterPlan: 'custom' as const,
     orderRpm: 1_200,
   };
@@ -581,19 +581,117 @@ describe('settings and write-only API keys (BUNNDLY-15)', () => {
     );
   });
 
-  it('auto-lock follows the autoLockMinutes setting', async () => {
+  it('a new fleet has auto-lock off: after 3 h idle the vault is still open (BUNNDLY-51)', async () => {
+    const c = clock();
+    const h = createVaultHandler({ now: c.now });
+    const res = await call<VaultFileResult>(h, {
+      type: 'create',
+      fleetName: 'Zegar',
+      walletCount: 1,
+      password: PASSWORD,
+    });
+    expect(res.info.settings.global.autoLockMinutes).toBeNull();
+    const buffers = heldBuffers(h);
+    c.advance(3 * 60 * 60_000);
+    expect(h.checkAutoLock()).toBe(false);
+    expect(h.inspect().unlocked).not.toBeNull();
+    expect(buffers.some((b) => b.some((x) => x !== 0))).toBe(true);
+    // and a request after the 3 h still works on the open vault
+    expect((await call<VaultStatus>(h, { type: 'status' })).locked).toBe(false);
+    await call(h, { type: 'addWallets', count: 1 });
+  });
+
+  it.each([15, 60, 120] as const)(
+    'auto-lock after %i min: open a minute before, locked and zeroed a minute after',
+    async (minutes) => {
+      const c = clock();
+      const h = createVaultHandler({ now: c.now });
+      await call(h, { type: 'create', fleetName: 'Zegar', walletCount: 1, password: PASSWORD });
+      const settings = {
+        ...defaultFleetSettings(),
+        global: { ...DEFAULT_GLOBAL_SETTINGS, autoLockMinutes: minutes },
+      };
+      await call(h, { type: 'saveSettings', settings }); // the last activity
+      const buffers = heldBuffers(h);
+      c.advance((minutes - 1) * 60_000);
+      expect(h.checkAutoLock()).toBe(false);
+      expect(h.inspect().unlocked).not.toBeNull();
+      c.advance(2 * 60_000);
+      expect(h.checkAutoLock()).toBe(true);
+      expect(h.inspect().unlocked).toBeNull();
+      expect(buffers.every((b) => b.every((x) => x === 0))).toBe(true);
+      await expectCode(h.handle({ type: 'addWallets', count: 1 }), 'VAULT_LOCKED');
+    },
+  );
+
+  it('switching auto-lock off again keeps the vault open past the old time', async () => {
     const c = clock();
     const h = createVaultHandler({ now: c.now });
     await call(h, { type: 'create', fleetName: 'Zegar', walletCount: 1, password: PASSWORD });
-    const settings = {
+    const on = {
       ...defaultFleetSettings(),
-      global: { ...DEFAULT_GLOBAL_SETTINGS, autoLockMinutes: 2 },
+      global: { ...DEFAULT_GLOBAL_SETTINGS, autoLockMinutes: 15 },
     };
-    await call(h, { type: 'saveSettings', settings });
-    c.advance(2 * 60_000 - 1);
+    await call(h, { type: 'saveSettings', settings: on });
+    await call(h, { type: 'saveSettings', settings: defaultFleetSettings() });
+    c.advance(16 * 60_000);
     expect(h.checkAutoLock()).toBe(false);
-    c.advance(1);
-    expect(h.checkAutoLock()).toBe(true);
+    expect(h.inspect().unlocked).not.toBeNull();
+  });
+
+  it.each<[string, unknown, number | null, boolean]>([
+    ['the old default 15', 15, 15, false],
+    ['60', 60, 60, false],
+    ['120', 120, 120, false],
+    ['off', null, null, false],
+    ['30 (an old free value)', 30, null, true],
+    ['1', 1, null, true],
+    ['a string', '15', null, true],
+  ])(
+    'a file with auto-lock %s opens; the value is kept or turns off with a notice',
+    async (_label, saved, expected, reset) => {
+      const { fileText } = await fresh();
+      const opened = await reopen(fileText);
+      const json = JSON.parse(secretsToJson(opened.secrets)) as {
+        settings: { global: Record<string, unknown> };
+      };
+      json.settings.global.autoLockMinutes = saved;
+      const encrypted = await encryptSecrets(
+        new TextEncoder().encode(JSON.stringify(json)),
+        PASSWORD,
+      );
+      const h = createVaultHandler();
+      const status = await call<VaultStatus>(h, {
+        type: 'unlock',
+        fileText: serializeKeystoreFile({ ...opened.file, ...encrypted }),
+        password: PASSWORD,
+      });
+      expect(status.locked).toBe(false);
+      expect(status.info?.settings.global.autoLockMinutes).toBe(expected);
+      if (reset) expect(status.info?.settings.resetFields).toEqual(['autoLockMinutes']);
+      else expect(status.info?.settings.resetFields).toBeUndefined();
+    },
+  );
+
+  it('a file without the auto-lock field opens with auto-lock off and no notice', async () => {
+    const { fileText } = await fresh();
+    const opened = await reopen(fileText);
+    const json = JSON.parse(secretsToJson(opened.secrets)) as {
+      settings: { global: Record<string, unknown> };
+    };
+    delete json.settings.global.autoLockMinutes;
+    const encrypted = await encryptSecrets(
+      new TextEncoder().encode(JSON.stringify(json)),
+      PASSWORD,
+    );
+    const h = createVaultHandler();
+    const status = await call<VaultStatus>(h, {
+      type: 'unlock',
+      fileText: serializeKeystoreFile({ ...opened.file, ...encrypted }),
+      password: PASSWORD,
+    });
+    expect(status.info?.settings.global.autoLockMinutes).toBeNull();
+    expect(status.info?.settings.resetFields).toBeUndefined();
   });
 
   it('a reset setting is reported in VaultInfo until the next save', async () => {

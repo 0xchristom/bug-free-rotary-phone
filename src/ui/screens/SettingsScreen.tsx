@@ -665,8 +665,8 @@ export function SettingsScreen({ info, storage, onUnsavedChange }: SettingsScree
             ))}
           </select>
           <p className="hint">
-            Off: the vault stays open until you lock it or close the tab. While armed or
-            buying it never locks itself.
+            Off: the vault stays open until you lock it or close the tab. While armed or buying it
+            never locks itself.
           </p>
         </fieldset>
 

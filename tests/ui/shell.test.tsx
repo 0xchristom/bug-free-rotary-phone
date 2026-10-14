@@ -5,6 +5,7 @@ import { setupUser } from './user.ts';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AppError } from '../../src/core/errors.ts';
 import type { Network } from '../../src/core/network.ts';
+import type { AutoLockMinutes } from '../../src/core/settings.ts';
 import { App } from '../../src/ui/App.tsx';
 import { StatusBar } from '../../src/ui/StatusBar.tsx';
 import type { WatchStatus } from '../../src/watcher/watch.ts';
@@ -169,7 +170,7 @@ describe('status rail: the rest of the line', () => {
     };
   }
 
-  function show(status: VaultStatus | null, autoLockMinutes = 15) {
+  function show(status: VaultStatus | null, autoLockMinutes: AutoLockMinutes | null = 15) {
     render(
       <StatusBar version="1.2.3" status={status} read={null} autoLockMinutes={autoLockMinutes} />,
     );
@@ -184,9 +185,14 @@ describe('status rail: the rest of the line', () => {
     expect(show(LOCKED).textContent).toBe('v1.2.3Mainnet');
   });
 
-  it('an open fleet shows the auto-lock time from the settings and no socket', () => {
-    const text = show(unlocked(), 7).textContent;
-    expect(text).toContain('Auto-lock after 7 min of inactivity');
+  it.each([
+    [15, 'Auto-lock after 15 min of inactivity'],
+    [60, 'Auto-lock after 1 h of inactivity'],
+    [120, 'Auto-lock after 2 h of inactivity'],
+    [null, 'Auto-lock: off'],
+  ] as const)('an open fleet with auto-lock %s says "%s" and no socket', (minutes, label) => {
+    const text = show(unlocked(), minutes).textContent;
+    expect(text).toContain(label);
     expect(text).toContain('Backup: manual');
     expect(text).toContain('WebSocket: off');
   });
@@ -195,6 +201,12 @@ describe('status rail: the rest of the line', () => {
     const text = show(watching('connected')).textContent;
     expect(text).toContain('Armed: auto-lock is paused');
     expect(text).not.toContain('Auto-lock after');
+  });
+
+  it('an armed fleet with auto-lock off says it is off, not paused', () => {
+    const text = show(watching('connected'), null).textContent;
+    expect(text).toContain('Auto-lock: off');
+    expect(text).not.toContain('paused');
   });
 
   it.each([

@@ -83,7 +83,9 @@ describe('form', () => {
     expect(field('“No route” retry window').value).toBe('20');
     expect(field('Retry delay: first').value).toBe('500');
     expect(field('Retry delay: longest').value).toBe('2000');
-    expect(field('Auto-lock after inactivity').value).toBe('15');
+    expect(
+      screen.getByRole<HTMLSelectElement>('combobox', { name: 'Auto-lock after inactivity' }).value,
+    ).toBe('off');
     expect(screen.getByRole<HTMLInputElement>('radio', { name: /^One-shot/u }).checked).toBe(true);
     expect(
       screen.getByRole<HTMLSelectElement>('combobox', { name: 'Transaction explorer' }).value,
@@ -114,7 +116,6 @@ describe('form', () => {
       '400',
       'The longest retry delay cannot be shorter than the first one.',
     ],
-    ['Auto-lock after inactivity', '0', 'Auto-lock must be between 1 and 120 minutes.'],
   ])('%s = %s → English message, save disabled', async (label, value, message) => {
     const { user } = await setup();
     await retype(user, label, value);
@@ -133,7 +134,6 @@ describe('form', () => {
       ['“No route” retry window', 's'],
       ['Retry delay: first', 'ms'],
       ['Retry delay: longest', 'ms'],
-      ['Auto-lock after inactivity', 'min'],
       ['Sell part', '%'],
       ['Buy slippage', '%'],
       ['Sell slippage', '%'],
@@ -196,7 +196,10 @@ describe('saving', () => {
     await retype(user, '“No route” retry window', '30');
     await retype(user, 'Retry delay: first', '250');
     await retype(user, 'Retry delay: longest', '4000');
-    await retype(user, 'Auto-lock after inactivity', '30');
+    await user.selectOptions(
+      screen.getByRole('combobox', { name: 'Auto-lock after inactivity' }),
+      '60',
+    );
     await user.selectOptions(screen.getByRole('combobox', { name: 'Transaction explorer' }), 'orb');
     await user.selectOptions(screen.getByRole('combobox', { name: 'Jupiter plan' }), 'launch');
     await saveSettings(user);
@@ -210,13 +213,13 @@ describe('saving', () => {
       noRouteBackoffMinMs: 250,
       noRouteBackoffMaxMs: 4_000,
       explorer: 'orb',
-      autoLockMinutes: 30,
+      autoLockMinutes: 60,
       jupiterPlan: 'launch',
       orderRpm: 3000,
     };
     expect(handler.inspect().unlocked?.settings.global).toEqual(expected);
     // the header follows the new auto-lock time
-    expect(screen.getByText('Auto-lock after 30 min of inactivity')).toBeTruthy();
+    expect(screen.getByText('Auto-lock after 1 h of inactivity')).toBeTruthy();
     expect(screen.getByText(/the fleet file is not updated yet/u)).toBeTruthy();
 
     await user.click(screen.getByRole('button', { name: 'Save the updated fleet file' }));
@@ -226,6 +229,55 @@ describe('saving', () => {
     const reopened = await openKeystore(parseKeystoreFile(saved), PASSWORD);
     expect(reopened.secrets.settings.global).toEqual(expected);
   });
+
+  it('auto-lock is a list of exactly four choices, off first (BUNNDLY-51)', async () => {
+    await setup();
+    const select = screen.getByRole('combobox', { name: 'Auto-lock after inactivity' });
+    const options = within(select).getAllByRole<HTMLOptionElement>('option');
+    expect(options.map((o) => [o.value, o.textContent])).toEqual([
+      ['off', 'Off'],
+      ['15', '15 min'],
+      ['60', '1 h'],
+      ['120', '2 h'],
+    ]);
+    const rail = within(screen.getByRole('contentinfo', { name: 'Status' }));
+    expect(rail.getByText('Auto-lock: off')).toBeTruthy();
+  });
+
+  it.each<[string, number | null, string]>([
+    ['15', 15, 'Auto-lock after 15 min of inactivity'],
+    ['60', 60, 'Auto-lock after 1 h of inactivity'],
+    ['120', 120, 'Auto-lock after 2 h of inactivity'],
+    ['off', null, 'Auto-lock: off'],
+  ])(
+    'auto-lock %s is saved in the worker and shown in the status rail',
+    async (value, minutes, rail) => {
+      const { handler, user, requests } = await setup();
+      const select = screen.getByRole('combobox', { name: 'Auto-lock after inactivity' });
+      // from another value, so "off" is a real change too
+      await user.selectOptions(select, value === 'off' ? '120' : 'off');
+      if (value === 'off') {
+        await saveSettings(user);
+        // the form opens again once the file is written
+        await user.click(screen.getByRole('button', { name: 'Save the updated fleet file' }));
+        await screen.findByText(`Saved ${FILE_NAME} with the new settings.`);
+        expect(handler.inspect().unlocked?.settings.global.autoLockMinutes).toBe(120);
+      }
+      requests.length = 0;
+      await user.selectOptions(select, value);
+      await user.click(saveButton());
+      await waitFor(() => {
+        expect(handler.inspect().unlocked?.settings.global.autoLockMinutes).toBe(minutes);
+      });
+      const sent = requests.find(
+        (r): r is { type: 'saveSettings'; settings: { global: { autoLockMinutes: unknown } } } =>
+          (r as { type?: string }).type === 'saveSettings',
+      );
+      expect(sent?.settings.global.autoLockMinutes).toBe(minutes);
+      const status = within(screen.getByRole('contentinfo', { name: 'Status' }));
+      await status.findByText(rail);
+    },
+  );
 
   it('typed keys go to the worker only; the form is cleared and shows "Set."', async () => {
     const { handler, user, requests } = await setup();

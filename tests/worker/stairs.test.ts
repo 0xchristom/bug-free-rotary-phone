@@ -5,7 +5,13 @@
  */
 import type { RpcTransport } from '@solana/kit';
 import { describe, expect, it, vi } from 'vitest';
-import { AppError, defaultFleetSettings, type FleetSettingsV1 } from '../../src/core/index.ts';
+import {
+  AUTO_LOCK_CHOICES,
+  AppError,
+  defaultFleetSettings,
+  type AutoLockMinutes,
+  type FleetSettingsV1,
+} from '../../src/core/index.ts';
 import type { ExecutorEvent, RunEvent } from '../../src/executor/index.ts';
 import type { BuyStatus, VaultStatus } from '../../src/worker/protocol.ts';
 import { createVaultHandler } from '../../src/worker/vault.ts';
@@ -49,7 +55,8 @@ const chain = {
   sleep: () => Promise.resolve(),
 };
 
-async function setup() {
+/** `autoLockMinutes`: auto-lock from the fleet setting instead of the 10 min override. */
+async function setup(autoLockMinutes?: AutoLockMinutes) {
   const clock = new FakeClock();
   const jupiter = new FakeJupiter(clock, {
     transaction: (taker) => buildTransaction({ feePayer: taker }),
@@ -62,7 +69,7 @@ async function setup() {
       tokens: (owners) => Promise.resolve({ amounts: owners.map(() => 5_000_000n), slot: 1n }),
     },
     now: () => clock.now(),
-    autoLockMs: 10 * 60_000,
+    ...(autoLockMinutes === undefined ? { autoLockMs: 10 * 60_000 } : {}),
   });
   const events: ExecutorEvent[] = [];
   h.onEvent((e) => {
@@ -79,6 +86,7 @@ async function setup() {
   const base = defaultFleetSettings();
   const settings: FleetSettingsV1 = {
     ...base,
+    global: { ...base.global, autoLockMinutes: autoLockMinutes ?? null },
     maxSpend: [0, 1, 2].map((index) => ({ index, lamports: MAX })),
   };
   await h.handle({ type: 'saveSettings', settings, apiKeys: { helius: 'heliusStairsKey' } });
@@ -214,6 +222,24 @@ describe('pauseStairs and resumeStairs requests', () => {
       .filter((p) => p === 'paused' || p === 'resumed');
     expect(phases).toEqual(['paused', 'resumed']);
   });
+
+  it.each(AUTO_LOCK_CHOICES)(
+    'auto-lock after %i min: no lock while a buy runs past that time (BUNNDLY-51)',
+    async (minutes) => {
+      const { clock, h, status, t0 } = await setup(minutes);
+      // Step 2 waits 3 h, longer than any choice: the buy runs all that time.
+      await h.handle({
+        type: 'startBuy',
+        mint: USDC,
+        wallets: [0, 1],
+        stairs: { intervalMs: 3 * 60 * 60 * S, perStep: 1 },
+      });
+      await clock.runUntil(t0 + minutes * 60_000 + 60_000);
+      expect((await status()).buy).not.toBeNull();
+      expect(h.checkAutoLock()).toBe(false);
+      expect(h.inspect().unlocked).not.toBeNull();
+    },
+  );
 
   it('pause of an Immediate run changes nothing', async () => {
     const { clock, h, events, firstOrders } = await setup();

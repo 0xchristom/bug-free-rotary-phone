@@ -317,7 +317,7 @@ describe('an armed group freezes only what its buy depends on (D-039 relaxed)', 
     expect(await codeOf(t.h.handle({ type: 'setNetwork', network: 'devnet' }))).toBe('WATCH_ARMED');
     expect((await t.status()).info?.settings.global.dryRun).toBe(true);
 
-    expect(await codeOf(t.saveWith(global({ explorer: 'orb', autoLockMinutes: 30 })))).toBe('ok');
+    expect(await codeOf(t.saveWith(global({ explorer: 'orb', autoLockMinutes: 60 })))).toBe('ok');
     // the same key again is no change
     expect(await codeOf(t.saveWith((s) => s, { helius: HELIUS_KEY }))).toBe('ok');
 
