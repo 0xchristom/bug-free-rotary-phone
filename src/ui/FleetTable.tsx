@@ -36,6 +36,7 @@ import {
   slippageLabel,
   type WalletPatch,
 } from './trade-edit.ts';
+import { useNotBackedUp } from './use-backup.ts';
 import type { BuyRow } from './use-buy.ts';
 import {
   DEFAULT_SORT,
@@ -303,6 +304,10 @@ function Pair({
  * One wallet. Memoized with primitive props (bigint compares by value), so a balance
  * refresh re-renders only the rows whose numbers changed.
  */
+/** A wallet whose keys the backup folder does not hold yet (BUNNDLY-62). */
+const NOT_BACKED_UP_REASON =
+  'No confirmed backup of this wallet in the backup folder: it does not buy or arm until the folder holds its keys.';
+
 const FleetRow = memo(function FleetRow(p: RowProps) {
   p.probe?.(p.index);
   const [qrOpen, setQrOpen] = useState(false);
@@ -341,6 +346,7 @@ const FleetRow = memo(function FleetRow(p: RowProps) {
     [],
   );
   const { index, onTrade } = p;
+  const notBackedUp = useNotBackedUp(index);
   const save = useCallback((patch: WalletPatch) => onTrade(index, patch), [index, onTrade]);
   const maxSpend = p.spend;
   const state = rowState({
@@ -357,6 +363,7 @@ const FleetRow = memo(function FleetRow(p: RowProps) {
   const txUrl = signature ? transactionUrl(p.explorer, p.network, signature) : null;
   const rowBuyBlocked =
     p.frozen ??
+    (notBackedUp ? NOT_BACKED_UP_REASON : null) ??
     p.buyBlocked ??
     (state.ready ? null : 'This wallet is not ready: ' + idle.text.toLowerCase() + '.');
   const rowSellBlocked = p.frozen ?? p.sellBlocked;
@@ -381,6 +388,11 @@ const FleetRow = memo(function FleetRow(p: RowProps) {
           <Avatar seed={p.address} />
           <div>
             <b className="w-name">{p.label}</b>
+            {notBackedUp && (
+              <Chip size="sm" tone="danger" title={NOT_BACKED_UP_REASON}>
+                Not backed up
+              </Chip>
+            )}
             <span className="addr">
               {/* The address opens its QR code (mockup v2 has no QR button, BUNNDLY-73). */}
               <Popover

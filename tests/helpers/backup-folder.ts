@@ -27,8 +27,12 @@ export interface MemoryFolder extends BackupDirectory {
   readonly files: Map<string, string>;
   /** Every completed write, in order. */
   readonly writes: { readonly name: string; readonly text: string }[];
-  /** Calls of queryPermission. */
-  readonly asked: { count: number };
+  /** Calls of queryPermission (worker) and requestPermission (page, on a click). */
+  readonly asked: { count: number; requested: number };
+  /** The page's request on a click: what the user answers in the browser's prompt. */
+  requestPermission(descriptor: { readonly mode: 'readwrite' }): Promise<FolderPermission>;
+  /** The answer the user gives to requestPermission. */
+  answer: FolderPermission;
   permission: FolderPermission;
   /** The next close of a writable fails (a full disk, a removed folder). */
   failWrites: boolean;
@@ -41,10 +45,16 @@ export function memoryFolder(name = 'Bunndly backups'): MemoryFolder {
     name,
     files: new Map(),
     writes: [],
-    asked: { count: 0 },
+    asked: { count: 0, requested: 0 },
     permission: 'granted',
+    answer: 'granted',
     failWrites: false,
     corruptReads: false,
+    requestPermission() {
+      folder.asked.requested += 1;
+      folder.permission = folder.answer;
+      return Promise.resolve(folder.permission);
+    },
     queryPermission() {
       folder.asked.count += 1;
       return Promise.resolve(folder.permission);

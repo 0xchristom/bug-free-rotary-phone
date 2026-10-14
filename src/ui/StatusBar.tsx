@@ -3,6 +3,7 @@ import { NETWORK_LABELS } from '../core/network.ts';
 import { AUTO_LOCK_LABELS, type AutoLockMinutes } from '../core/settings.ts';
 import type { VaultStatus } from '../worker/protocol.ts';
 import { Chip, FolderIcon } from './kit/index.ts';
+import { backupFailure, type BackupRail } from './use-backup.ts';
 import { FEED_LABELS, type RpcRead } from './shell-status.ts';
 import { connectionLabel, connectionTone } from './watch-labels.ts';
 
@@ -20,9 +21,86 @@ export interface StatusBarProps {
   readonly onExport?: (() => void) | null;
   /** The line where the Dashboard says what a command did (BUNNDLY-90, header-slots.ts). */
   readonly saySlot?: ((element: HTMLElement | null) => void) | undefined;
+  /** The backup folder (BUNNDLY-62); absent: shown as off. */
+  readonly backup?: BackupRail | null;
+  /** Opens the dialog that turns the backup folder on; null while locked. */
+  readonly onBackupSetup?: (() => void) | null;
 }
 
 const SOCKET_TONE = { ok: 'ok', wait: 'warn', bad: 'danger' } as const;
+
+/**
+ * The backup folder's state (BUNNDLY-62), as the worker reported it: "saved" only after
+ * the files were read back and matched, and with the plain-text file it says so.
+ */
+function BackupItem({
+  backup,
+  onSetup,
+}: {
+  readonly backup: BackupRail | null;
+  readonly onSetup: (() => void) | null;
+}) {
+  if (backup?.manual === true) {
+    return (
+      <span
+        className="rail-item"
+        data-tone="warn"
+        title="This browser cannot write to a folder: save the fleet file yourself after every change."
+      >
+        <FolderIcon />
+        Backup: manual download
+      </span>
+    );
+  }
+  const state = backup?.view?.state ?? { kind: 'off' as const };
+  const reconnect = backup === null ? null : backup.reconnect;
+  switch (state.kind) {
+    case 'off':
+      return (
+        <span className="rail-item">
+          <FolderIcon />
+          Backup: off
+          {onSetup && (
+            <button type="button" className="linkbtn" onClick={onSetup}>
+              Set up folder
+            </button>
+          )}
+        </span>
+      );
+    case 'reconnect':
+      return (
+        <span className="rail-item" data-tone="warn">
+          <FolderIcon />
+          <button
+            type="button"
+            className="linkbtn"
+            title={`Give the browser access to the folder “${state.folder}” again`}
+            onClick={() => void reconnect?.()}
+          >
+            Backup: reconnect
+          </button>
+        </span>
+      );
+    case 'failed':
+      return (
+        <span className="rail-item" data-tone="danger" title={backupFailure(state.reason)}>
+          <FolderIcon />
+          Backup: failed
+          <button type="button" className="linkbtn" onClick={() => void reconnect?.()}>
+            Retry
+          </button>
+        </span>
+      );
+    case 'saved':
+      return (
+        <span className="rail-item" data-tone="ok" title={`Folder “${state.folder}”`}>
+          <FolderIcon />
+          Backup: saved {new Date(state.at).toLocaleTimeString('en-GB')}
+          {backup?.view?.plain === true && <b data-tone="warn"> · unencrypted keys</b>}
+        </span>
+      );
+  }
+}
 
 /**
  * The slot and time of the last balance read (BUNNDLY-91), as the worker reported them:
@@ -60,6 +138,8 @@ export function StatusBar({
   autoLockMinutes,
   onExport = null,
   saySlot,
+  backup = null,
+  onBackupSetup = null,
 }: StatusBarProps) {
   const open = status !== null && !status.locked && status.info !== null ? status : null;
   const watch = open?.watch?.armed === true ? open.watch : null;
@@ -88,15 +168,17 @@ export function StatusBar({
           {/* Stays in the page while open, so a screen reader hears what is put in it. */}
           <span ref={saySlot} className="rail-say" role="status" aria-label="Last command" />
           <div className="rail-right">
-            <span className="rail-item">
-              <FolderIcon />
-              Backup: manual
-              {onExport && (
-                <button type="button" className="linkbtn" onClick={onExport}>
-                  Plain export (recovery phrase and keys)
-                </button>
-              )}
-            </span>
+            <BackupItem backup={backup} onSetup={onBackupSetup} />
+            {onExport && (
+              <button
+                type="button"
+                className="linkbtn"
+                aria-label="Plain export (recovery phrase and keys)"
+                onClick={onExport}
+              >
+                Plain export
+              </button>
+            )}
             <span className="rail-sep" aria-hidden="true" />
             {read === null ? (
               <span className="rail-item">RPC: no read yet</span>
