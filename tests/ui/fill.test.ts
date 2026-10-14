@@ -11,6 +11,7 @@ import type {
   WalletState,
 } from '../../src/executor/index.ts';
 import {
+  ARMED_FILL,
   fillOf,
   fleetFill,
   ordinal,
@@ -346,5 +347,18 @@ describe('retry and attempt number in the fill (BUNNDLY-89)', () => {
     [111, '111th'],
   ])('ordinal(%i) is %s', (n, text) => {
     expect(ordinal(n)).toBe(text);
+  });
+});
+
+describe('an armed wallet (BUNNDLY-88)', () => {
+  it('waits for the creator’s token at 0 %, in the watch tone, and counts as in flight', () => {
+    expect(ARMED_FILL).toEqual({
+      percent: 0,
+      tone: 'watch',
+      label: 'Waiting for the creator’s token',
+    });
+    expect(fleetFill([ARMED_FILL, ARMED_FILL]).text).toBe(
+      'Fleet fill · 0 of 2 filled · 2 in flight',
+    );
   });
 });

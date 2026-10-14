@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { WalletReason, WalletState } from '../../src/executor/states.ts';
 import type { VerifyStatus } from '../../src/executor/verify.ts';
+import { fillOf, fleetPart } from '../../src/ui/fill.ts';
 import type { BuyRow } from '../../src/ui/use-buy.ts';
 import {
   DEFAULT_SORT,
@@ -26,7 +27,7 @@ const MAX: WalletReason = { kind: 'FAILED', code: 'MAX_ATTEMPTS', detail: null }
 const CHECKING: WalletReason = { kind: 'UNKNOWN', code: 'EXECUTE_NO_ANSWER', detail: null };
 
 function wallet(b: BuyRow | null, extra: Partial<FilterWallet> = {}): FilterWallet {
-  return { selected: true, buy: b, reserveTooLow: false, ...extra };
+  return { selected: true, buy: b, reserveTooLow: false, armed: false, ...extra };
 }
 
 /** The tabs a wallet shows under, besides "All wallets", in tab order. */
@@ -42,7 +43,10 @@ describe('filter tabs', () => {
     ['no buy yet', wallet(null), ['selected']],
     ['no buy, not selected', wallet(null, { selected: false }), []],
     ['no buy, reserve too low', wallet(null, { reserveTooLow: true }), ['selected', 'attention']],
-    ['waiting in a run', wallet(buy('IDLE')), ['selected', 'flight']],
+    // BUNNDLY-88: the tab counts what Fleet fill counts; IDLE is "Waiting" there
+    ['waiting in a run', wallet(buy('IDLE')), ['selected']],
+    ['scheduled (Stairs)', wallet(buy('SCHEDULED')), ['selected', 'flight']],
+    ['armed, no buy yet', wallet(null, { armed: true }), ['selected', 'flight']],
     ['queued', wallet(buy('QUEUED')), ['selected', 'flight']],
     ['quoting', wallet(buy('QUOTING')), ['selected', 'flight']],
     ['signing', wallet(buy('SIGNING')), ['selected', 'flight']],
@@ -59,7 +63,7 @@ describe('filter tabs', () => {
       wallet(buy('CONFIRMED', null, 'INCREASED')),
       ['selected', 'filled'],
     ],
-    ['bought, not read yet', wallet(buy('CONFIRMED')), ['selected']],
+    ['bought, not read yet', wallet(buy('CONFIRMED')), ['selected', 'flight']],
     ['bought, UNVERIFIABLE', wallet(buy('CONFIRMED', null, 'UNVERIFIABLE')), ['selected']],
     ['bought, MISMATCH', wallet(buy('CONFIRMED', null, 'MISMATCH')), ['selected', 'attention']],
     [
@@ -83,6 +87,31 @@ describe('filter tabs', () => {
   ] as const)('%s', (_name, w, tabs) => {
     expect(matchesFilter('all', w)).toBe(true);
     expect(tabsOf(w)).toEqual(tabs);
+  });
+
+  it('In flight holds exactly the wallets Fleet fill counts in flight, state by state (BUNNDLY-88)', () => {
+    const rows: BuyRow[] = [
+      buy('IDLE'),
+      buy('SCHEDULED'),
+      buy('QUEUED'),
+      buy('QUOTING'),
+      buy('SIGNING'),
+      buy('SUBMITTED'),
+      buy('CONFIRMED'),
+      buy('CONFIRMED', null, 'MATCH'),
+      buy('CONFIRMED', null, 'MISMATCH'),
+      buy('UNKNOWN', CHECKING),
+      buy('FAILED', MAX),
+      buy('SKIPPED', LOW),
+      buy('SKIPPED', DRY),
+    ];
+    for (const b of rows) {
+      const fill = fillOf({ ...b, dryRun: false, side: 'buy' });
+      expect([b.state, matchesFilter('flight', wallet(b))]).toEqual([
+        b.state,
+        fleetPart(fill) === 'inFlight',
+      ]);
+    }
   });
 
   it('a filled wallet is never in flight nor in need of attention at once', () => {
