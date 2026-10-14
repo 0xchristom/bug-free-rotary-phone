@@ -13,51 +13,23 @@ import {
   parseSecrets,
   secretsToJson,
   serializeKeystoreFile,
-  solanaDerivationPath,
-  type KeystoreFileV1,
   type KeystoreSecretsV1,
   type OpenedKeystore,
   defaultFleetSettings,
 } from '../../../src/core/index.ts';
 import { valueWords } from '../../helpers/words.ts';
+import {
+  FLEET,
+  MNEMONIC_12,
+  PASSWORD,
+  expectCode,
+  expectCodeAsync,
+  mutable,
+  type Code,
+} from './keystore.fixture.ts';
 
 // Real scrypt at the default N=2^17 for every encrypt/decrypt in this file.
 vi.setConfig({ testTimeout: 60_000, hookTimeout: 60_000 });
-
-const PASSWORD = 'correct horse battery staple';
-const FLEET = 'Flota testowa';
-const MNEMONIC_12 = `${'abandon '.repeat(11)}about`;
-
-type Code = AppError['code'];
-
-function expectCode(fn: () => unknown, code: Code): void {
-  let caught: unknown;
-  try {
-    fn();
-  } catch (e) {
-    caught = e;
-  }
-  expect(caught).toBeInstanceOf(AppError);
-  expect((caught as AppError).code).toBe(code);
-}
-
-async function expectCodeAsync(promise: Promise<unknown>, code: Code): Promise<void> {
-  const caught: unknown = await promise.then(
-    () => undefined,
-    (e: unknown) => e,
-  );
-  expect(caught).toBeInstanceOf(AppError);
-  expect((caught as AppError).code).toBe(code);
-}
-
-/** Deep-clones the file as plain JSON so tests can tamper with it. */
-function mutable(file: KeystoreFileV1): Record<string, unknown> & {
-  public: { wallets: Record<string, unknown>[] };
-  kdf: Record<string, unknown>;
-  cipher: Record<string, unknown>;
-} {
-  return JSON.parse(JSON.stringify(file)) as ReturnType<typeof mutable>;
-}
 
 let created: OpenedKeystore;
 
@@ -194,49 +166,6 @@ describe('createKeystore + parseKeystoreFile + openKeystore', () => {
       'Hh8QwFUA6MtVu1qAoq12ucvFHNwCcVTV7hpWjeY1Hztb',
       '7WktogJEd2wQ9eH2oWusmcoFTgeYi6rS632UviTBJ2jm',
     ]);
-  });
-});
-
-describe('tampering with the public part', () => {
-  it('a foreign but valid address → KEYSTORE_TAMPERED', async () => {
-    const [foreign] = deriveWallets(MNEMONIC_12, 0, 1);
-    expect(foreign).toBeDefined();
-    const f = mutable(created.file);
-    const target = f.public.wallets[5];
-    expect(target).toBeDefined();
-    if (!target || !foreign) return;
-    target.address = foreign.address;
-    foreign.secretKey.fill(0);
-    const parsed = parseKeystoreFile(JSON.stringify(f)); // structurally valid
-    await expectCodeAsync(openKeystore(parsed, PASSWORD), 'KEYSTORE_TAMPERED');
-  });
-
-  it('two swapped addresses → KEYSTORE_TAMPERED', async () => {
-    const f = mutable(created.file);
-    const [a, b] = [f.public.wallets[1], f.public.wallets[2]];
-    if (!a || !b) throw new Error('fixture');
-    [a.address, b.address] = [b.address, a.address];
-    await expectCodeAsync(
-      openKeystore(parseKeystoreFile(JSON.stringify(f)), PASSWORD),
-      'KEYSTORE_TAMPERED',
-    );
-  });
-
-  it('a wallet removed from the public list → KEYSTORE_TAMPERED', async () => {
-    const f = mutable(created.file);
-    f.public.wallets.pop();
-    await expectCodeAsync(
-      openKeystore(parseKeystoreFile(JSON.stringify(f)), PASSWORD),
-      'KEYSTORE_TAMPERED',
-    );
-  });
-
-  it('a wrong derivation path is rejected already by the parser', () => {
-    const f = mutable(created.file);
-    const w = f.public.wallets[0];
-    if (!w) throw new Error('fixture');
-    w.derivationPath = solanaDerivationPath(1);
-    expectCode(() => parseKeystoreFile(JSON.stringify(f)), 'KEYSTORE_INVALID_FORMAT');
   });
 });
 
