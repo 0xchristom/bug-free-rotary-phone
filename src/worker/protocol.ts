@@ -12,6 +12,12 @@ import type { WatchEvent, WatchStatus } from '../watcher/watch.ts';
 import type { RememberedView } from './remember.ts';
 
 export type { RememberedView, RememberPrefs } from './remember.ts';
+
+/** The open fleet's newest file, not yet on disk (BUNNDLY-80). Encrypted, as written to disk. */
+export interface PendingFile {
+  readonly fileText: string;
+  readonly fleetName: string;
+}
 import type {
   ApiKeyName,
   ConnectionReport,
@@ -69,6 +75,13 @@ export type VaultRequest =
     }
   /** "Forget this device": removes the remembered fleet and the session record. */
   | { readonly type: 'forget' }
+  /**
+   * The open fleet's file when the one on disk is older (BUNNDLY-80): created or changed
+   * and not written since. Null when the newest file was written or opened from disk.
+   */
+  | { readonly type: 'pendingFile' }
+  /** The UI wrote `fileText` to disk; only the newest file clears the pending one. */
+  | { readonly type: 'fileSaved'; readonly fileText: string }
   /** SOL balances of the fleet via Helius (fallback: public RPC). Not user activity. */
   | {
       readonly type: 'refreshBalances';
@@ -321,6 +334,8 @@ export interface VaultResultMap {
   readonly unlockRemembered: VaultStatus;
   readonly setRemember: RememberedView;
   readonly forget: RememberedView;
+  readonly pendingFile: PendingFile | null;
+  readonly fileSaved: PendingFile | null;
   readonly lock: VaultStatus;
   readonly status: VaultStatus;
   readonly saveSettings: VaultFileResult;
