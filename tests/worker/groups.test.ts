@@ -317,10 +317,14 @@ describe('a wallet signs within the plan of its own group (money path)', () => {
       t.h.signOrder(
         index,
         { outputMint: mint, amount },
-        orderFor(t.addresses[index] ?? '', buildTransaction({ feePayer: t.addresses[index] }), {
-          outputMint: mint,
-          inAmount: amount,
-        }),
+        orderFor(
+          t.addresses[index] ?? '',
+          buildTransaction({ feePayer: t.addresses[index] ?? '' }),
+          {
+            outputMint: mint,
+            inAmount: amount,
+          },
+        ),
       );
     // B's wallet: its own plan, up to the lamport
     expect(await buyOrder(4, MINT, B_SPEND)).toMatchObject({ ok: true });

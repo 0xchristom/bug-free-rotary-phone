@@ -22,7 +22,7 @@ const SOL = 1_000_000_000n;
 
 /** Column positions of the wallet table. */
 const BALANCE = 2;
-const TOKEN = 3;
+const TOKEN = 4;
 
 interface Setup {
   readonly count?: number;
@@ -144,10 +144,13 @@ function setup({
   };
 }
 
-/** The wallet's row, found by its selection checkbox. */
+/**
+ * The wallet's row, found by its selection checkbox. A plain DOM query: a role query with a
+ * name works out the name of every element on a page of 100 rows (BUNNDLY-65).
+ */
 function row(label: string): HTMLElement {
-  const tr = screen.getByRole('checkbox', { name: `Select ${label}` }).closest('tr');
-  if (!tr) throw new Error('row');
+  const tr = document.querySelector(`input[aria-label="Select ${label}"]`)?.closest('tr');
+  if (!tr) throw new Error(`row ${label}`);
   return tr;
 }
 
@@ -160,20 +163,7 @@ async function ready(): Promise<void> {
 }
 
 function cells(label: string): string[] {
-  return within(row(label))
-    .getAllByRole('cell')
-    .map((c) => c.textContent);
-}
-
-/** Opens the details row of the wallet (if closed) and returns its list. */
-function details(label: string): HTMLElement {
-  const button = within(row(label)).getByRole('button', { name: `Details ${label}` });
-  if (button.getAttribute('aria-expanded') !== 'true') fireEvent.click(button);
-  return screen.getByLabelText(`Details of ${label}`);
-}
-
-function detail(label: string, term: string): string {
-  return within(details(label)).getByText(term).nextElementSibling?.textContent ?? '';
+  return [...row(label).children].map((c) => c.textContent);
 }
 
 function selectBox(label: string): HTMLInputElement {
@@ -198,7 +188,16 @@ describe('fleet table', () => {
       within(table)
         .getAllByRole('columnheader')
         .map((th) => th.textContent),
-    ).toEqual(['', 'Wallet', 'Balance', 'Token', 'Amount', 'Status', 'Wallet tools']);
+    ).toEqual([
+      '',
+      'Wallet',
+      'Balance',
+      'Buy amount',
+      'Tokens',
+      'Status',
+      'Last transaction',
+      'Wallet tools',
+    ]);
     expect(within(table).queryByText('Actions')).toBeNull();
     // one row per wallet under the header row
     expect(within(table).getAllByRole('row')).toHaveLength(4);
@@ -220,8 +219,6 @@ describe('fleet table', () => {
     expect(row('W01').dataset.ready).toBe('true');
     expect(within(row('W01')).getByText('Ready')).toBeTruthy();
     expect(within(row('W01')).queryByText(/minimum reserve/u)).toBeNull();
-    // 1 SOL − 0.985 SOL
-    expect(detail('W01', 'Reserve (SOL)')).toBe('0.015');
 
     expect(row('W02').className).toBe('row-error');
     expect(row('W02').dataset.ready).toBe('false');
@@ -316,7 +313,7 @@ describe('fleet table', () => {
     expect(cells('W02')[TOKEN]).toBe('—');
     await user.type(screen.getByLabelText(TARGET_LABEL), TOKEN_2022_MINT);
     expect(
-      await screen.findByRole('columnheader', { name: 'Token (Token-2022)' }, TARGET_WAIT),
+      await screen.findByRole('columnheader', { name: 'Tokens (Token-2022)' }, TARGET_WAIT),
     ).toBeTruthy();
     expect(cells('W02')[TOKEN]).toBe('1.5');
     expect(cells('W03')[TOKEN]).toBe('3');
@@ -327,7 +324,7 @@ describe('fleet table', () => {
     const alert = await screen.findByRole('alert', {}, TARGET_WAIT);
     expect(alert.textContent).toContain('is a token account, not a token');
     expect(alert.id).toBe(screen.getByLabelText(TARGET_LABEL).getAttribute('aria-describedby'));
-    expect(screen.getByRole('columnheader', { name: 'Token' })).toBeTruthy();
+    expect(screen.getByRole('columnheader', { name: 'Tokens' })).toBeTruthy();
     expect(screen.getByRole('table')).toBeTruthy();
   });
 
@@ -354,7 +351,7 @@ describe('fleet table', () => {
     await user.clear(screen.getByLabelText(TARGET_LABEL));
     await user.type(screen.getByLabelText(TARGET_LABEL), TOKEN_2022_MINT);
     expect(
-      await screen.findByRole('columnheader', { name: 'Token (Token-2022)' }, TARGET_WAIT),
+      await screen.findByRole('columnheader', { name: 'Tokens (Token-2022)' }, TARGET_WAIT),
     ).toBeTruthy();
     expect(screen.queryByRole('alert')).toBeNull();
   });
@@ -386,10 +383,9 @@ describe('wallet cell', () => {
     await ready();
     expect(within(row('Wallet 0')).getByText('So11…1112')).toBeTruthy();
     expect(within(row('Wallet 1')).getByText('Toke…Q5DA')).toBeTruthy();
-    // the full address is one hover away and in the details
+    // the full address is one hover away and in the QR popover
     expect(within(row('Wallet 1')).getByText('Toke…Q5DA').getAttribute('title')).toBe(SECOND);
     expect(within(row('Wallet 1')).queryByText(SECOND)).toBeNull();
-    expect(detail('Wallet 1', 'Deposit address')).toBe(SECOND);
   });
 
   it('copy puts the full address of that wallet on the clipboard and says so', async () => {
@@ -447,12 +443,7 @@ describe('wallet cell', () => {
     const names = within(row('Wallet 1'))
       .getAllByRole('button')
       .map((b) => b.getAttribute('aria-label'));
-    expect(names).toEqual([
-      'Copy address Wallet 1',
-      'Buy Wallet 1',
-      'QR code Wallet 1',
-      'Details Wallet 1',
-    ]);
+    expect(names).toEqual(['Copy address Wallet 1', 'Buy Wallet 1', 'QR code Wallet 1']);
   });
 
   it('the QR code opens in a popover with the address of its wallet; Esc gives the focus back', async () => {
@@ -464,6 +455,7 @@ describe('wallet cell', () => {
     expect(
       within(popover).getByRole('img', { name: `QR code of the address ${SECOND}` }),
     ).toBeTruthy();
+    expect(within(popover).getByText(SECOND)).toBeTruthy();
     expect(opener.getAttribute('aria-expanded')).toBe('true');
     await user.keyboard('{Escape}');
     expect(screen.queryByRole('dialog')).toBeNull();
@@ -541,7 +533,7 @@ describe('selection', () => {
     await user.click(selectBox('W02'));
     expect(row('W02').dataset.ready).toBe('false');
     expect(summaryValue('Planned buy')).toBe('0.1 SOL');
-    expect(summaryValue('Selected')).toBe('2 / 3');
+    expect(summaryValue('Selected')).toBe('2 of 3');
   });
 });
 
@@ -575,20 +567,27 @@ describe('100 wallets', () => {
     expect(renders.get(42)).toBe((before.get(42) ?? 0) + 1);
   }, 30_000);
 
-  it('opening the details of one wallet renders only its row', async () => {
+  it('a filter or a search that keeps a row on screen does not render it again', async () => {
     const renders = new Map<number, number>();
     const probe = (index: number): void => {
       renders.set(index, (renders.get(index) ?? 0) + 1);
     };
-    setup({ count: 100, probe });
+    const { user } = setup({ count: 100, probe });
     await ready();
     await waitFor(() => {
       expect(cells('W100')[BALANCE]).toBe('1');
     });
     renders.clear();
-    details('W08');
-    expect([...renders.keys()]).toEqual([7]);
-    expect(screen.getAllByRole('row')).toHaveLength(102); // header + 100 + one details row
+    // every wallet is selected: the Selected tab shows the same 100 rows
+    fireEvent.click(document.querySelector('.tabs button:nth-child(2)') ?? document.body);
+    expect(document.querySelectorAll('tbody tr')).toHaveLength(100);
+    expect(renders.size).toBe(0);
+    // W10 and W100 match "W10": the other rows leave, these two stay without a render
+    const search = document.querySelector<HTMLInputElement>('input[type="search"]');
+    if (!search) throw new Error('search');
+    await user.type(search, 'W10');
+    expect(document.querySelectorAll('tbody tr')).toHaveLength(2);
+    expect(renders.size).toBe(0);
   }, 30_000);
 });
 
@@ -713,8 +712,12 @@ describe('bulk actions and summary', () => {
       );
     }
     expect(saved).toHaveLength(0);
-    expect(summaryValue('Ready wallets')).toBe('3 / 3');
-    expect(summaryValue('Selected')).toBe('3 / 3');
+    expect(['W01', 'W02', 'W03'].map((l) => row(l).dataset.ready)).toEqual([
+      'true',
+      'true',
+      'true',
+    ]);
+    expect(summaryValue('Selected')).toBe('3 of 3');
     expect(summaryValue('Planned buy')).toBe('1.5 SOL');
     expect(summaryValue('Fleet balance')).toBe('3 SOL');
   });
@@ -742,7 +745,11 @@ describe('bulk actions and summary', () => {
       '0.900000299',
     );
     // reserve = balance − 90 % ≥ 0.015 SOL, so every wallet is ready
-    expect(summaryValue('Ready wallets')).toBe('3 / 3');
+    expect(['W01', 'W02', 'W03'].map((l) => row(l).dataset.ready)).toEqual([
+      'true',
+      'true',
+      'true',
+    ]);
   });
 
   it('the summary sums token balances with decimals', async () => {
@@ -750,7 +757,88 @@ describe('bulk actions and summary', () => {
     await ready();
     expect(summaryValue('Tokens held')).toBe('—');
     await user.type(screen.getByLabelText(TARGET_LABEL), TOKEN_2022_MINT);
-    await screen.findByRole('columnheader', { name: 'Token (Token-2022)' }, TARGET_WAIT);
+    await screen.findByRole('columnheader', { name: 'Tokens (Token-2022)' }, TARGET_WAIT);
     expect(summaryValue('Tokens held')).toBe('4.5'); // 0 + 1.5 + 3
+  });
+});
+
+describe('filters, search and sorting (mockup v2)', () => {
+  /** Wallet labels in the order the table shows them. */
+  function shownLabels(): string[] {
+    return [...document.querySelectorAll('tbody tr .w-name')].map((b) => b.textContent);
+  }
+
+  it('the tabs count their wallets; Selected shows only the selected ones', async () => {
+    const { user } = setup({ settings: { active: [{ index: 1, active: false }] } });
+    await ready();
+    const tabs = within(screen.getByRole('group', { name: 'Wallet filters' }));
+    expect(tabs.getAllByRole('button').map((b) => b.textContent)).toEqual([
+      'All wallets 3',
+      'Selected 2',
+      'In flight 0',
+      'Filled 0',
+      'Needs attention 0',
+    ]);
+    await user.click(tabs.getByRole('button', { name: 'Selected 2' }));
+    expect(tabs.getByRole('button', { name: 'Selected 2' }).getAttribute('aria-pressed')).toBe(
+      'true',
+    );
+    expect(shownLabels()).toEqual(['W01', 'W03']);
+    await user.click(tabs.getByRole('button', { name: 'Needs attention 0' }));
+    expect(shownLabels()).toEqual([]);
+    expect(screen.getByText('No wallet matches the filter.')).toBeTruthy();
+  });
+
+  it('a too small reserve puts the wallet under Needs attention', async () => {
+    setup({ settings: { maxSpend: [{ index: 2, lamports: 990_000_000n }] } });
+    await ready();
+    // 1 SOL − 0.99 SOL = 0.01 SOL < 0.015 SOL
+    expect(screen.getByRole('button', { name: 'Needs attention 1' })).toBeTruthy();
+  });
+
+  it('the search finds a wallet by its name or its address', async () => {
+    const { user } = setup();
+    await ready();
+    const search = screen.getByRole('searchbox', { name: 'Search wallets' });
+    await user.type(search, 'w02');
+    expect(shownLabels()).toEqual(['W02']);
+    await user.clear(search);
+    await user.type(search, 'Address2'); // the address of the third wallet
+    expect(shownLabels()).toEqual(['W03']);
+    await user.clear(search);
+    expect(shownLabels()).toEqual(['W01', 'W02', 'W03']);
+  });
+
+  it('a click on Balance sorts the largest first, a second click turns it round', async () => {
+    const { user } = setup({ lamports: (i) => [2n * SOL, 3n * SOL, SOL][i] ?? 0n });
+    await ready();
+    const header = screen.getByRole('columnheader', { name: 'Balance (SOL)' });
+    expect(header.getAttribute('aria-sort')).toBe('none');
+    await user.click(within(header).getByRole('button'));
+    expect(header.getAttribute('aria-sort')).toBe('descending');
+    expect(shownLabels()).toEqual(['W02', 'W01', 'W03']);
+    await user.click(within(header).getByRole('button'));
+    expect(header.getAttribute('aria-sort')).toBe('ascending');
+    expect(shownLabels()).toEqual(['W03', 'W01', 'W02']);
+  });
+
+  it('a click on Buy amount sorts by the amount typed, empty ones last', async () => {
+    const { user } = setup({ settings: { maxSpend: [{ index: 2, lamports: 100_000_000n }] } });
+    await ready();
+    await user.type(within(row('W01')).getByLabelText('Max spend W01'), '0.05');
+    const header = screen.getByRole('columnheader', { name: 'Buy amount (max spend, SOL)' });
+    await user.click(within(header).getByRole('button'));
+    expect(shownLabels()).toEqual(['W03', 'W01', 'W02']);
+  });
+
+  it('the header checkbox selects only the wallets the filter and the search show', async () => {
+    const { user } = setup();
+    await ready();
+    await user.type(screen.getByRole('searchbox', { name: 'Search wallets' }), 'W02');
+    expect(headerBox().checked).toBe(true);
+    await user.click(headerBox()); // clears W02 only
+    await user.clear(screen.getByRole('searchbox', { name: 'Search wallets' }));
+    expect(['W01', 'W02', 'W03'].map((l) => selectBox(l).checked)).toEqual([true, false, true]);
+    expect(screen.getByText('2 of 3 selected')).toBeTruthy();
   });
 });

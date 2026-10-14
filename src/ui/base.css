@@ -618,35 +618,121 @@ table.wallets tr.unsel td:not(.c-check, .c-acts) {
   text-align: center;
 }
 
-table.wallets tr.detail td {
-  height: auto;
-  padding: var(--s-3) var(--s-4);
-  background: var(--surface-row);
-  white-space: normal;
+table.wallets tr.empty td {
+  color: var(--fg-3);
+  text-align: center;
 }
 
-dl.details {
-  margin: 0;
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--s-3) var(--s-8);
-}
-
-dl.details div {
+/* Last transaction: its signature and when it landed. Only on a wide window (mockup v2). */
+.tx {
   display: grid;
   gap: var(--s-0);
-  align-content: start;
+  font-variant-numeric: tabular-nums;
 }
 
-dl.details dt {
+.tx small {
+  color: var(--fg-3);
+  font-size: var(--fs-caption);
+}
+
+@media (max-width: 1499px) {
+  table.wallets .c-tx {
+    display: none;
+  }
+}
+
+/* A sortable column header: the whole label is the button. */
+.th-sort {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-1);
+  padding: 0;
+  background: none;
+  border: 0;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.th-sort:hover,
+.th-sort.on {
+  color: var(--fg);
+}
+
+.th-sort svg {
+  width: 12px;
+  height: 12px;
+  color: var(--fg-3);
+}
+
+/* Filter tabs over the table, with their counts (mockup v2). */
+.tabsrow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-2);
+  border-bottom: 1px solid var(--line);
+}
+
+.tabsrow .spacer {
+  flex: 1;
+}
+
+.tabs {
+  display: flex;
+  gap: var(--s-0);
+  align-self: stretch;
+}
+
+.tab {
+  position: relative;
+  min-height: 48px;
+  padding: 0 var(--s-3);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+  background: none;
+  border: 0;
+  color: var(--fg-2);
+  font: inherit;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.tab:hover,
+.tab.on {
+  color: var(--fg);
+}
+
+.tab.on::after {
+  content: '';
+  position: absolute;
+  right: var(--s-3);
+  bottom: -1px;
+  left: var(--s-3);
+  height: 2px;
+  background: var(--fg);
+  border-radius: 2px 2px 0 0;
+}
+
+.tab-count {
   color: var(--fg-3);
   font-size: var(--fs-small);
+  font-variant-numeric: tabular-nums;
 }
 
-dl.details dd {
-  margin: 0;
-  max-width: 420px;
-  font-variant-numeric: tabular-nums;
+.search {
+  width: 220px;
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  color: var(--fg-3);
+}
+
+.search .k-input {
+  flex: 1;
+  min-width: 0;
 }
 
 .pop-form {

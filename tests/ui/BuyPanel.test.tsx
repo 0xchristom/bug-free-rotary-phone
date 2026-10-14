@@ -4,9 +4,9 @@
  * mock worker, progress, explorer links, STOP, live mode only after confirmation, render
  * counts at 100 wallets.
  */
-import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import type { UserEvent } from '@testing-library/user-event';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AppError, type FleetSettingsV1 } from '../../src/core/index.ts';
 import type { RunEvent, WalletEvent } from '../../src/executor/index.ts';
 import { App } from '../../src/ui/App.tsx';
@@ -132,6 +132,11 @@ function setup({
     }
   });
   const storage = mockStorage();
+  const blobs: Blob[] = [];
+  (storage.env.createObjectURL as ReturnType<typeof vi.fn>).mockImplementation((b: Blob) => {
+    blobs.push(b);
+    return 'blob:log';
+  });
   render(
     <App
       vault={vault.client}
@@ -144,6 +149,7 @@ function setup({
   return {
     vault,
     requests,
+    blobs,
     user: setupUser(),
     finishBuy: () => {
       buy = null;
@@ -198,7 +204,7 @@ async function showMint(user: UserEvent): Promise<void> {
   await eventually(() => screen.getByText(/^Balances as of /u));
   await user.type(screen.getByLabelText(TARGET_LABEL), MINT);
   // the worker checks the address after a pause: a wait by the clock, not by turns
-  await screen.findByRole('columnheader', { name: 'Token (SPL)' }, TARGET_WAIT);
+  await screen.findByRole('columnheader', { name: 'Tokens (SPL)' }, TARGET_WAIT);
 }
 
 /** One part of the page, found by its class, to query inside it. */
@@ -209,22 +215,26 @@ function part(selector: string): HTMLElement {
 }
 
 function row(label: string): HTMLElement {
-  const tr = screen.getByRole('checkbox', { name: `Select ${label}` }).closest('tr');
-  if (!tr) throw new Error('row');
+  const tr = document.querySelector(`input[aria-label="Select ${label}"]`)?.closest('tr');
+  if (!tr) throw new Error(`row ${label}`);
   return tr;
 }
 
-/** Opens the details row of the wallet (if closed) and returns its list. */
-function details(label: string): HTMLElement {
-  const button = within(row(label)).getByRole('button', { name: `Details ${label}` });
-  if (button.getAttribute('aria-expanded') !== 'true') fireEvent.click(button);
-  return screen.getByLabelText(`Details of ${label}`);
+/** A filter tab, by its label; its name ends with the count. */
+function tabCount(label: string): string {
+  const tab = within(screen.getByRole('group', { name: 'Wallet filters' })).getByRole('button', {
+    name: new RegExp(`^${label} \\d+$`, 'u'),
+  });
+  return tab.querySelector('.tab-count')?.textContent ?? '';
 }
 
-/** The value under a term of the details row, as text. */
-function detail(label: string, term: string): string {
-  return within(details(label)).getByText(term).nextElementSibling?.textContent ?? '';
+function summaryValue(term: string): string {
+  const dl = screen.getByLabelText('Fleet summary');
+  return within(dl).getByText(term).nextElementSibling?.textContent ?? '';
 }
+
+/** The signature as the row shortens it: 4 characters, an ellipsis, 4 characters. */
+const SIG_SHORT = '3333…AAAA';
 
 describe('mode A', () => {
   it('BUY only with a mint the worker checked and a ready wallet', async () => {
@@ -281,6 +291,12 @@ describe('mode A', () => {
     expect(await screen.findByText(/0\/3 confirmed/u)).toBeTruthy();
     expect(screen.getByText(/2 in progress/u)).toBeTruthy();
     expect(screen.getByText(/Do not close or reload this tab/u)).toBeTruthy();
+    // two queued wallets are in flight; the skipped one needs attention
+    expect([tabCount('In flight'), tabCount('Filled'), tabCount('Needs attention')]).toEqual([
+      '2',
+      '0',
+      '1',
+    ]);
 
     // STOP is there for the whole buy and sends stop
     await user.click(screen.getByRole('button', { name: 'STOP' }));
@@ -328,33 +344,37 @@ describe('mode A', () => {
     expect(screen.getByText(/0 in progress · 2 failed or skipped/u)).toBeTruthy();
     expect(screen.getByText(/the first confirmation: 1\.2 s, to the last: 1\.2 s/u)).toBeTruthy();
 
-    // The row says the state and why; the numbers of the buy are in the details row, the
-    // same values the columns showed before BUNNDLY-55.
+    // The row says the state and the wallet's last message; the transaction has its column
+    // with the time since the start (sinceStartMs 1 200).
     expect(within(row('W01')).getByText('Bought')).toBeTruthy();
-    expect(detail('W01', 'Time')).toBe('1.2 s'); // sinceStartMs 1 200
-    expect(detail('W01', 'Attempts')).toBe('1');
-    expect(detail('W01', 'Bought')).toBe('2.101'); // 2 101 000 units, 6 decimals
-    expect(detail('W01', 'Spent (SOL)')).toBe('0.01'); // 10 000 000 lamports
-    expect(detail('W01', 'Price (SOL/token)')).toBe('0.004759638267'); // 0.01 / 2.101
-    expect(detail('W01', 'Chain')).toBe('confirmed');
-    expect(
-      within(details('W01')).getByRole('link', { name: 'Transaction' }).getAttribute('href'),
-    ).toBe(`https://orbmarkets.io/tx/${SIG}`);
-    expect(within(details('W01')).queryByText('Reason')).toBeNull();
+    expect(within(row('W01')).getByText('Chain: confirmed')).toBeTruthy();
+    const tx = within(row('W01')).getByRole('link', { name: SIG_SHORT });
+    expect(tx.getAttribute('href')).toBe(`https://orbmarkets.io/tx/${SIG}`);
+    expect(tx.getAttribute('rel')).toBe('noopener noreferrer');
+    expect(within(row('W01')).getByText('+1.2 s after start')).toBeTruthy();
 
     expect(within(row('W02')).getByText('Failed')).toBeTruthy();
     expect(within(row('W02')).getByText('All attempts are used up.')).toBeTruthy();
-    expect(detail('W02', 'Time')).toBe('64.0 s'); // sinceStartMs 64 000
-    expect(detail('W02', 'Attempts')).toBe('3');
-    expect(detail('W02', 'Reason')).toBe('All attempts are used up.');
-    for (const term of ['Bought', 'Spent (SOL)', 'Price (SOL/token)', 'Chain', 'Transaction']) {
-      expect(detail('W02', term)).toBe('—');
-    }
+    expect(within(row('W02')).queryByRole('link')).toBeNull();
 
     expect(within(row('W03')).getByText('Skipped')).toBeTruthy();
     expect(within(row('W03')).getByText(/Not enough SOL/u)).toBeTruthy();
-    // only the opened rows got a details row: header + 3 wallets + 2
-    expect(screen.getAllByRole('row')).toHaveLength(6);
+    // no row of details any more: header + 3 wallets
+    expect(screen.getAllByRole('row')).toHaveLength(4);
+
+    // filled is bought and confirmed on the chain; the failure and the skip need attention
+    expect([tabCount('In flight'), tabCount('Filled'), tabCount('Needs attention')]).toEqual([
+      '0',
+      '1',
+      '2',
+    ]);
+    await user.click(screen.getByRole('button', { name: /^Needs attention/u }));
+    expect(screen.queryByRole('checkbox', { name: 'Select W01' })).toBeNull();
+    expect(screen.getByRole('checkbox', { name: 'Select W02' })).toBeTruthy();
+    expect(screen.getByRole('checkbox', { name: 'Select W03' })).toBeTruthy();
+    await user.click(screen.getByRole('button', { name: /^All wallets/u }));
+    // one confirmed wallet at 1.2 s: the first and the last fill
+    expect(summaryValue('First and last fill')).toBe('+1.2 s · +1.2 s');
 
     // after the run: the log can be downloaded, BUY works again
     await waitFor(() => {
@@ -511,8 +531,8 @@ describe('command bar (BUNNDLY-59)', () => {
 });
 
 describe('decimals of the bought mint', () => {
-  it('results keep the decimals of the bought token when another mint is shown later', async () => {
-    const { user, vault } = setup();
+  it('the log keeps the decimals of the bought token when another mint is shown later', async () => {
+    const { user, vault, blobs } = setup();
     await showMint(user);
     await user.click(screen.getByRole('button', { name: 'BUY' }));
     act(() => {
@@ -530,14 +550,15 @@ describe('decimals of the bought mint', () => {
       vault.emit(runEvent('finished'));
     });
     await within(row('W01')).findByText('Bought');
-    expect(detail('W01', 'Bought')).toBe('2.101');
     // another token (9 decimals) in the field: the buy still reads with 6
     const field = screen.getByLabelText(TARGET_LABEL);
     await user.clear(field);
     await user.type(field, TOKEN_2022_MINT);
-    await screen.findByRole('columnheader', { name: 'Token (Token-2022)' }, TARGET_WAIT);
-    expect(detail('W01', 'Bought')).toBe('2.101');
-    expect(detail('W01', 'Price (SOL/token)')).toBe('0.004759638267');
+    await screen.findByRole('columnheader', { name: 'Tokens (Token-2022)' }, TARGET_WAIT);
+    await user.click(screen.getByRole('button', { name: 'Download CSV' }));
+    const csv = (await blobs.at(-1)?.text()) ?? '';
+    // 0.01 SOL for 2 101 000 units of 6 decimals: 0.01 / 2.101, by hand
+    expect(csv).toContain('0.004759638267');
   });
 });
 
@@ -610,7 +631,7 @@ describe('transaction links follow the network (BUNNDLY-44)', () => {
       );
     });
     await within(row('W01')).findByText('Bought');
-    const link = within(details('W01')).getByRole('link', { name: 'Transaction' });
+    const link = within(row('W01')).getByRole('link', { name: SIG_SHORT });
     expect(link.getAttribute('href')).toBe(href);
   });
 });
@@ -630,7 +651,7 @@ describe('100 wallets', () => {
     const bar = within(part('section.cmd-bar'));
     await user.click(bar.getByLabelText(TARGET_LABEL));
     await user.paste(MINT);
-    await screen.findByRole('columnheader', { name: 'Token (SPL)' }, TARGET_WAIT);
+    await screen.findByRole('columnheader', { name: 'Tokens (SPL)' }, TARGET_WAIT);
     await user.click(bar.getByRole('button', { name: 'BUY' }));
     const panel = within(part('section.buy-panel'));
     act(() => {

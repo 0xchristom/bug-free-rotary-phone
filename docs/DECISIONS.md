@@ -988,29 +988,34 @@ Rejestr decyzji i rozbieżności z dokumentacją zewnętrzną. Nowe wpisy dopisu
   - Odrzucone: osobne limitery na grupę (dwie grupy razem przekroczyłyby limit planu) i grupy zapisane poza zaszyfrowanym plikiem (nazwy grup zdradzałyby układ floty).
   - Nazwy i skład grup nie trafiają do zdarzeń ani do jawnej części pliku.
 
-## D-047: Tabela portfeli: etykiety „Wallet N”, zaznaczenie zamiast „Active”, szczegóły w rozwijanym wierszu
+## D-047: Tabela portfeli w układzie makiety v2: etykiety „Wallet N”, zaznaczenie zamiast „Active”, zakładki filtrów, sortowanie
 
-- Data: 2026-10-13
-- Zadanie: BUNNDLY-55
-- Kontekst: SPEC 11.1 i 11.2 oraz makieta v2 wymagają zwartej tabeli (jeden wiersz 56 px na portfel) i nazw „Wallet 0, Wallet 1, …”. Dotychczasowa tabela miała do 17 kolumn tekstowych, pełny adres w komórce i etykiety `W01`, `W02`, ….
+- Data: 2026-10-13, układ v2: 2026-10-14
+- Zadanie: BUNNDLY-55 (zaczął Mark 13.10, dokończył Kamil 14.10 według komentarza Andy'ego „Zmiany po makiecie v2”)
+- Kontekst: SPEC 11.1 i 11.2 oraz makieta v2 wymagają zwartej tabeli i nazw „Wallet 0, Wallet 1, …”. Dotychczasowa tabela miała do 17 kolumn tekstowych, pełny adres w komórce i etykiety `W01`, `W02`, ….
 - Decyzja:
   - **Etykiety:** `defaultWalletLabel(index)` zwraca `Wallet <index>` (od 0). Etykieta jest zapisana w części jawnej pliku floty (`public.wallets[].label`), więc pliki sprzed zmiany pokazują swoje `W01`, …; aplikacja niczego nie przemianowuje. Flota, do której dodano portfele po zmianie, ma obok siebie stare i nowe nazwy (np. `W03`, `Wallet 3`). Format pliku, protokół workera i format ustawień bez zmian.
-  - **Zaznaczenie = `active`:** pole wyboru w wierszu zastępuje kolumnę „Active” i zapisuje się tą samą drogą co dotąd (`saveSettings` po „Save table changes”, D-019: zapisywane są tylko portfele wyłączone). Pole w nagłówku ma trzy stany; kliknięcie w stanie pośrednim zaznacza wszystkie. Przyciski „Select all” / „Deselect all” z akcji zbiorczych zniknęły.
-  - **Kolumny:** zaznaczenie, Wallet (avatar, nazwa, adres 4…4, kopiowanie, eksplorator), Balance (znak SOL i kwota; „—” przed pierwszym odczytem), Token, Amount (max spend), Status, narzędzia wiersza (kod QR, szczegóły). Kolumny rezerwy nie ma: za mała rezerwa jest opisana pod polem kwoty („Leaves X SOL; the minimum reserve is Y SOL.”), a wartość rezerwy jest w szczegółach.
-  - **Status bez zakupu** mówi, czego brakuje: „Not selected”, „No amount”, „No balance yet”, „Low reserve”, „Ready”. W trakcie i po zakupie kolumna pokazuje stan zakupu jak dotąd, z powodem pod spodem.
-  - **Szczegóły zakupu** (czas, próby, kupione tokeny, wydany SOL, cena, kontrola łańcucha, link do transakcji, powód) są w wierszu rozwijanym pod portfelem, razem z pełnym adresem i rezerwą. Te same wartości i te same teksty liczb co w dawnych kolumnach.
+  - **Zaznaczenie = `active`:** pole wyboru w wierszu zastępuje kolumnę „Active” i zapisuje się tą samą drogą co dotąd (`saveSettings` po „Save table changes”, D-019: zapisywane są tylko portfele wyłączone). Pole w nagłówku ma trzy stany i działa na portfele, które tabela pokazuje po filtrze i wyszukiwaniu; kliknięcie w stanie pośrednim zaznacza wszystkie widoczne. Przyciski „Select all” / „Deselect all” z akcji zbiorczych zniknęły.
+  - **Kolumny:** zaznaczenie, Wallet (avatar, nazwa, adres 4…4, kopiowanie, eksplorator), Balance (znak SOL i kwota; „—” przed pierwszym odczytem), Buy amount (pole max spend), Tokens (saldo pokazanego tokenu), Status, Last transaction (od 1500 px szerokości okna), narzędzia wiersza (kod QR). Wiersz ma 68 px. Kolumny rezerwy nie ma: za mała rezerwa jest opisana pod polem kwoty („Leaves X SOL; the minimum reserve is Y SOL.”).
+  - **Kolumny z makiety v2 w innych zadaniach:** Fill i segmenty „Fleet fill” robi BUNNDLY-56, Priority fee i Slippage oraz „Edit selected” i akcję wiersza Edit robi BUNNDLY-71, akcje wiersza Buy i Sell robi BUNNDLY-59. Tabela nie ma pustych kolumn ani nieczynnych przycisków na zapas (decyzja tymczasowa, BUNNDLY-55 w Plane).
+  - **Status bez zakupu** mówi, czego brakuje: „Not selected”, „No amount”, „No balance yet”, „Low reserve”, „Ready”. W trakcie i po zakupie chip pokazuje stan zakupu, a pod nim stoi ostatni komunikat portfela: wynik kontroli łańcucha („Chain: confirmed”, „Chain: different amount”, …) albo powód.
+  - **Bez rozwijanego wiersza** (makieta v2). Podpis transakcji z linkiem i czas od startu są w „Last transaction”, pełny adres w Popoverze kodu QR. Liczba prób, wydany SOL i cena są tylko w dzienniku operacji (CSV/JSON); kupione tokeny wracają do wiersza z paskiem wypełnienia w BUNNDLY-56.
+  - **Zakładki filtrów** z licznikami: All wallets, Selected, In flight (od czekania w przebiegu do wysłania oraz wysłana transakcja w trakcie kontroli łańcucha), Filled (kupione i potwierdzone saldem: MATCH albo INCREASED), Needs attention (nieudane, nieznany wynik, pominięte poza DRY-RUN, rozjazd z łańcuchem, za mała rezerwa). Znaczenia siedzą w jednym miejscu, `src/ui/wallet-filters.ts`, żeby pasek wypełnienia (BUNNDLY-56) korzystał z tych samych. Zakładki to przyciski z `aria-pressed` w grupie, a nie `tablist`, bo nie przełączają paneli.
+  - **Wyszukiwarka** szuka w nazwie i w adresie, bez względu na wielkość liter.
+  - **Sortowanie** po Wallet, Balance, Buy amount i Tokens: pierwsze kliknięcie kolumny wartości daje największe na górze, kolumny Wallet pierwszy portfel; drugie odwraca. Brak wartości (saldo nieodczytane, pusta kwota) zawsze na końcu; przy równych wartościach zostaje kolejność portfeli. Nagłówek ma `aria-sort`.
+  - **Pasek podsumowania pod tabelą** (makieta v2): Selected („N of M”), Fleet balance, Planned buy, Tokens held, First and last fill (czas od startu ostatniego zakupu do pierwszego i ostatniego potwierdzenia).
   - **Kod QR** otwiera się w `Popover` (fokus wchodzi do środka, Escape zamyka i oddaje fokus przyciskowi, naciśnięcie poza nim zamyka). Zastępuje to obsługę Escape na poziomie dokumentu z D-043.
   - **Kopiowanie** potwierdza Toast „Address copied”; odmowa schowka zostaje błędem na ekranie (Toast znika sam, więc nie niesie błędów).
-  - **Odnośnik do eksploratora** jest elementem `<a href>` (otwiera kartę), a nie przyciskiem; pozostałe narzędzia wiersza są przyciskami. Każde ma w nazwie dostępnej nazwę portfela.
-  - **„Create wallets”:** Popover nad tabelą z liczbą od 1 do wolnego miejsca (limit 100), pole puste na starcie. Poza zakresem przycisk „Create” jest wyłączony, a powód stoi przy polu. Gdy tworzyć nie wolno (uzbrojony watcher, niezapisane zmiany, pełna flota), wyłączony jest przycisk otwierający, a powód stoi obok niego.
+  - **Odnośniki** do eksploratora (adres i transakcja) są elementami `<a href>` (otwierają kartę), a nie przyciskami; pozostałe narzędzia wiersza są przyciskami. Każde ma w nazwie dostępnej nazwę portfela.
+  - **„Create wallets”:** Popover obok zakładek filtrów z liczbą od 1 do wolnego miejsca (limit 100), pole puste na starcie. Poza zakresem przycisk „Create” jest wyłączony, a powód stoi przy polu. Gdy tworzyć nie wolno (uzbrojony watcher, niezapisane zmiany, pełna flota), wyłączony jest przycisk otwierający, a powód stoi obok niego.
   - **Przyklejony nagłówek bez własnego przewijania tabeli:** przy oknie od 1280 px tabela nie ma własnego kontenera przewijania; nagłówek przykleja się do przewijanej treści aplikacji, a Popover ostatniego wiersza nie jest przycinany. Poniżej 1280 px (poza zakresem, aplikacja jest tylko na PC) tabela przewija się w poziomie we własnym kontenerze.
   - **Krój o stałej szerokości dla adresów:** `--font-mono` to systemowy stos (`ui-monospace`, Cascadia Mono, Consolas), bez pliku czcionki. Zmienia to zdanie z D-043 „kroju mono nie ma”; Geist zostaje jedynym krojem ładowanym z domeny.
   - **Avatar** rysuje jedną ścieżkę zamiast kwadratu na komórkę: tabela 100 portfeli ma o ok. 1 200 węzłów DOM mniej.
 - Konsekwencje / alternatywy:
-  - Pasek podsumowania stoi nad tabelą (tak mówi zadanie); makieta v2 ma go pod tabelą. Pozycje: Selected, Fleet balance, Planned buy, Ready wallets, Tokens held.
-  - Wiersz jest cięższy niż dotąd (ok. 40 węzłów DOM zamiast ok. 15). W przeglądarce bez znaczenia; w jsdom zapytania po roli na stronie ze 100 portfelami trwają ok. 0,7 s, więc testy „100 wallets” mają dłuższe limity czekania.
+  - Z ekranu znikają liczba prób, wydany SOL i cena portfela (pierwotny warunek zadania mówił, że nic nie znika; komentarz v2 przenosi pełną historię do dziennika). Dziennik da się dziś tylko pobrać. Do potwierdzenia przez Andy'ego (BUNNDLY-55 w Plane).
+  - Wiersz jest cięższy niż dawny (ok. 40 węzłów DOM zamiast ok. 15). W przeglądarce bez znaczenia; w jsdom zapytania po roli na stronie ze 100 portfelami są wolne, więc testy „100 wallets” szukają wierszy zapytaniem DOM (BUNNDLY-65).
+  - Filtr i wyszukiwanie nie renderują ponownie wierszy, które zostają na ekranie (`memo`, test z sondą przy 100 portfelach).
   - Odrzucone: własny kontener przewijania tabeli jak w makiecie (przycinałby Popover kodu QR w krótkiej tabeli albo wymagał pozycjonowania `fixed` liczonego w skrypcie), przemianowanie etykiet w istniejących plikach (zadanie tego zabrania), keystore jako plik fixture w repo (zasada „żadnych keystore w repo”; test buduje plik z etykietą `W03` zapisaną jawnie).
-  - Poza zakresem, zgodnie z zadaniem: kolumny Slippage i Priority fee (BUNNDLY-58), Progress i Tokens (BUNNDLY-56), zakładki filtrów i pasek poleceń z makiety.
 
 ## D-048: Zakup i uzbrojenie na portfelach z żądania; worker sprawdza rodzaj celu
 
