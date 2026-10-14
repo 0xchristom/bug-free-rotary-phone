@@ -8,6 +8,9 @@
 import type { TargetKind } from '../chain/target.ts';
 import type { ExecutorEvent, Side, StairsOptions } from '../executor/executor.ts';
 import type { WatchEvent, WatchStatus } from '../watcher/watch.ts';
+import type { RememberedView } from './remember.ts';
+
+export type { RememberedView, RememberPrefs } from './remember.ts';
 import type {
   ApiKeyName,
   ConnectionReport,
@@ -38,10 +41,36 @@ export type VaultRequest =
       readonly password: string;
       /** Import an existing mnemonic; omit to generate a new 24-word one. */
       readonly mnemonic?: string;
+      /** Remember the fleet on this device (BUNNDLY-52); omitted leaves the device as it is. */
+      readonly remember?: boolean;
     }
   /** Validates a keystore file and returns its public part; needs no password. */
   | { readonly type: 'preview'; readonly fileText: string }
-  | { readonly type: 'unlock'; readonly fileText: string; readonly password: string }
+  | {
+      readonly type: 'unlock';
+      readonly fileText: string;
+      readonly password: string;
+      /** As in `create`. */
+      readonly remember?: boolean;
+    }
+  /** The fleet remembered on this device and the device settings (public data only). */
+  | { readonly type: 'remembered' }
+  /**
+   * Opens the remembered fleet without the password while its window lasts (BUNNDLY-52)
+   * and starts the window again from now. Otherwise, or on any problem, removes the
+   * session record and answers the locked status.
+   */
+  | { readonly type: 'resume' }
+  /** Unlocks the remembered fleet with the password. */
+  | { readonly type: 'unlockRemembered'; readonly password: string }
+  /** Device settings: remember the fleet, and the window length (null: no time limit). */
+  | {
+      readonly type: 'setRemember';
+      readonly remember: boolean;
+      readonly windowMs: number | null;
+    }
+  /** "Forget this device": removes the remembered fleet and the session record. */
+  | { readonly type: 'forget' }
   /** SOL balances of the fleet via Helius (fallback: public RPC). Not user activity. */
   | {
       readonly type: 'refreshBalances';
@@ -260,6 +289,11 @@ export interface VaultResultMap {
   readonly classifyTarget: TargetKind;
   readonly exportPlain: PlainExport;
   readonly unlock: VaultStatus;
+  readonly remembered: RememberedView;
+  readonly resume: VaultStatus;
+  readonly unlockRemembered: VaultStatus;
+  readonly setRemember: RememberedView;
+  readonly forget: RememberedView;
   readonly lock: VaultStatus;
   readonly status: VaultStatus;
   readonly saveSettings: VaultFileResult;

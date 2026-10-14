@@ -10,6 +10,7 @@ Bunndly zarządza kluczami prywatnymi portfeli z prawdziwymi środkami. Ten doku
 | Plik floty `<nazwa>.keystore.json`                    | Na dysku użytkownika, w wybranym folderze. Sekrety są zaszyfrowane: scrypt (N=2^17, r=8, p=1) i AES-256-GCM z losowym IV; tag GCM wykrywa każdą zmianę (D-010, D-011). Jawna część zawiera tylko adresy publiczne i etykiety.                       |
 | Klucze API (Helius, Jupiter) i własne URL-e z kluczem | Zaszyfrowane w pliku floty, w pamięci tylko w workerze. Do interfejsu trafia wyłącznie informacja, czy klucz jest ustawiony (D-016). Zapytania z kluczami wysyła worker (D-020, D-024).                                                             |
 | Hasło floty                                           | Nigdzie. Worker trzyma tylko nieeksportowalny klucz AES z sesji (D-013).                                                                                                                                                                            |
+| Zapamiętana flota (opcja)                             | W IndexedDB strony: zaszyfrowany plik floty, a w oknie bez hasła także nieeksportowalny klucz pliku. Zapisuje go tylko worker. Hasła, mnemonika ani kluczy prywatnych tam nie ma (SPEC 6.9, D-051).                                                 |
 
 - **Automatyczna blokada:** po 15 minutach bezczynności (ustawialne) worker zeruje klucze i porzuca klucz sesji. Blokada nie działa w trakcie uzbrojonej operacji (D-013).
 - **Interfejs sejfu jest wyłącznie domenowy:** nie ma operacji „podpisz te bajty” ani „wydaj klucz bez hasła”, więc kod w wątku interfejsu nie wyciągnie klucza (D-013).
@@ -56,6 +57,14 @@ Bez pliku `keystore.json` flotę da się odtworzyć tylko z mnemonika. Zrób kop
 ### Przechwycenie klucza API
 
 Klucze API są zaszyfrowane w pliku i używane tylko w workerze. Klucz Helius jest jednak częścią URL zapytań (tak działa Helius), więc widać go w narzędziach deweloperskich przeglądarki na tym komputerze. Klucz API daje dostęp do płatnej usługi, nie do środków w portfelach.
+
+### Zapamiętana flota i okno bez hasła
+
+Na życzenie użytkownika przeglądarka przechowuje w IndexedDB zaszyfrowany plik konta (ten sam szyfrogram co plik na dysku). Nie przechowuje hasła ani niczego jawnego: po powrocie na stronę konto odblokowuje się hasłem. Skutek: kto ma dostęp do profilu przeglądarki, ma dostęp do szyfrogramu, tak samo jak do pliku na dysku; ochroną jest hasło i scrypt. Użytkownik może w każdej chwili usunąć zapis z urządzenia.
+
+Na życzenie użytkownika przeglądarka może przez wybrany czas (15 min, 1 h lub 2 h, domyślnie 15 min) otwierać konto po odświeżeniu strony bez hasła. Przechowuje wtedy w IndexedDB klucz pliku konta jako nieeksportowalny klucz WebCrypto; nie przechowuje hasła, mnemonika ani kluczy prywatnych. Skutek: w tym czasie kod uruchomiony na tej stronie albo osoba z dostępem do profilu przeglądarki może otworzyć konto bez hasła. Lock, automatyczna blokada i „Forget this device” natychmiast usuwają ten zapis.
+
+Wyjątek dotyczy okna bez limitu czasu (SPEC 6.9). Użytkownik może w Ustawieniach wybrać okno bez limitu czasu: wtedy rekord zostaje do Lock, »Forget this device«, otwarcia innego pliku albo błędu odszyfrowania, a każdy, kto ma dostęp do tego profilu przeglądarki, otwiera konto bez hasła. Ustawienia pokazują to ostrzeżenie przy wyborze tej opcji. Wszystkie zapisy w IndexedDB robi wyłącznie worker (D-051).
 
 ### Wersja hostowana
 

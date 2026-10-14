@@ -44,6 +44,8 @@ describe('ERROR_MESSAGES', () => {
         'STORAGE_WRITE_FAILED',
         'STORAGE_READ_FAILED',
         'STORAGE_FILE_TOO_LARGE',
+        'REMEMBER_UNAVAILABLE',
+        'NO_REMEMBERED_FLEET',
         'BUY_RUNNING',
         'NO_WALLETS_TO_BUY',
         'NO_WALLETS_TO_SELL',

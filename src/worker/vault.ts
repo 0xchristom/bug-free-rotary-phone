@@ -65,6 +65,7 @@ import {
   isAppError,
   isValidApiKeyValue,
   openKeystore,
+  openKeystoreWithKey,
   parseKeystoreFile,
   secretKeyToBase58,
   serializeKeystoreFile,
@@ -102,6 +103,18 @@ import {
   type WalletGroupV1,
 } from '../core/index.ts';
 import { DEFAULT_AUTO_LOCK_MS } from './protocol.ts';
+import {
+  DEFAULT_PREFS,
+  fileIdOf,
+  isWindowChoice,
+  sealSession,
+  sessionValid,
+  type RememberKey,
+  type RememberPrefs,
+  type RememberRecords,
+  type RememberStore,
+  type RememberedView,
+} from './remember.ts';
 import type {
   ApiKeyFlags,
   BuyStatus,
@@ -175,6 +188,11 @@ export interface VaultOptions {
    * without it the setting applies, and 15 minutes while locked.
    */
   readonly autoLockMs?: number;
+  /**
+   * Where the remembered fleet and the passwordless window are kept (BUNNDLY-52):
+   * IndexedDB in the worker. Without it nothing is remembered on the device.
+   */
+  readonly remember?: RememberStore | null;
 }
 
 interface SecretWallet {
@@ -186,6 +204,8 @@ interface SecretWallet {
 interface UnlockedVault {
   readonly fleetName: string;
   readonly createdAt: Date;
+  /** The file's identity for the remembered fleet (name and creation time). */
+  readonly fileId: string;
   /** UTF-8 of the normalized mnemonic, zeroed on lock. */
   readonly mnemonic: Uint8Array;
   readonly wallets: SecretWallet[];
@@ -270,6 +290,12 @@ function int(value: unknown): number {
   return typeof value === 'number' && Number.isSafeInteger(value) ? value : badRequest();
 }
 
+/** The optional `remember` flag of create and unlock (BUNNDLY-52). */
+function rememberFlag(value: unknown): boolean | undefined {
+  if (value === undefined) return undefined;
+  return typeof value === 'boolean' ? value : badRequest();
+}
+
 function invalidSettings(): never {
   throw new AppError('INVALID_SETTINGS');
 }
@@ -295,6 +321,8 @@ function walletListOf(value: unknown, group: WalletGroupV1): readonly number[] |
   return [...seen];
 }
 
+/** Activity rewrites a timed passwordless window at most this often (BUNNDLY-52). */
+const WINDOW_REFRESH_MS = 60_000;
 const SLIPPAGE_KEYS = ['buySlippageBps', 'sellSlippageBps'] as const;
 const FEE_KEYS = ['buyPriorityFeeLamports', 'sellPriorityFeeLamports'] as const;
 
@@ -456,6 +484,7 @@ function toUnlocked(opened: OpenedKeystore): UnlockedVault {
   return {
     fleetName: opened.file.fleetName,
     createdAt: new Date(opened.file.createdAt),
+    fileId: fileIdOf(opened.file.fleetName, opened.file.createdAt),
     mnemonic: new TextEncoder().encode(opened.secrets.mnemonic),
     wallets: opened.secrets.wallets.map((w) => ({
       index: w.index,
@@ -546,6 +575,7 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
 
   const touch = (): void => {
     lastActivity = now();
+    refreshWindow();
   };
 
   const lock = (): void => {
@@ -636,15 +666,176 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
       apiKeys,
     };
     unlocked = next;
-    return { fileText: serializeKeystoreFile(file), info: infoOf(next) };
+    const fileText = serializeKeystoreFile(file);
+    await keepRemembered(next, fileText);
+    return { fileText, info: infoOf(next) };
   };
 
-  const checkAutoLock = (): boolean => {
+  // --- The fleet remembered on this device and the passwordless window (BUNNDLY-52) ---
+  const store = options.remember ?? null;
+  /** False once the store failed (a private window refuses IndexedDB): nothing more is kept. */
+  let storeOk = store !== null;
+  const stored = async <T>(work: (s: RememberStore) => Promise<T>): Promise<T | undefined> => {
+    if (store === null || !storeOk) return undefined;
+    try {
+      return await work(store);
+    } catch {
+      storeOk = false;
+      return undefined;
+    }
+  };
+  const read = <K extends RememberKey>(key: K): Promise<RememberRecords[K] | undefined> =>
+    stored((s) => s.get(key));
+  const prefsOf = async (): Promise<RememberPrefs> => {
+    const prefs = await read('prefs');
+    return prefs !== undefined &&
+      typeof prefs.remember === 'boolean' &&
+      isWindowChoice(prefs.windowMs)
+      ? prefs
+      : DEFAULT_PREFS;
+  };
+  /** The timed window this worker last wrote; null: none, or one without a limit. */
+  let windowMark: { fileId: string; windowMs: number; writtenAt: number } | null = null;
+  const dropSession = async (): Promise<void> => {
+    windowMark = null;
+    await stored((s) => s.delete('session'));
+  };
+  const forgetDevice = async (): Promise<void> => {
+    await stored((s) => s.delete('account'));
+    await dropSession();
+  };
+  /** A session record for the open file, valid for the chosen window from now. */
+  const writeSession = async (
+    key: KeystoreSession['key'],
+    fileId: string,
+    windowMs: number | null,
+  ): Promise<void> => {
+    const writtenAt = now();
+    const record = await sealSession(key, fileId, windowMs === null ? null : writtenAt + windowMs);
+    await stored((s) => s.put('session', record));
+    windowMark = windowMs === null ? null : { fileId, windowMs, writtenAt };
+  };
+  /**
+   * Activity on the open fleet moves a timed window on, like the auto-lock: the record is
+   * written again from now, at most once a minute, after the request in progress.
+   */
+  const refreshWindow = (): void => {
+    const mark = windowMark;
+    const vault = unlocked;
+    if (vault === null || mark === null || mark.fileId !== vault.fileId) return;
+    if (now() - mark.writtenAt <= WINDOW_REFRESH_MS) return;
+    mark.writtenAt = now(); // one rewrite in the queue at a time
+    const key = vault.session.key;
+    const run = tail.then(async () => {
+      // Lock, auto-lock, Forget or another file in the meantime dropped or replaced the record.
+      if (windowMark !== mark) return;
+      await writeSession(key, mark.fileId, mark.windowMs);
+    });
+    tail = run.then(
+      () => undefined,
+      () => undefined,
+    );
+  };
+  /** After a fleet opens: remember it (file and window) or forget the device. */
+  const rememberOpened = async (
+    vault: UnlockedVault,
+    fileText: string,
+    remember: boolean | undefined,
+  ): Promise<void> => {
+    if (remember === undefined) {
+      // The device stays as it is; only a window of another file must not survive.
+      const session = await read('session');
+      if (session !== undefined && session.fileId !== vault.fileId) await dropSession();
+      return;
+    }
+    const prefs = { ...(await prefsOf()), remember };
+    await stored((s) => s.put('prefs', prefs));
+    if (!remember) {
+      await forgetDevice();
+      return;
+    }
+    await stored((s) => s.put('account', { fileText, fileId: vault.fileId }));
+    await writeSession(vault.session.key, vault.fileId, prefs.windowMs);
+  };
+  /** A saved change of the open fleet reaches the remembered copy too. */
+  const keepRemembered = async (vault: UnlockedVault, fileText: string): Promise<void> => {
+    const account = await read('account');
+    if (account?.fileId === vault.fileId) {
+      await stored((s) => s.put('account', { fileText, fileId: vault.fileId }));
+    }
+  };
+  const rememberedView = async (): Promise<RememberedView> => {
+    const prefs = await prefsOf();
+    const record = await read('account');
+    let account: RememberedView['account'] = null;
+    if (record !== undefined) {
+      try {
+        const file = parseKeystoreFile(record.fileText);
+        account = {
+          fleetName: file.fleetName,
+          createdAt: file.createdAt,
+          walletCount: file.public.wallets.length,
+        };
+      } catch {
+        await forgetDevice();
+      }
+    }
+    return { available: storeOk, account, prefs };
+  };
+  /**
+   * Opens the remembered fleet with the key from the session record. Any problem (no
+   * record, another file, a changed or passed expiry, a failed decryption) removes the
+   * record and leaves the vault locked.
+   */
+  const resume = async (): Promise<void> => {
+    const session = await read('session');
+    if (session === undefined) return;
+    const account = await read('account');
+    const prefs = await prefsOf();
+    if (
+      !prefs.remember ||
+      account === undefined ||
+      !(await sessionValid(session, account.fileId, now()))
+    ) {
+      await dropSession();
+      return;
+    }
+    let opened: OpenedKeystore;
+    try {
+      const file = parseKeystoreFile(account.fileText);
+      if (fileIdOf(file.fleetName, file.createdAt) !== account.fileId) throw new Error('file');
+      opened = await openKeystoreWithKey(file, session.key);
+    } catch {
+      await dropSession();
+      return;
+    }
+    install(opened);
+    touch();
+    // The window starts again from now.
+    await writeSession(session.key, account.fileId, prefs.windowMs);
+  };
+  /** Auto-lock ends a timed window; a window without a limit stays (SPEC 6.9). */
+  const dropSessionOnAutoLock = async (): Promise<void> => {
+    const session = await read('session');
+    if (session !== undefined && session.expiresAt !== null) await dropSession();
+  };
+
+  const autoLocked = (): boolean => {
     if (unlocked !== null && !isArmed() && now() - lastActivity >= autoLockMs()) {
       lock();
       return true;
     }
     return false;
+  };
+
+  const checkAutoLock = (): boolean => {
+    if (!autoLocked()) return false;
+    const drop = tail.then(() => dropSessionOnAutoLock());
+    tail = drop.then(
+      () => undefined,
+      () => undefined,
+    );
+    return true;
   };
 
   const createTransport = options.chain?.createTransport ?? createHttpTransport;
@@ -1311,13 +1502,21 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
     const progress = options.onProgress ? { onProgress: options.onProgress } : {};
     if (!isRecord(raw)) return badRequest();
     const request = raw as VaultRequest;
-    checkAutoLock();
-    // Reading the status or previewing a file is not user activity on the fleet.
-    if (request.type !== 'status' && request.type !== 'preview') touch();
+    if (autoLocked()) await dropSessionOnAutoLock();
+    // Reading the status, previewing a file or the device's remembered fleet is not user
+    // activity on the fleet.
+    if (request.type !== 'status' && request.type !== 'preview' && request.type !== 'remembered') {
+      touch();
+    }
 
     // Keys must stay while a buy signs or the watcher may start one: no lock and no other
     // fleet until it ends or is disarmed.
-    if (request.type === 'create' || request.type === 'unlock' || request.type === 'lock') {
+    if (
+      request.type === 'create' ||
+      request.type === 'unlock' ||
+      request.type === 'unlockRemembered' ||
+      request.type === 'lock'
+    ) {
       if (anyBuy()) throw new AppError('BUY_RUNNING');
       if (anyWatch()) throw new AppError('WATCH_ARMED');
     }
@@ -1336,10 +1535,9 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
         });
         install(opened);
         touch();
-        return {
-          fileText: serializeKeystoreFile(opened.file),
-          info: infoOf(requireUnlocked()),
-        };
+        const fileText = serializeKeystoreFile(opened.file);
+        await rememberOpened(requireUnlocked(), fileText, rememberFlag(request.remember));
+        return { fileText, info: infoOf(requireUnlocked()) };
       }
       case 'preview': {
         const file = parseKeystoreFile(str(request.fileText));
@@ -1354,10 +1552,55 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
         const password = str(request.password);
         install(await openKeystore(parseKeystoreFile(fileText), password, progress));
         touch();
+        await rememberOpened(requireUnlocked(), fileText, rememberFlag(request.remember));
         return status();
       }
+      case 'remembered':
+        return await rememberedView();
+      case 'resume':
+        if (unlocked === null) await resume();
+        return status();
+      case 'unlockRemembered': {
+        const password = str(request.password);
+        const account = await read('account');
+        if (account === undefined) throw new AppError('NO_REMEMBERED_FLEET');
+        install(await openKeystore(parseKeystoreFile(account.fileText), password, progress));
+        touch();
+        await rememberOpened(requireUnlocked(), account.fileText, true);
+        return status();
+      }
+      case 'setRemember': {
+        const remember: unknown = request.remember;
+        const windowMs: unknown = request.windowMs;
+        if (typeof remember !== 'boolean' || !isWindowChoice(windowMs)) return badRequest();
+        if (!storeOk) throw new AppError('REMEMBER_UNAVAILABLE');
+        await stored((s) => s.put('prefs', { remember, windowMs }));
+        if (!remember) {
+          await forgetDevice();
+        } else if (unlocked !== null) {
+          const vault = unlocked;
+          const account = await read('account');
+          if (account?.fileId !== vault.fileId) {
+            // Remember the fleet as it is now: its file encrypted with the session key.
+            const { fileText } = await rebuild(vault, vault.wallets, vault.settings, vault.apiKeys);
+            await stored((s) => s.put('account', { fileText, fileId: vault.fileId }));
+          }
+          await writeSession(vault.session.key, vault.fileId, windowMs);
+        } else {
+          await dropSession(); // a locked vault cannot start a window
+        }
+        const view = await rememberedView();
+        // A store that failed on the way (e.g. full): the choice did not stick.
+        if (!view.available) throw new AppError('REMEMBER_UNAVAILABLE');
+        return view;
+      }
+      case 'forget':
+        await forgetDevice();
+        return await rememberedView();
       case 'lock':
         lock();
+        // Lock: the next visit needs the password.
+        await dropSession();
         return status();
       case 'status':
         return status();

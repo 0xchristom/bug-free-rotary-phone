@@ -19,6 +19,7 @@ import { AppError, isAppError } from '../errors.ts';
 import {
   MIN_PASSWORD_LENGTH,
   createSession,
+  decryptWithSession,
   encryptWithSession,
   passwordLength,
   unlockSession,
@@ -242,6 +243,33 @@ export async function openKeystore(
     { kdf: file.kdf, cipher: file.cipher, ciphertext: file.ciphertext },
     password,
     options,
+  );
+  let secrets: KeystoreSecretsV1;
+  try {
+    secrets = parseSecrets(JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(plaintext)));
+  } catch (e) {
+    if (isAppError(e)) throw e;
+    throw new AppError('KEYSTORE_INVALID_FORMAT');
+  } finally {
+    wipe(plaintext);
+  }
+  verifySecrets(secrets, file.public.wallets);
+  return { file, secrets, session };
+}
+
+/**
+ * Opens a keystore file with the key of an earlier session, without the password and
+ * without scrypt (the passwordless window, BUNNDLY-52). The same checks as openKeystore;
+ * a key of another file gives KEYSTORE_WRONG_PASSWORD_OR_CORRUPTED.
+ */
+export async function openKeystoreWithKey(
+  file: KeystoreFileV1,
+  key: KeystoreSession['key'],
+): Promise<OpenedKeystore> {
+  const session: KeystoreSession = { key, kdf: file.kdf };
+  const plaintext = await decryptWithSession(
+    { kdf: file.kdf, cipher: file.cipher, ciphertext: file.ciphertext },
+    session,
   );
   let secrets: KeystoreSecretsV1;
   try {
