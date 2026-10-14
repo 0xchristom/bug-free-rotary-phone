@@ -37,6 +37,15 @@ export const ERROR_MESSAGES = {
   INVALID_MINT_ADDRESS: 'This is not a valid token mint address (base58, 32–44 characters).',
   INVALID_CREATOR_ADDRESS:
     'This is not a valid creator wallet address (base58, 32 bytes, not the SOL mint).',
+  INVALID_TARGET_ADDRESS: 'This is not a valid Solana address (base58, 32 bytes).',
+  TARGET_IS_TOKEN_ACCOUNT:
+    'This address is a token account, not a token. Paste the token mint or the creator wallet.',
+  TARGET_IS_PROGRAM:
+    'This address is a program, not a token. Paste the token mint or the creator wallet.',
+  TARGET_UNSUPPORTED:
+    'This address is neither a token mint nor a wallet. Paste the token mint or the creator wallet.',
+  TARGET_KIND_MISMATCH:
+    'BUY needs a token mint and ARM needs a creator wallet; this address is the other kind.',
   WATCH_ARMED:
     'The watcher is armed. Disarm it with DISARM first, then lock the fleet or change the settings or the fleet.',
   NO_BUY_ROUTE_ON_NETWORK: NO_BUY_ROUTE_MESSAGE,

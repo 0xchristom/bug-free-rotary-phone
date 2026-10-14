@@ -5,6 +5,7 @@
  * bytes or to export keys without the password (DECISIONS D-013). Responses carry
  * the encrypted file text and public data only; errors carry only a code (D-008).
  */
+import type { TargetKind } from '../chain/target.ts';
 import type { ExecutorEvent } from '../executor/executor.ts';
 import type { WatchEvent, WatchStatus } from '../watcher/watch.ts';
 import type {
@@ -77,18 +78,27 @@ export type VaultRequest =
       readonly format: 'txt' | 'json';
     }
   /**
-   * Buy `mint` with every active wallet that has a max spend (SPEC 3.4 A, BUNNDLY-21).
-   * Runs in the worker; progress arrives as events. DRY-RUN unless the settings say
-   * otherwise. While it runs the vault is armed: no auto-lock and no manual lock.
+   * What a pasted address is (BUNNDLY-59): a token mint or a wallet. Token accounts,
+   * programs and other accounts are refused with a code that names them.
    */
-  | { readonly type: 'startBuy'; readonly mint: string }
+  | { readonly type: 'classifyTarget'; readonly address: string }
+  /**
+   * Buy `mint` with the listed wallets that have a max spend (SPEC 3.4 A, BUNNDLY-21,
+   * BUNNDLY-59). `wallets` are the indexes selected in the table; the saved selection
+   * plays no part. The worker checks first that `mint` is a token mint. Runs in the
+   * worker; progress arrives as events. DRY-RUN unless the settings say otherwise. While
+   * it runs the vault is armed: no auto-lock and no manual lock.
+   */
+  | { readonly type: 'startBuy'; readonly mint: string; readonly wallets: readonly number[] }
   /** STOP: no new `/order`; transactions already sent are followed to the end. */
   | { readonly type: 'stop' }
   /**
    * Mode B (SPEC 3.4 B, BUNNDLY-34): watch `creator` and buy every token it creates, by
-   * the `mode` setting. While armed: no auto-lock and no manual lock.
+   * the `mode` setting, with the listed wallets (frozen until DISARM, like the settings,
+   * D-039). The worker checks first that `creator` is a wallet. While armed: no auto-lock
+   * and no manual lock.
    */
-  | { readonly type: 'arm'; readonly creator: string }
+  | { readonly type: 'arm'; readonly creator: string; readonly wallets: readonly number[] }
   /** Closes the socket and empties the detection queue; a running buy goes on. */
   | { readonly type: 'disarm' }
   /** User activity in the UI; resets the auto-lock timer. */
@@ -179,6 +189,7 @@ export interface VaultResultMap {
   readonly preview: VaultPreview;
   readonly refreshBalances: VaultBalances;
   readonly testConnections: ConnectionReport;
+  readonly classifyTarget: TargetKind;
   readonly exportPlain: PlainExport;
   readonly unlock: VaultStatus;
   readonly lock: VaultStatus;

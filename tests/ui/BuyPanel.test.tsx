@@ -189,7 +189,25 @@ describe('mode A', () => {
     expect(screen.getByRole('button', { name: 'Buy now' })).toHaveProperty('disabled', false);
     expect(screen.getByLabelText('Before the buy').textContent).toContain('0.03 SOL');
     await user.click(screen.getByRole('button', { name: 'Buy now' }));
-    expect(requests.find((r) => r.type === 'startBuy')).toEqual({ type: 'startBuy', mint: MINT });
+    expect(requests.find((r) => r.type === 'startBuy')).toEqual({
+      type: 'startBuy',
+      mint: MINT,
+      wallets: [0, 1, 2],
+    });
+  });
+
+  it('"Buy now" sends the wallets selected in the table, saved or not (BUNNDLY-59)', async () => {
+    const { user, requests } = setup();
+    await screen.findByText(/^Balances as of /u);
+    await showMint(user);
+    await user.click(screen.getByRole('checkbox', { name: 'Select W02' }));
+    await user.click(screen.getByRole('button', { name: 'Buy now' }));
+    expect(requests.find((r) => r.type === 'startBuy')).toEqual({
+      type: 'startBuy',
+      mint: MINT,
+      wallets: [0, 2],
+    });
+    expect(requests.filter((r) => r.type === 'saveSettings')).toEqual([]);
   });
 
   it('a full run of 3 wallets: success, failure, skip; bar, timers, explorer link; STOP', async () => {

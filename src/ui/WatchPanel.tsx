@@ -18,6 +18,8 @@ import { useWatchRuntime } from './watch-runtime.ts';
 import { Button, Input, Modal } from './kit/index.ts';
 
 export interface WatchPanelProps {
+  /** Indexes of the wallets selected in the table: the arming buys with them. */
+  readonly wallets: readonly number[];
   readonly readyCount: number;
   readonly toSpend: bigint;
   readonly dryRun: boolean;
@@ -54,6 +56,7 @@ function verifiedLabel(d: WatchDetection): string {
  * the connection state and the detections.
  */
 export function WatchPanel({
+  wallets,
   readyCount,
   toSpend,
   dryRun,
@@ -121,7 +124,7 @@ export function WatchPanel({
     setConfirmArm(false);
     alarm.prime(); // the click allows the alarm sound later (autoplay policy)
     void act(async () => {
-      await client.request({ type: 'arm', creator });
+      await client.request({ type: 'arm', creator, wallets });
       await refresh();
     });
   };

@@ -132,11 +132,12 @@ export function FleetScreen({
     const parsed = parseSolAmount(text);
     return parsed.ok ? parsed.lamports : 'invalid';
   };
-  const tableDirty = info.wallets.some(
-    (w) =>
-      draftLamports(w.index) !== (savedMaxSpend.get(w.index) ?? null) ||
-      (active[w.index] ?? true) !== (savedActive[w.index] ?? true),
+  const maxSpendDirty = info.wallets.some(
+    (w) => draftLamports(w.index) !== (savedMaxSpend.get(w.index) ?? null),
   );
+  const tableDirty =
+    maxSpendDirty ||
+    info.wallets.some((w) => (active[w.index] ?? true) !== (savedActive[w.index] ?? true));
   const tableInvalid = info.wallets.some((w) => {
     const text = (maxSpendText[w.index] ?? '').trim();
     return text !== '' && !parseSolAmount(text).ok;
@@ -206,7 +207,12 @@ export function FleetScreen({
   };
   const unknownBalances = info.wallets.filter((w) => !balances.lamports?.has(w.index)).length;
 
-  const selectedCount = info.wallets.filter((w) => active[w.index] ?? true).length;
+  // A buy or an arming uses exactly these wallets, saved in the file or not (BUNNDLY-59).
+  const selectedIndexes = useMemo(
+    () => info.wallets.filter((w) => active[w.index] ?? true).map((w) => w.index),
+    [info.wallets, active],
+  );
+  const selectedCount = selectedIndexes.length;
   const summary = summarize(
     info.wallets.map((w) => {
       const lamports = draftLamports(w.index);
@@ -227,8 +233,8 @@ export function FleetScreen({
   const buyBlocked =
     buyRouteOf(global.network) === null
       ? NO_BUY_ROUTE_MESSAGE
-      : tableDirty
-        ? 'Save the table changes first: a buy uses the settings saved in the vault.'
+      : maxSpendDirty
+        ? 'Save the max spend changes first: a buy spends the amounts saved in the vault.'
         : !global.dryRun && !hasRpc
           ? 'Live mode needs a Helius key (Settings).'
           : null;
@@ -433,6 +439,7 @@ export function FleetScreen({
       <BuyPanel
         view={buyView}
         mint={checkedMint}
+        wallets={selectedIndexes}
         readyCount={summary.readyCount}
         toSpend={summary.toSpendLamports}
         dryRun={global.dryRun}

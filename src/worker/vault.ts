@@ -28,6 +28,7 @@ import {
   type RpcSource,
   type WebSocketFactory,
 } from '../chain/index.ts';
+import { fetchTarget, parseTargetAddress, type TargetKind } from '../chain/target.ts';
 import { startRun, type ExecutorEvent, type ExecutorRun } from '../executor/executor.ts';
 import { startWatch, type BuyTrigger, type Watch } from '../watcher/watch.ts';
 import type { LandingChecker } from '../executor/landing.ts';
@@ -89,6 +90,7 @@ import type {
   VaultPort,
   VaultProgressEnvelope,
   VaultRequest,
+  VaultRequestOf,
   VaultRequestType,
   VaultResponseEnvelope,
   VaultResultMap,
@@ -217,6 +219,15 @@ function badRequest(): never {
   throw new AppError('INTERNAL_ERROR');
 }
 
+/** A buyable mint address as typed; the SOL mint and malformed text are refused. */
+function mintText(value: unknown): string {
+  const mint = str(value).trim();
+  if (!/^[1-9A-HJ-NP-Za-km-z]{32,44}$/u.test(mint) || mint === SOL_MINT) {
+    throw new AppError('INVALID_MINT_ADDRESS');
+  }
+  return mint;
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -227,6 +238,22 @@ function str(value: unknown): string {
 
 function int(value: unknown): number {
   return typeof value === 'number' && Number.isSafeInteger(value) ? value : badRequest();
+}
+
+/**
+ * Wallet indexes a buy or an arming uses (BUNNDLY-59): every item a wallet of this
+ * fleet, no repeats. Anything else is a malformed request.
+ */
+function parseWalletList(value: unknown, fleet: readonly PublicWalletV1[]): readonly number[] {
+  if (!Array.isArray(value)) return badRequest();
+  const items: unknown[] = value;
+  const indices = new Set(fleet.map((w) => w.index));
+  const seen = new Set<number>();
+  for (const item of items) {
+    if (!isIndexIn(item, indices) || seen.has(item)) return badRequest();
+    seen.add(item);
+  }
+  return [...seen];
 }
 
 function invalidSettings(): never {
@@ -370,6 +397,8 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
   let session = 0;
   /** SOL balances from the last refresh of this session (pre-check before `/order`). */
   let balances = new Map<number, bigint>();
+  /** `network:address` this session read as token mints: a mint never changes its kind. */
+  let knownMints = new Map<string, TargetKind>();
   let buy: { readonly run: ExecutorRun; status: BuyStatus } | null = null;
   let nextRunId = 1;
   const listeners = new Set<(event: WorkerEvent) => void>();
@@ -391,6 +420,7 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
     unlocked = null;
     session += 1;
     balances = new Map();
+    knownMints = new Map();
     watch = null; // never active here: lock is refused while armed
   };
 
@@ -602,12 +632,15 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
     return pair;
   };
 
-  /** Active wallets with a max spend, with their last read balance. */
-  const buyWallets = (vault: UnlockedVault) => {
-    const inactive = new Set(vault.settings.active.filter((a) => !a.active).map((a) => a.index));
+  /**
+   * The listed wallets that have a max spend, with their last read balance. The saved
+   * selection (`active`) plays no part: the request names the wallets (BUNNDLY-59).
+   */
+  const buyWallets = (vault: UnlockedVault, list: readonly number[]) => {
+    const listed = new Set(list);
     const spend = new Map(vault.settings.maxSpend.map((m) => [m.index, m.lamports]));
     const wallets = vault.publicWallets
-      .filter((w) => !inactive.has(w.index) && (spend.get(w.index) ?? 0n) > 0n)
+      .filter((w) => listed.has(w.index) && (spend.get(w.index) ?? 0n) > 0n)
       .map((w) => ({
         index: w.index,
         address: w.address,
@@ -631,17 +664,18 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
    * Mode B passes the detection (`trigger`): times count from it and the first `/order`
    * is reported back for `reactionMs` (BUNNDLY-34).
    */
-  const startBuy = (rawMint: unknown, trigger: BuyTrigger | null = null): BuyStatus => {
+  const startBuy = (
+    rawMint: unknown,
+    trigger: BuyTrigger | null,
+    list: readonly number[],
+  ): BuyStatus => {
     const vault = requireUnlocked();
     if (buy !== null) throw new AppError('BUY_RUNNING');
     requireBuyRoute(vault);
     const network = networkOf(vault);
-    const mint = str(rawMint).trim();
-    if (!/^[1-9A-HJ-NP-Za-km-z]{32,44}$/u.test(mint) || mint === SOL_MINT) {
-      throw new AppError('INVALID_MINT_ADDRESS');
-    }
+    const mint = mintText(rawMint);
     const { global } = vault.settings;
-    const wallets = buyWallets(vault);
+    const wallets = buyWallets(vault, list);
     const live = !global.dryRun;
     const injected = options.executor;
     const rpcUrl = rpcUrlOf(vault);
@@ -744,11 +778,51 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
   };
 
   /**
-   * arm (BUNNDLY-34): watch the creator; each detection starts a buy (D-038). The
-   * balances are read first: a buy without them skips every wallet (BALANCE_UNKNOWN), and
-   * a detection must not wait for the RPC.
+   * Kind of a pasted address (BUNNDLY-59), read through Helius with the public RPC as the
+   * fallback (or the public RPC alone without a key: DRY-RUN may run without Helius).
    */
-  const arm = async (rawCreator: unknown): Promise<VaultStatus> => {
+  const classify = async (vault: UnlockedVault, target: string): Promise<TargetKind> => {
+    const network = networkOf(vault);
+    const key = `${network}:${target}`;
+    const known = knownMints.get(key);
+    if (known !== undefined) return known;
+    const readSession = session;
+    const publicUrl = publicRpcUrl(network);
+    const transport = createResilientTransport({
+      primary: createTransport(rpcUrlOf(vault) ?? publicUrl),
+      fallback: createTransport(publicUrl),
+      ...(options.chain?.sleep ? { sleep: options.chain.sleep } : {}),
+    });
+    let kind: TargetKind;
+    try {
+      kind = await fetchTarget(createBalancesRpc(transport), target);
+    } catch (e) {
+      // Only our own codes cross; anything else may carry the URL with the key.
+      throw isAppError(e) ? e : new AppError('RPC_UNAVAILABLE');
+    }
+    if (session !== readSession || unlocked === null) throw new AppError('VAULT_LOCKED');
+    if (kind.kind === 'mint') knownMints.set(key, kind);
+    return kind;
+  };
+
+  /** A manual buy: the target must be a token mint, checked before anything starts. */
+  const startManualBuy = async (request: VaultRequestOf<'startBuy'>): Promise<BuyStatus> => {
+    const vault = requireUnlocked();
+    const list = parseWalletList(request.wallets, vault.publicWallets);
+    if (buy !== null) throw new AppError('BUY_RUNNING');
+    requireBuyRoute(vault);
+    const mint = mintText(request.mint);
+    buyWallets(vault, list); // no RPC read for a buy that cannot start
+    if ((await classify(vault, mint)).kind !== 'mint') throw new AppError('TARGET_KIND_MISMATCH');
+    return startBuy(mint, null, list);
+  };
+
+  /**
+   * arm (BUNNDLY-34): watch the creator; each detection starts a buy (D-038) with the
+   * wallets listed at arming (BUNNDLY-59). The balances are read first: a buy without them
+   * skips every wallet (BALANCE_UNKNOWN), and a detection must not wait for the RPC.
+   */
+  const arm = async (rawCreator: unknown, rawWallets: unknown): Promise<VaultStatus> => {
     const vault = requireUnlocked();
     if (buy !== null) throw new AppError('BUY_RUNNING');
     if (watchActive()) throw new AppError('WATCH_ARMED');
@@ -764,10 +838,14 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
     if (bytes?.length !== 32 || creator === SOL_MINT) {
       throw new AppError('INVALID_CREATOR_ADDRESS');
     }
+    const list = parseWalletList(rawWallets, vault.publicWallets);
     const wsUrl = wsUrlOf(vault);
     const rpcUrl = rpcUrlOf(vault);
     if (wsUrl === null || rpcUrl === null) throw new AppError('HELIUS_KEY_MISSING');
-    buyWallets(vault); // the same checks as a buy, now rather than at the detection
+    buyWallets(vault, list); // the same checks as a buy, now rather than at the detection
+    if ((await classify(vault, creator)).kind !== 'wallet') {
+      throw new AppError('TARGET_KIND_MISMATCH');
+    }
     await prepareRefresh(undefined)();
     const rpc = createWatchRpc(
       createResilientTransport({
@@ -789,7 +867,7 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
         refreshBalances: () =>
           session === armSession ? prepareRefresh(undefined)() : Promise.resolve(),
         isBuying: () => buy !== null,
-        startBuy: (trigger) => startBuy(trigger.mint, trigger).runId,
+        startBuy: (trigger) => startBuy(trigger.mint, trigger, list).runId,
         emit,
       },
       {
@@ -915,10 +993,12 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
           throw e;
         }
       }
+      case 'classifyTarget':
+        return await classify(requireUnlocked(), parseTargetAddress(str(request.address)));
       case 'startBuy':
-        return startBuy(request.mint);
+        return await startManualBuy(request);
       case 'arm':
-        return await arm(request.creator);
+        return await arm(request.creator, request.wallets);
       case 'disarm':
         watch?.disarm();
         return status();

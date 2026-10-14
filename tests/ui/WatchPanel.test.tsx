@@ -261,7 +261,9 @@ describe('ARM / DISARM', () => {
   it('DRY-RUN: ARM sends arm at once, DISARM sends disarm', async () => {
     const { user, requests } = setup();
     await arm(user);
-    expect(requests.filter((r) => r.type === 'arm')).toEqual([{ type: 'arm', creator: CREATOR }]);
+    expect(requests.filter((r) => r.type === 'arm')).toEqual([
+      { type: 'arm', creator: CREATOR, wallets: [0, 1, 2] },
+    ]);
     expect(screen.getByText(/The watcher is armed. Do not close/u)).toBeTruthy();
     await user.click(screen.getByRole('button', { name: 'DISARM' }));
     expect(requests.some((r) => r.type === 'disarm')).toBe(true);

@@ -25,6 +25,7 @@ import { createVaultClient } from '../../src/worker/vault-client.ts';
 import { FakeChain } from '../helpers/fake-chain.ts';
 import { FakeClock } from '../helpers/fake-clock.ts';
 import { FakeJupiter, type FakeJupiterScript } from '../helpers/fake-jupiter.ts';
+import { MINT_ACCOUNT } from '../helpers/mint-account.ts';
 import { USDC, buildTransaction } from '../helpers/tx-fakes.ts';
 
 vi.setConfig({ testTimeout: 60_000 });
@@ -34,24 +35,36 @@ const MNEMONIC_12 = `${'abandon '.repeat(11)}about`;
 const SOL_MINT = 'So11111111111111111111111111111111111111112';
 const MAX = 10_000_000n;
 
-/** RPC mock: every account has 1 SOL. */
+/** Every wallet of the open fleet: what "select all" in the table sends (BUNNDLY-59). */
+const all = (h: VaultHandler): number[] =>
+  h.inspect().unlocked?.publicWallets.map((w) => w.index) ?? [];
+
+/** Addresses of every getMultipleAccounts call, in order (all tests share the mock). */
+const rpcReads: string[][] = [];
+
+/** RPC mock: every account has 1 SOL; USDC is a token mint. */
 const chain = {
   createTransport: () =>
     ((config: { payload: unknown }) => {
       const payload = config.payload as { id: unknown; params: [string[]] };
+      rpcReads.push([...payload.params[0]]);
       return Promise.resolve({
         jsonrpc: '2.0',
         id: payload.id,
         result: {
           context: { slot: 1n },
-          value: payload.params[0].map(() => ({
-            lamports: 1_000_000_000n,
-            owner: '11111111111111111111111111111111',
-            data: ['', 'base64'],
-            executable: false,
-            rentEpoch: 0n,
-            space: 0n,
-          })),
+          value: payload.params[0].map((account) =>
+            account === USDC
+              ? MINT_ACCOUNT
+              : {
+                  lamports: 1_000_000_000n,
+                  owner: '11111111111111111111111111111111',
+                  data: ['', 'base64'],
+                  executable: false,
+                  rentEpoch: 0n,
+                  space: 0n,
+                },
+          ),
         },
       });
     }) as unknown as RpcTransport,
@@ -176,10 +189,115 @@ async function codeOf(p: Promise<unknown>): Promise<string> {
   );
 }
 
+/** A System Program wallet (the creator of BUNNDLY-34's fixtures): not a token. */
+const A_WALLET = 'AEcFjuNWuG77oVT5rxhLmpKomq3tDKo2qzr9SyDwkEA4';
+
+describe('selected wallets and the target (BUNNDLY-59)', () => {
+  const tenWallets = (): Partial<FleetSettingsV1> => ({
+    maxSpend: Array.from({ length: 10 }, (_, index) => ({ index, lamports: MAX })),
+    // The saved selection is the opposite of the request: it must play no part.
+    active: [1, 4, 7].map((index) => ({ index, active: false })),
+  });
+
+  it('BUY with 3 of 10 selected: /order for exactly those 3, the other 7 untouched', async () => {
+    const { clock, jupiter, h, events } = await setup({ walletCount: 10, settings: tenWallets() });
+    const addresses = h.inspect().unlocked?.publicWallets.map((w) => w.address) ?? [];
+    expect(addresses).toHaveLength(10);
+    const started = (await h.handle({
+      type: 'startBuy',
+      mint: USDC,
+      wallets: [7, 1, 4],
+    })) as BuyStatus;
+    expect(started.wallets).toBe(3);
+    await runToEnd(clock, events);
+    const ordered = [1, 4, 7];
+    for (const [index, address] of addresses.entries()) {
+      expect(jupiter.ordersOf(address), `wallet ${String(index)}`).toBe(
+        ordered.includes(index) ? 1 : 0,
+      );
+    }
+    expect([...new Set(finals(events).map((e) => e.index))]).toEqual(ordered);
+  });
+
+  it('a listed wallet without a max spend does not buy; none left → NO_WALLETS_TO_BUY', async () => {
+    const { clock, jupiter, h, events } = await setup({ walletCount: 3 });
+    // setup gives wallets 0 and 1 a max spend; wallet 2 has none.
+    expect(await codeOf(h.handle({ type: 'startBuy', mint: USDC, wallets: [2] }))).toBe(
+      'NO_WALLETS_TO_BUY',
+    );
+    expect(await codeOf(h.handle({ type: 'startBuy', mint: USDC, wallets: [] }))).toBe(
+      'NO_WALLETS_TO_BUY',
+    );
+    expect(jupiter.calls).toHaveLength(0);
+    await h.handle({ type: 'startBuy', mint: USDC, wallets: [1, 2] });
+    await runToEnd(clock, events);
+    expect([...new Set(finals(events).map((e) => e.index))]).toEqual([1]);
+  });
+
+  it('a malformed wallet list is refused before anything is read or sent', async () => {
+    const { h, jupiter } = await setup({ walletCount: 3 });
+    const before = rpcReads.length;
+    for (const wallets of [[3], [0, 0], [-1], ['0'], [0.5], null, undefined, '0,1']) {
+      expect(
+        await codeOf(h.handle({ type: 'startBuy', mint: USDC, wallets })),
+        JSON.stringify(wallets),
+      ).toBe('INTERNAL_ERROR');
+    }
+    expect(rpcReads.length).toBe(before);
+    expect(jupiter.calls).toHaveLength(0);
+  });
+
+  it('BUY on a wallet address → TARGET_KIND_MISMATCH, zero /order', async () => {
+    const { h, jupiter, status } = await setup();
+    expect(await codeOf(h.handle({ type: 'startBuy', mint: A_WALLET, wallets: all(h) }))).toBe(
+      'TARGET_KIND_MISMATCH',
+    );
+    expect(jupiter.calls).toHaveLength(0);
+    expect(await status()).toMatchObject({ armed: false, buy: null });
+  });
+
+  it('classifyTarget: a mint and a wallet; the mint is read once per session', async () => {
+    const { clock, h, events } = await setup();
+    const reads = () => rpcReads.filter((r) => r.length === 1 && r[0] === USDC).length;
+    const before = reads();
+    expect(await h.handle({ type: 'classifyTarget', address: ` ${USDC} ` })).toEqual({
+      kind: 'mint',
+      program: 'spl-token',
+    });
+    expect(await h.handle({ type: 'classifyTarget', address: A_WALLET })).toEqual({
+      kind: 'wallet',
+    });
+    expect(reads()).toBe(before + 1);
+    // The buy after the check in the bar does not read the mint again.
+    await h.handle({ type: 'startBuy', mint: USDC, wallets: all(h) });
+    expect(reads()).toBe(before + 1);
+    await runToEnd(clock, events);
+    expect(await codeOf(h.handle({ type: 'classifyTarget', address: 'not-an-address' }))).toBe(
+      'INVALID_TARGET_ADDRESS',
+    );
+  });
+
+  it('the remembered mint belongs to its network: on devnet the account is read again', async () => {
+    const { h } = await setup();
+    const reads = () => rpcReads.filter((r) => r.length === 1 && r[0] === USDC).length;
+    const before = reads();
+    await h.handle({ type: 'classifyTarget', address: USDC });
+    await h.handle({ type: 'classifyTarget', address: USDC });
+    expect(reads()).toBe(before + 1);
+    await h.handle({ type: 'setNetwork', network: 'devnet' });
+    await h.handle({ type: 'classifyTarget', address: USDC });
+    expect(reads()).toBe(before + 2);
+  });
+});
+
 describe('startBuy', () => {
   it('DRY-RUN by default: active wallets with max spend sign and skip; zero /execute', async () => {
     const { clock, jupiter, h, events, status } = await setup();
-    const started = (await h.handle({ type: 'startBuy', mint: USDC })) as BuyStatus;
+    const started = (await h.handle({
+      type: 'startBuy',
+      mint: USDC,
+      wallets: all(h),
+    })) as BuyStatus;
     expect(started).toMatchObject({ dryRun: true, wallets: 2, mint: USDC, accepting: true });
     expect(await status()).toMatchObject({ armed: true, buy: { runId: started.runId } });
     await runToEnd(clock, events);
@@ -193,7 +311,7 @@ describe('startBuy', () => {
 
   it('live mode: real signatures go to /execute and every wallet is CONFIRMED', async () => {
     const { clock, jupiter, h, events } = await setup({ dryRun: false });
-    await h.handle({ type: 'startBuy', mint: USDC });
+    await h.handle({ type: 'startBuy', mint: USDC, wallets: all(h) });
     await runToEnd(clock, events);
     expect(finals(events).map((e) => e.state)).toEqual(['CONFIRMED', 'CONFIRMED']);
     const sent = jupiter.executions();
@@ -208,11 +326,13 @@ describe('startBuy', () => {
 
   it('live mode needs the Helius key for the chain check; DRY-RUN does not', async () => {
     const live = await setup({ dryRun: false, refresh: false, heliusKey: false });
-    expect(await codeOf(live.h.handle({ type: 'startBuy', mint: USDC }))).toBe(
-      'HELIUS_KEY_MISSING',
-    );
+    expect(
+      await codeOf(live.h.handle({ type: 'startBuy', mint: USDC, wallets: all(live.h) })),
+    ).toBe('HELIUS_KEY_MISSING');
     const dry = await setup({ refresh: false, heliusKey: false });
-    expect(await codeOf(dry.h.handle({ type: 'startBuy', mint: USDC }))).toBe('ok');
+    expect(await codeOf(dry.h.handle({ type: 'startBuy', mint: USDC, wallets: all(dry.h) }))).toBe(
+      'ok',
+    );
     await runToEnd(dry.clock, dry.events);
   });
 
@@ -222,7 +342,7 @@ describe('startBuy', () => {
       withChain: true,
       script: { execute: () => ({ fail: 'TIMEOUT', lands: { afterMs: 1_000 } }) },
     });
-    await h.handle({ type: 'startBuy', mint: USDC });
+    await h.handle({ type: 'startBuy', mint: USDC, wallets: all(h) });
     await runToEnd(clock, events);
     expect(finals(events).map((e) => e.state)).toEqual(['CONFIRMED', 'CONFIRMED']);
     expect(jupiter.calls.filter((c) => c.kind === 'order')).toHaveLength(2);
@@ -236,7 +356,7 @@ describe('startBuy', () => {
       withChain: true,
       script: { executeDelayMs: () => 1_000 },
     });
-    await h.handle({ type: 'startBuy', mint: USDC });
+    await h.handle({ type: 'startBuy', mint: USDC, wallets: all(h) });
     await runToEnd(clock, events);
     const verify = (): VerifyEvent[] =>
       events.filter((e): e is VerifyEvent => e.kind === 'verify').sort((a, b) => a.index - b.index);
@@ -247,7 +367,7 @@ describe('startBuy', () => {
     ]);
 
     const dry = await setup({ withChain: true });
-    await dry.h.handle({ type: 'startBuy', mint: USDC });
+    await dry.h.handle({ type: 'startBuy', mint: USDC, wallets: all(dry.h) });
     await runToEnd(dry.clock, dry.events);
     expect(dry.events.filter((e) => e.kind === 'verify')).toHaveLength(0);
   });
@@ -261,7 +381,7 @@ describe('startBuy', () => {
       },
     });
     const held = secrets();
-    await h.handle({ type: 'startBuy', mint: USDC });
+    await h.handle({ type: 'startBuy', mint: USDC, wallets: all(h) });
     await runToEnd(clock, events);
     const addresses = ((await h.handle({ type: 'status' })) as VaultStatus).info?.wallets ?? [];
     const entries = events.map((e) =>
@@ -290,7 +410,7 @@ describe('startBuy', () => {
       const t = await setup({ walletCount: 30, jupiterKey, settings: thirty });
       const global = (await t.status()).info?.settings.global;
       expect(global?.jupiterPlan).toBe('free'); // default plan in the settings
-      await t.h.handle({ type: 'startBuy', mint: USDC });
+      await t.h.handle({ type: 'startBuy', mint: USDC, wallets: all(t.h) });
       await runToEnd(t.clock, t.events);
       const starts = t.jupiter.calls.filter((c) => c.kind === 'order').map((c) => c.start);
       // in the first 60 s window (after the probe, D-035)
@@ -302,7 +422,7 @@ describe('startBuy', () => {
 
   it('wallets without a balance read are skipped before /order', async () => {
     const { clock, jupiter, h, events } = await setup({ refresh: false });
-    await h.handle({ type: 'startBuy', mint: USDC });
+    await h.handle({ type: 'startBuy', mint: USDC, wallets: all(h) });
     await runToEnd(clock, events);
     expect(jupiter.calls).toHaveLength(0);
     expect(finals(events).map((e) => e.reason?.code)).toEqual([
@@ -314,7 +434,7 @@ describe('startBuy', () => {
   it('events carry no mnemonic, private key or signed transaction', async () => {
     const { clock, jupiter, h, events, secrets } = await setup({ dryRun: false });
     const held = secrets();
-    await h.handle({ type: 'startBuy', mint: USDC });
+    await h.handle({ type: 'startBuy', mint: USDC, wallets: all(h) });
     await runToEnd(clock, events);
     const text = JSON.stringify(events, (_k, v: unknown) =>
       typeof v === 'bigint' ? v.toString() : v,
@@ -326,17 +446,21 @@ describe('startBuy', () => {
 
   it('refuses a bad mint, SOL itself, no eligible wallets and a second buy', async () => {
     const { h } = await setup({ settings: { maxSpend: [] } });
-    expect(await codeOf(h.handle({ type: 'startBuy', mint: 'not-a-mint' }))).toBe(
+    expect(await codeOf(h.handle({ type: 'startBuy', mint: 'not-a-mint', wallets: all(h) }))).toBe(
       'INVALID_MINT_ADDRESS',
     );
-    expect(await codeOf(h.handle({ type: 'startBuy', mint: SOL_MINT }))).toBe(
+    expect(await codeOf(h.handle({ type: 'startBuy', mint: SOL_MINT, wallets: all(h) }))).toBe(
       'INVALID_MINT_ADDRESS',
     );
-    expect(await codeOf(h.handle({ type: 'startBuy', mint: USDC }))).toBe('NO_WALLETS_TO_BUY');
+    expect(await codeOf(h.handle({ type: 'startBuy', mint: USDC, wallets: all(h) }))).toBe(
+      'NO_WALLETS_TO_BUY',
+    );
 
     const busy = await setup();
-    await busy.h.handle({ type: 'startBuy', mint: USDC });
-    expect(await codeOf(busy.h.handle({ type: 'startBuy', mint: USDC }))).toBe('BUY_RUNNING');
+    await busy.h.handle({ type: 'startBuy', mint: USDC, wallets: all(busy.h) });
+    expect(
+      await codeOf(busy.h.handle({ type: 'startBuy', mint: USDC, wallets: all(busy.h) })),
+    ).toBe('BUY_RUNNING');
     await runToEnd(busy.clock, busy.events);
   });
 
@@ -344,7 +468,7 @@ describe('startBuy', () => {
     const { clock, h, events, status } = await setup({
       script: { orderDelayMs: () => 600_000 },
     });
-    await h.handle({ type: 'startBuy', mint: USDC });
+    await h.handle({ type: 'startBuy', mint: USDC, wallets: all(h) });
     await clock.runUntil(clock.now() + 300_000);
     expect(h.checkAutoLock()).toBe(false);
     expect(await codeOf(h.handle({ type: 'lock' }))).toBe('BUY_RUNNING');
@@ -361,7 +485,7 @@ describe('startBuy', () => {
     const { clock, h, events, status } = await setup({
       script: { orderDelayMs: () => 600_000 },
     });
-    await h.handle({ type: 'startBuy', mint: USDC });
+    await h.handle({ type: 'startBuy', mint: USDC, wallets: all(h) });
     await clock.runUntil(clock.now() + 1_000);
     expect(await codeOf(h.handle({ type: 'setNetwork', network: 'devnet' }))).toBe('BUY_RUNNING');
     const settings = (await status()).info?.settings;
@@ -381,7 +505,7 @@ describe('startBuy', () => {
       dryRun: false,
       script: { orderDelayMs: (c) => (c.taker.length > 0 ? 50 : 0), executeDelayMs: () => 5_000 },
     });
-    await h.handle({ type: 'startBuy', mint: USDC });
+    await h.handle({ type: 'startBuy', mint: USDC, wallets: all(h) });
     await clock.runUntil(clock.now() + 100); // both sent, executing
     const stopped = (await h.handle({ type: 'stop' })) as VaultStatus;
     expect(stopped).toMatchObject({ armed: true, buy: { accepting: false } });
@@ -426,7 +550,7 @@ describe('events over the message port', () => {
       apiKeys: { helius: 'heliusPortKey' },
     });
     await client.request({ type: 'refreshBalances' });
-    await client.request({ type: 'startBuy', mint: USDC });
+    await client.request({ type: 'startBuy', mint: USDC, wallets: [0] });
     await runToEnd(clock, received);
     expect(
       received.map((e) => (e.kind === 'run' ? e.phase : e.kind === 'wallet' ? e.state : e.status)),

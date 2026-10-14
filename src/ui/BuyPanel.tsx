@@ -15,6 +15,8 @@ export interface BuyPanelProps {
   readonly view: BuyView;
   /** Token address checked by the worker (its balance is on screen), or null. */
   readonly mint: string | null;
+  /** Indexes of the wallets selected in the table: the buy uses exactly these. */
+  readonly wallets: readonly number[];
   readonly readyCount: number;
   readonly toSpend: bigint;
   readonly dryRun: boolean;
@@ -47,6 +49,7 @@ function seconds(ms: number | null): string {
 export function BuyPanel({
   view,
   mint,
+  wallets,
   readyCount,
   toSpend,
   dryRun,
@@ -110,7 +113,7 @@ export function BuyPanel({
   const start = (): void => {
     if (mint === null) return;
     void act('start', async () => {
-      await client.request({ type: 'startBuy', mint });
+      await client.request({ type: 'startBuy', mint, wallets });
       await refresh();
     });
   };
@@ -263,6 +266,7 @@ export function BuyPanel({
 
       {tab === 'B' && (
         <WatchPanel
+          wallets={wallets}
           readyCount={readyCount}
           toSpend={toSpend}
           dryRun={dryRun}
