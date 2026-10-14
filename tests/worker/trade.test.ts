@@ -192,6 +192,27 @@ describe('buy amount as a percent of the balance (money path)', () => {
     ]);
   });
 
+  it('the settings the table saves (BUNNDLY-71) buy the amounts typed', async () => {
+    const t = await setup();
+    t.balance(1, 2n * SOL);
+    // the request tests/ui/trade-params.test.tsx expects after "0,75" in W01 (SOL) and
+    // "40" in W02 (%), plus a buy slippage of 2,5 % for W01 from the row popover
+    await t.save(
+      { maxSpend: [{ index: 0, lamports: 750_000_000n }] },
+      trade({}, [
+        { index: 0, buySlippageBps: 250 },
+        { index: 1, buyPercent: 40 },
+      ]),
+    );
+    await t.buy();
+    // 0: 0.75 SOL = 750 000 000 lamports, slippage 2.5 % = 250 bps
+    // 1: 2 000 000 000 × 40 / 100 = 800 000 000; 2: no amount, never asked
+    expect(t.asked()).toEqual([
+      [0, 750_000_000n, 250],
+      [1, 800_000_000n, undefined],
+    ]);
+  });
+
   it('a balance exactly at the reserve: the percent gives 0, skipped with no /order', async () => {
     const t = await setup(2);
     t.balance(0, 15_000_000n); // exactly the 0.015 SOL reserve: nothing is free

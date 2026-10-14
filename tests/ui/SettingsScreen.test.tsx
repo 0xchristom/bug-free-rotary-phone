@@ -129,6 +129,10 @@ describe('form', () => {
       ['Retry delay: first', 'ms'],
       ['Retry delay: longest', 'ms'],
       ['Auto-lock after inactivity', 'min'],
+      ['Sell part', '%'],
+      ['Buy slippage', '%'],
+      ['Sell slippage', '%'],
+      ['Priority fee', 'SOL'],
     ];
     for (const [label, unit] of units) {
       const input = field(label);
@@ -137,7 +141,11 @@ describe('form', () => {
       expect(box?.querySelector('.k-num-unit')?.textContent, String(label)).toBe(unit);
       expect(input.getAttribute('aria-description'), String(label)).toBe(unit);
     }
-    expect(document.querySelectorAll('.k-num')).toHaveLength(units.length);
+    // the default buy amount switches between SOL and % with a button next to the field
+    expect(
+      screen.getByRole('button', { name: /^Unit of the default buy amount: SOL/u }).textContent,
+    ).toBe('SOL');
+    expect(document.querySelectorAll('.k-num')).toHaveLength(units.length + 1);
 
     // a wrong value still marks the field itself
     expect(field(/^Price ceiling/u).getAttribute('aria-invalid')).toBeNull();
