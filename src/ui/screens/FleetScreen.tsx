@@ -12,7 +12,14 @@ import {
   type StorageEnv,
 } from '../../storage/keystore-file.ts';
 import type { GroupStatus, VaultInfo } from '../../worker/protocol.ts';
-import { CommandBar, CommandButtons, type CommandReasons, type Target } from '../CommandBar.tsx';
+import {
+  CommandBar,
+  CommandButtons,
+  type CommandReasons,
+  type Target,
+  type TargetCheck,
+} from '../CommandBar.tsx';
+import { ARM_TARGET, BUY_TARGET, SELL_TARGET, targetReason } from '../target-reasons.ts';
 import { CreateWallets } from '../CreateWallets.tsx';
 import type { StairsOptions } from '../../executor/index.ts';
 import { fillOf, fleetFill, type Fill } from '../fill.ts';
@@ -149,7 +156,8 @@ export function FleetScreen({
   const { client, status, refresh } = useVault();
   const watchArmed = status?.watch?.armed ?? false;
   const { alarm } = useWatchRuntime();
-  const [target, setTarget] = useState<Target | null>(null);
+  const [targetCheck, setTargetCheck] = useState<TargetCheck>({ kind: 'empty' });
+  const target: Target | null = targetCheck.kind === 'done' ? targetCheck.target : null;
   const [mint, setMint] = useState<string | null>(null);
   const [mintError, setMintError] = useState<string | null>(null);
   // A wrong mint: show the message at the field and go on refreshing SOL without it.
@@ -401,10 +409,12 @@ export function FleetScreen({
   };
 
   // The target field (BUNNDLY-59): a checked mint also shows its balances in the table.
-  const onTarget = useCallback((next: Target | null) => {
-    setTarget(next);
+  const onTargetCheck = useCallback((check: TargetCheck) => {
+    setTargetCheck(check);
     setMintError(null);
-    setMint(next?.kind.kind === 'mint' ? next.address : null);
+    setMint(
+      check.kind === 'done' && check.target.kind.kind === 'mint' ? check.target.address : null,
+    );
   }, []);
 
   // --- Commands (BUNNDLY-59): the request names the selected wallets. ---
@@ -466,9 +476,7 @@ export function FleetScreen({
         ? 'Sending the command…'
         : (buyBlocked ??
           (buyMint === null
-            ? target?.kind.kind === 'wallet'
-              ? 'BUY needs a token: arm the watcher and wait for this creator’s token, or paste a mint.'
-              : 'Paste a token mint first.'
+            ? targetReason(targetCheck, BUY_TARGET)
             : readyIndexes.length === 0
               ? NO_READY
               : null)),
@@ -479,9 +487,7 @@ export function FleetScreen({
         : buyRouteOf(global.network) === null
           ? NO_BUY_ROUTE_MESSAGE
           : target?.kind.kind !== 'wallet'
-            ? target === null
-              ? 'Paste a creator wallet first.'
-              : 'ARM needs a creator wallet, not a token.'
+            ? targetReason(targetCheck, ARM_TARGET)
             : !hasWatcherKeys
               ? 'The watcher needs a Helius key (Settings).'
               : readyIndexes.length === 0
@@ -496,7 +502,7 @@ export function FleetScreen({
           : groupArmed
             ? 'DISARM first: the armed watcher may buy this token at any moment.'
             : buyMint === null
-              ? 'Paste the mint of the token to sell.'
+              ? targetReason(targetCheck, SELL_TARGET)
               : !hasRpc
                 ? 'Selling reads the token balances first: it needs a Helius key (Settings).'
                 : groupSelected.length === 0
@@ -713,14 +719,14 @@ export function FleetScreen({
   // The row buy needs a mint and no command in flight; a running group's rows say why not.
   const rowBlocked = commandBusy
     ? 'Sending the command…'
-    : (buyBlocked ?? (buyMint === null ? 'Paste a token mint first.' : null));
+    : (buyBlocked ?? (buyMint === null ? targetReason(targetCheck, BUY_TARGET) : null));
   // The row sell reads the token balance first, as SELL on the bar does.
   const rowSellBlocked = commandBusy
     ? 'Sending the command…'
     : buyRouteOf(global.network) === null
       ? NO_BUY_ROUTE_MESSAGE
       : buyMint === null
-        ? 'Paste the mint of the token to sell.'
+        ? targetReason(targetCheck, SELL_TARGET)
         : !hasRpc
           ? 'Selling reads the token balances first: it needs a Helius key (Settings).'
           : null;
@@ -1019,7 +1025,7 @@ export function FleetScreen({
         blocked={buyBlocked}
         setup={hasRpc ? null : 'Add the Helius API key in Settings'}
         detected={detected}
-        onTarget={onTarget}
+        onCheck={onTargetCheck}
         onArm={onArm}
         onDisarm={onDisarm}
       >
