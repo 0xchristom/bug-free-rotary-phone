@@ -214,6 +214,16 @@ strong {
   gap: var(--s-1) var(--s-3);
 }
 
+.rail-say {
+  /* Takes the free room only: a long line is cut, the rail never wraps for it. */
+  flex: 1 1 0;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--fg);
+}
+
 .rail-item {
   display: inline-flex;
   align-items: center;

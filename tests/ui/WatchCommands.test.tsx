@@ -314,6 +314,10 @@ describe('ARM / DISARM', () => {
     });
     // stopped: disarmed, so Stop is off again and Arm is back
     await screen.findByRole('button', { name: 'Arm' });
+    // BUNNDLY-90: no run, so no wallet is counted; the rail says the group is disarmed
+    expect(screen.getByRole('status', { name: 'Last command' }).textContent).toBe(
+      'Stopped · the group is disarmed',
+    );
     expect(screen.getByRole('button', { name: 'Stop' }).getAttribute('aria-description')).toBe(
       'Nothing is running.',
     );
@@ -328,9 +332,16 @@ describe('ARM / DISARM', () => {
       { type: 'arm', creator: CREATOR, wallets: [0, 1, 2], group: 'g1' },
     ]);
     expect(screen.getByText(/The watcher is armed. Do not close/u)).toBeTruthy();
+    // BUNNDLY-90: the rail says what the command did
+    expect(screen.getByRole('status', { name: 'Last command' }).textContent).toBe(
+      'Armed · the fleet buys as soon as the creator launches a token',
+    );
     await user.click(screen.getByRole('button', { name: 'Disarm' }));
     expect(requests.some((r) => r.type === 'disarm')).toBe(true);
     await screen.findByRole('button', { name: 'Arm' });
+    await waitFor(() => {
+      expect(screen.getByRole('status', { name: 'Last command' }).textContent).toBe('Disarmed');
+    });
   });
 
   it('live mode: only after the confirmation; "Cancel" sends nothing', async () => {
