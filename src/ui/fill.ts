@@ -38,6 +38,11 @@ export interface FillInput {
   readonly verify: VerifyStatus | null;
   readonly dryRun: boolean;
   readonly side: Side;
+  /**
+   * The executor's attempt number (1 on the first `/order`). QUEUED after an attempt means
+   * the wallet waits to try again; from the 2nd attempt on the stage says which one.
+   */
+  readonly attempt?: number;
   /** SCHEDULED (Stairs): when the step starts, the clock and whether the run is paused. */
   readonly scheduledAt?: number | null;
   readonly now?: number;
@@ -95,7 +100,10 @@ function rawFill(input: FillInput): Fill {
       return { percent: 0, tone: 'watch', label };
     }
     case 'QUEUED':
-      return { percent: STAGE_PERCENT.QUEUED, tone: 'run', label: 'Queued' };
+      // Back in the queue after an attempt (a transient failure, no route yet, rate limit).
+      return (input.attempt ?? 0) >= 1
+        ? { percent: STAGE_PERCENT.QUEUED, tone: 'run', label: 'Retrying' }
+        : { percent: STAGE_PERCENT.QUEUED, tone: 'run', label: 'Queued' };
     case 'QUOTING':
       return { percent: STAGE_PERCENT.QUOTING, tone: 'run', label: 'Quote' };
     case 'SIGNING':
@@ -118,9 +126,32 @@ function rawFill(input: FillInput): Fill {
   }
 }
 
+/** "2nd", "3rd", "4th", "11th", "21st". */
+export function ordinal(n: number): string {
+  const tens = n % 100;
+  if (tens >= 11 && tens <= 13) return `${String(n)}th`;
+  switch (n % 10) {
+    case 1:
+      return `${String(n)}st`;
+    case 2:
+      return `${String(n)}nd`;
+    case 3:
+      return `${String(n)}rd`;
+    default:
+      return `${String(n)}th`;
+  }
+}
+
+/** A stage of the 2nd or a later attempt says so: "Quote · 2nd attempt". */
+function withAttempt(fill: Fill, input: FillInput): Fill {
+  const attempt = input.attempt ?? 0;
+  if (attempt < 2 || fill.tone !== 'run' || input.state === 'QUEUED') return fill;
+  return { ...fill, label: `${fill.label} · ${ordinal(attempt)} attempt` };
+}
+
 /** The wallet's fill. In DRY-RUN nothing is ever green or "Filled". */
 export function fillOf(input: FillInput): Fill {
-  const fill = rawFill(input);
+  const fill = withAttempt(rawFill(input), input);
   if (input.dryRun && (fill.tone === 'ok' || fill.label === 'Filled' || fill.label === 'Sold')) {
     return { percent: 100, tone: 'sim', label: 'Simulated' };
   }
