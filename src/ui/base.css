@@ -166,7 +166,10 @@ strong {
   color: var(--warn);
 }
 
+/* Positioned, so that what is absolutely placed inside (popovers, text for screen readers)
+   scrolls and is clipped with it instead of stretching the page. */
 .content {
+  position: relative;
   flex: 1 1 auto;
   min-height: 0;
   padding: var(--s-4);
@@ -235,6 +238,19 @@ strong {
 .rail .k-i {
   width: 13px;
   height: 13px;
+}
+
+/* Read by screen readers, not drawn. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
 }
 
 /* Screens */
@@ -474,6 +490,267 @@ tr.row-ready td:first-child {
   box-shadow: inset 3px 0 0 var(--ok);
 }
 
+/* Wallet table (SPEC 11.2). No scroll box of its own on a desktop window: the header sticks
+   to the scrolling content and a popover of the last row is never clipped. */
+.wallets-block {
+  display: grid;
+  gap: var(--s-2);
+  min-width: 0;
+}
+
+.table-bar {
+  min-height: var(--h-control-sm);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-2) var(--s-3);
+}
+
+.table-bar .spacer {
+  flex: 1;
+}
+
+.sel-count {
+  color: var(--fg-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.wallets-wrap {
+  min-width: 0;
+}
+
+@media (max-width: 1279px) {
+  .wallets-wrap {
+    overflow-x: auto;
+  }
+}
+
+table.wallets {
+  min-width: 1080px;
+}
+
+/* The header sticks inside the padding of the content: pull it up to the very edge. */
+table.wallets th {
+  top: calc(-1 * var(--s-4));
+}
+
+table.wallets td {
+  height: var(--h-row);
+  padding: var(--s-1) var(--s-3);
+  white-space: nowrap;
+}
+
+table.wallets .c-check {
+  width: 44px;
+}
+
+table.wallets .c-acts {
+  width: 96px;
+}
+
+table.wallets td.num {
+  font-variant-numeric: tabular-nums;
+}
+
+/* A wallet left out of commands steps back; its checkbox and tools stay at full strength. */
+table.wallets tr.unsel td:not(.c-check, .c-acts) {
+  opacity: 0.5;
+}
+
+.w {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+}
+
+.w-name {
+  display: block;
+  font-size: var(--fs-strong);
+  font-weight: 600;
+}
+
+.addr {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-1);
+  color: var(--fg-3);
+  font-size: var(--fs-small);
+}
+
+.mono {
+  font-family: var(--font-mono);
+}
+
+.bal {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+  font-size: var(--fs-strong);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.cap {
+  max-width: 240px;
+  margin-top: var(--s-0);
+  overflow: hidden;
+  color: var(--fg-3);
+  font-size: var(--fs-caption);
+  text-overflow: ellipsis;
+}
+
+.acts {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--s-2);
+}
+
+.k-pop.qr-pop {
+  width: max-content;
+  justify-items: center;
+}
+
+.qr-pop svg.qr {
+  max-width: none;
+}
+
+.qr-pop code.address {
+  max-width: 200px;
+  text-align: center;
+}
+
+table.wallets tr.empty td {
+  color: var(--fg-3);
+  text-align: center;
+}
+
+/* Last transaction: its signature and when it landed. Only on a wide window (mockup v2). */
+.tx {
+  display: grid;
+  gap: var(--s-0);
+  font-variant-numeric: tabular-nums;
+}
+
+.tx small {
+  color: var(--fg-3);
+  font-size: var(--fs-caption);
+}
+
+@media (max-width: 1499px) {
+  table.wallets .c-tx {
+    display: none;
+  }
+}
+
+/* A sortable column header: the whole label is the button. */
+.th-sort {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-1);
+  padding: 0;
+  background: none;
+  border: 0;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.th-sort:hover,
+.th-sort.on {
+  color: var(--fg);
+}
+
+.th-sort svg {
+  width: 12px;
+  height: 12px;
+  color: var(--fg-3);
+}
+
+/* Filter tabs over the table, with their counts (mockup v2). */
+.tabsrow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-2);
+  border-bottom: 1px solid var(--line);
+}
+
+.tabsrow .spacer {
+  flex: 1;
+}
+
+.tabs {
+  display: flex;
+  gap: var(--s-0);
+  align-self: stretch;
+}
+
+.tab {
+  position: relative;
+  min-height: 48px;
+  padding: 0 var(--s-3);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+  background: none;
+  border: 0;
+  color: var(--fg-2);
+  font: inherit;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.tab:hover,
+.tab.on {
+  color: var(--fg);
+}
+
+.tab.on::after {
+  content: '';
+  position: absolute;
+  right: var(--s-3);
+  bottom: -1px;
+  left: var(--s-3);
+  height: 2px;
+  background: var(--fg);
+  border-radius: 2px 2px 0 0;
+}
+
+.tab-count {
+  color: var(--fg-3);
+  font-size: var(--fs-small);
+  font-variant-numeric: tabular-nums;
+}
+
+.search {
+  width: 220px;
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  color: var(--fg-3);
+}
+
+.search .k-input {
+  flex: 1;
+  min-width: 0;
+}
+
+.pop-form {
+  display: grid;
+  gap: var(--s-2);
+}
+
+.pop-form label {
+  color: var(--fg-2);
+  font-size: var(--fs-note);
+  font-weight: 500;
+}
+
+.actions.end {
+  justify-content: flex-end;
+}
+
 code.address {
   color: var(--fg-2);
   font: inherit;
@@ -496,10 +773,6 @@ table.detections td {
 
 table.detections td.danger {
   color: var(--danger);
-}
-
-.qr-box {
-  margin-top: var(--s-2);
 }
 
 svg.qr {
@@ -540,6 +813,9 @@ dl.summary dt {
 
 dl.summary dd {
   margin: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
   font-size: var(--fs-strong);
   font-weight: 600;
   font-variant-numeric: tabular-nums;

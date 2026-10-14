@@ -133,12 +133,17 @@ describe('createKeystore + parseKeystoreFile + openKeystore', () => {
         index: d.index,
         address: d.address,
         derivationPath: `m/44'/501'/${String(d.index)}'/0'`,
-        label: `W${String(d.index + 1).padStart(2, '0')}`,
+        label: `Wallet ${String(d.index)}`,
       })),
     );
-    expect(created.file.public.wallets[0]?.label).toBe('W01');
-    expect(created.file.public.wallets[29]?.label).toBe('W30');
-    expect(defaultWalletLabel(99)).toBe('W100');
+    // SPEC 11.1: named after the index, from 0
+    expect(created.file.public.wallets.slice(0, 3).map((w) => w.label)).toEqual([
+      'Wallet 0',
+      'Wallet 1',
+      'Wallet 2',
+    ]);
+    expect(created.file.public.wallets[29]?.label).toBe('Wallet 29');
+    expect(defaultWalletLabel(99)).toBe('Wallet 99');
     for (const d of derived) d.secretKey.fill(0);
   });
 
@@ -515,7 +520,7 @@ describe('createKeystore / buildKeystore input checks (no scrypt)', () => {
       PASSWORD,
     );
     expect(file.public.wallets[0]?.label).toBe('Główny');
-    expect(file.public.wallets[1]?.label).toBe('W02');
+    expect(file.public.wallets[1]?.label).toBe('Wallet 1');
     expect(file.createdAt).toBe('1970-01-01T00:00:00.000Z');
   });
 });

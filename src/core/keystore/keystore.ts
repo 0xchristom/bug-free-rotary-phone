@@ -59,9 +59,12 @@ export interface OpenedKeystore {
   readonly session: KeystoreSession;
 }
 
-/** W01, W02, …, W99, W100. */
+/**
+ * Wallet 0, Wallet 1, … (SPEC 11.1). Files written before BUNNDLY-55 hold W01, W02, …; a
+ * saved label is never renamed.
+ */
 export function defaultWalletLabel(index: number): string {
-  return `W${String(index + 1).padStart(2, '0')}`;
+  return `Wallet ${String(index)}`;
 }
 
 function tampered(): never {

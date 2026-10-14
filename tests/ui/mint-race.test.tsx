@@ -86,9 +86,10 @@ async function settle(): Promise<void> {
 }
 
 function tokenCell(label: string): string | null {
-  const tr = screen.getByRole('cell', { name: label }).closest('tr');
+  const tr = screen.getByRole('checkbox', { name: `Select ${label}` }).closest('tr');
   if (!tr) throw new Error('row');
-  return within(tr).getAllByRole('cell')[6]?.textContent ?? null;
+  // select, wallet, balance, buy amount, tokens
+  return within(tr).getAllByRole('cell')[4]?.textContent ?? null;
 }
 
 function alerts(): string {
@@ -161,7 +162,7 @@ describe('stale mint answers', () => {
     });
     await settle();
     expect(screen.queryAllByText('555')).toHaveLength(0);
-    expect(tokenCell('W01')).toBe('–');
+    expect(tokenCell('W01')).toBe('—');
     // the refresh without a mint went out after the stale answer
     const last = vault.request.mock.calls
       .map(([r]) => r)

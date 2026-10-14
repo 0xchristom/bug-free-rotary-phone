@@ -10,6 +10,7 @@ import {
 } from '../../storage/keystore-file.ts';
 import type { VaultInfo } from '../../worker/protocol.ts';
 import { BuyPanel } from '../BuyPanel.tsx';
+import { CreateWallets } from '../CreateWallets.tsx';
 import { ExportDialog } from '../ExportDialog.tsx';
 import { FleetBulk, FleetSummaryBar } from '../FleetBulk.tsx';
 import { shareOf, summarize } from '../fleet-math.ts';
@@ -17,12 +18,12 @@ import { FleetTable } from '../FleetTable.tsx';
 import type { OperationsLog } from '../operations-log.ts';
 import { OperationsLogPanel } from '../OperationsLogPanel.tsx';
 import { SettingsResetNotice } from '../SettingsResetNotice.tsx';
-import { formatSol, formatUnits, parseSolAmount } from '../sol.ts';
+import { formatSol, parseSolAmount } from '../sol.ts';
 import { useBalances } from '../use-balances.ts';
 import { EMPTY_BUY, type BuyView } from '../use-buy.ts';
 import { useVault } from '../vault-state.ts';
 import { WATCH_FROZEN } from '../watch-labels.ts';
-import { Button, Input } from '../kit/index.ts';
+import { Button, Input, useToast } from '../kit/index.ts';
 
 const MAX_WALLETS = 100;
 
@@ -78,9 +79,9 @@ function confirmOverwrite(fileName: string): boolean {
 }
 
 /**
- * Unlocked fleet (SPEC 3.2): the fleet table with balances, max spend, reserve, token
- * balance and the active flag; table changes are saved through the vault (saveSettings)
- * and then written to the file on click (D-017). Also "Add wallets" (BUNNDLY-10).
+ * Unlocked fleet (SPEC 3.2, 11.2): the wallet table with balances, max spend, token balance
+ * and the selection; table changes are saved through the vault (saveSettings) and then
+ * written to the file on click (D-017). Also "Create wallets" (SPEC 11.1).
  */
 export function FleetScreen({
   info,
@@ -113,10 +114,8 @@ export function FleetScreen({
   const [maxSpendText, setMaxSpendText] = useState<Drafts>(() => maxSpendDrafts(info));
   const [active, setActive] = useState<ActiveDrafts>(() => activeDrafts(info));
   const ids = useId();
-  const [qrFor, setQrFor] = useState<number | null>(null);
   const [exportOpen, setExportOpen] = useState(false);
-  const [copied, setCopied] = useState<number | null>(null);
-  const [addCount, setAddCount] = useState('1');
+  const toast = useToast();
   const [phase, setPhase] = useState<AddPhase>({ kind: 'idle' });
   const [error, setError] = useState<string | null>(null);
 
@@ -152,58 +151,33 @@ export function FleetScreen({
   }, [unsaved, onUnsavedChange]);
 
   const room = MAX_WALLETS - info.wallets.length;
-  const count = Number(addCount);
-  const countValid =
-    addCount.trim() !== '' && Number.isInteger(count) && count >= 1 && count <= room;
-
-  const copy = async (index: number, address: string): Promise<void> => {
-    setError(null);
-    try {
-      await navigator.clipboard.writeText(address);
-      setCopied(index);
-    } catch {
-      setCopied(null);
-      setError('The address could not be copied. Select it and copy it by hand.');
-    }
-  };
 
   const onMaxSpend = useCallback((index: number, text: string) => {
     setMaxSpendText((d) => ({ ...d, [index]: text }));
   }, []);
-  const onActive = useCallback((index: number, value: boolean) => {
+  const onSelect = useCallback((index: number, value: boolean) => {
     setActive((d) => ({ ...d, [index]: value }));
   }, []);
-  const onCopy = useCallback((index: number, address: string) => {
-    void copy(index, address);
+  const onSelectAll = useCallback((indices: readonly number[], value: boolean) => {
+    setActive((d) => ({ ...d, ...Object.fromEntries(indices.map((i) => [i, value])) }));
   }, []);
-  const onQr = useCallback((index: number) => {
-    setQrFor((current) => (current === index ? null : index));
-  }, []);
-  // Escape closes the QR code shown in the table; a dialog that has the focus handles its
-  // own Escape first and stops it.
-  useEffect(() => {
-    if (qrFor === null) return;
-    const onKey = (event: KeyboardEvent): void => {
-      if (event.key !== 'Escape') return;
-      const opener = document.querySelector<HTMLElement>(
-        'table.wallets button[aria-expanded="true"]',
+  // The address is the one the vault verified on unlock (D-018), never a typed one.
+  const onCopy = useCallback(
+    (_index: number, address: string) => {
+      setError(null);
+      navigator.clipboard.writeText(address).then(
+        () => {
+          toast({ title: 'Address copied', tone: 'ok' });
+        },
+        () => {
+          setError(
+            'The address could not be copied. Open the wallet details, select it and copy it by hand.',
+          );
+        },
       );
-      setQrFor(null);
-      opener?.focus();
-    };
-    document.addEventListener('keydown', onKey);
-    return () => {
-      document.removeEventListener('keydown', onKey);
-    };
-  }, [qrFor]);
-
-  const tokenAmounts = useMemo(() => {
-    const token = balances.token;
-    if (!token) return null;
-    return new Map(
-      [...token.amounts].map(([index, amount]) => [index, formatUnits(amount, token.decimals)]),
-    );
-  }, [balances.token]);
+    },
+    [toast],
+  );
 
   // Bulk actions change only the drafts; saving stays a separate, explicit step.
   const setAllAmount = (lamports: bigint): void => {
@@ -219,11 +193,9 @@ export function FleetScreen({
       return next;
     });
   };
-  const setAllActive = (value: boolean): void => {
-    setActive(Object.fromEntries(info.wallets.map((w) => [w.index, value])));
-  };
   const unknownBalances = info.wallets.filter((w) => !balances.lamports?.has(w.index)).length;
 
+  const selectedCount = info.wallets.filter((w) => active[w.index] ?? true).length;
   const summary = summarize(
     info.wallets.map((w) => {
       const lamports = draftLamports(w.index);
@@ -327,7 +299,7 @@ export function FleetScreen({
         kind: 'unsaved',
         fileText: result.fileText,
         fleetName: result.info.fleetName,
-        note: 'The table changes (max spend, active wallets) are saved in the vault.',
+        note: 'The table changes (max spend, selected wallets) are saved in the vault.',
         savedNote: 'with the new fleet settings',
         saving: false,
       });
@@ -345,9 +317,17 @@ export function FleetScreen({
     setMint(text === '' ? null : text);
   };
 
-  const add = async (event: SyntheticEvent): Promise<void> => {
-    event.preventDefault();
-    if (!countValid || phase.kind === 'adding' || phase.kind === 'unsaved' || tableDirty) return;
+  // Why "Create wallets" is off right now, in words next to the button.
+  const createBlocked = watchArmed
+    ? WATCH_FROZEN
+    : phase.kind === 'unsaved' || tableDirty
+      ? 'Save the table changes and the updated fleet file first, then create wallets.'
+      : room === 0
+        ? `The fleet already has the maximum of ${String(MAX_WALLETS)} wallets.`
+        : null;
+
+  const add = async (count: number): Promise<boolean> => {
+    if (createBlocked !== null || phase.kind === 'adding') return false;
     setError(null);
     setPhase({ kind: 'adding' });
     try {
@@ -360,11 +340,12 @@ export function FleetScreen({
         savedNote: 'with the new wallets',
         saving: false,
       });
-      setAddCount('1');
       await refresh();
+      return true;
     } catch (e) {
       setError(toUserMessage(e));
       setPhase({ kind: 'idle' });
+      return false;
     }
   };
 
@@ -385,9 +366,6 @@ export function FleetScreen({
   return (
     <section className="screen" aria-labelledby={`${ids}-title`}>
       <h2 id={`${ids}-title`}>Fleet</h2>
-      <p>
-        Wallets in the fleet: <strong>{info.wallets.length}</strong>
-      </p>
       <div className="inline balances-bar">
         <span className="muted" aria-live="polite">
           {balances.fetchedAt
@@ -460,41 +438,38 @@ export function FleetScreen({
         )}
       </BuyPanel>
 
-      <FleetSummaryBar
-        summary={summary}
-        walletCount={info.wallets.length}
-        tokenDecimals={balances.token?.decimals ?? null}
-      />
       <FleetBulk
         onAmount={setAllAmount}
         onPercent={setAllPercent}
-        onAllActive={setAllActive}
         unknownBalances={unknownBalances}
       />
 
       <FleetTable
         wallets={info.wallets}
         lamports={balances.lamports}
-        tokenAmounts={tokenAmounts}
-        tokenLabel={
-          balances.token
-            ? `Token (${balances.token.program === 'token-2022' ? 'Token-2022' : 'SPL'})`
-            : null
-        }
+        token={balances.token}
         maxSpendText={maxSpendText}
-        active={active}
+        selected={active}
         minReserve={info.settings.global.minReserveLamports}
-        qrFor={qrFor}
-        copied={copied}
         onMaxSpend={onMaxSpend}
-        onActive={onActive}
+        onSelect={onSelect}
+        onSelectAll={onSelectAll}
         onCopy={onCopy}
-        onQr={onQr}
         probe={rowProbe}
         buy={buyView.run === null ? null : buyView.rows}
-        buyDecimals={buyDecimals}
         explorer={global.explorer}
         network={global.network}
+        tools={
+          <CreateWallets room={room} limit={MAX_WALLETS} blocked={createBlocked} onCreate={add} />
+        }
+      />
+      <FleetSummaryBar
+        summary={summary}
+        walletCount={info.wallets.length}
+        selectedCount={selectedCount}
+        tokenDecimals={balances.token?.decimals ?? null}
+        firstFillMs={buyView.run?.firstConfirmMs ?? null}
+        lastFillMs={buyView.run?.lastConfirmMs ?? null}
       />
       <div className="actions">
         <Button
@@ -535,46 +510,6 @@ export function FleetScreen({
         <p className="notice" role="status">
           Saved {phase.result.fileName} {phase.savedNote}.
         </p>
-      )}
-
-      <h3>Add wallets</h3>
-      {phase.kind === 'unsaved' || tableDirty ? (
-        <p className="muted">
-          Save the table changes and the updated fleet file first, then add wallets.
-        </p>
-      ) : room === 0 ? (
-        <p className="muted">The fleet already has the maximum of {MAX_WALLETS} wallets.</p>
-      ) : (
-        <form className="form" onSubmit={(e) => void add(e)} noValidate>
-          <label htmlFor={`${ids}-add`}>Number of new wallets</label>
-          <Input
-            id={`${ids}-add`}
-            type="number"
-            min={1}
-            max={room}
-            step={1}
-            value={addCount}
-            onChange={(e) => {
-              setAddCount(e.target.value);
-            }}
-            aria-invalid={!countValid}
-          />
-          {!countValid && (
-            <p className="field-error">
-              You can add 1 to {room} wallets (at most {MAX_WALLETS} in total).
-            </p>
-          )}
-          <div className="actions">
-            <Button
-              type="submit"
-              variant="primary"
-              disabled={watchArmed || !countValid || phase.kind === 'adding'}
-            >
-              {phase.kind === 'adding' ? 'Adding…' : 'Add wallets'}
-            </Button>
-            {watchArmed && <span className="muted">{WATCH_FROZEN}</span>}
-          </div>
-        </form>
       )}
 
       <h3>Backup</h3>
