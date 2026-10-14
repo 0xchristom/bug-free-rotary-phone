@@ -231,6 +231,32 @@ describe('two groups at once', () => {
     expect(await paused()).toEqual([undefined, false]); // A has finished
   });
 
+  it('B armed: a manual BUY of B is refused (BUY_WHILE_ARMED) with no /order; A buys; B buys after DISARM (BUNNDLY-86)', async () => {
+    const t = await setup();
+    const socket = await t.arm('g2');
+    expect(await codeOf(t.h.handle({ type: 'startBuy', group: 'g2', mint: MINT }))).toBe(
+      'BUY_WHILE_ARMED',
+    );
+    // one wallet of B by its row ▶ is refused the same way
+    expect(
+      await codeOf(t.h.handle({ type: 'startBuy', group: 'g2', mint: MINT, wallets: [4] })),
+    ).toBe('BUY_WHILE_ARMED');
+    expect(t.orders).toHaveLength(0);
+    expect((await t.group('g2'))?.buy).toBeNull();
+    expect((await t.group('g2'))?.watch?.armed).toBe(true);
+    expect(socket.closed).toBe(false);
+
+    // A is not armed and buys as before
+    await t.startBuy('g1', USDC);
+    expect(t.askedBy(USDC)).toEqual([0, 1, 2]);
+    expect(t.askedBy(MINT)).toEqual([]);
+
+    // disarmed, B buys by hand again
+    await t.h.handle({ type: 'disarm', group: 'g2' });
+    await t.startBuy('g2', MINT);
+    expect(t.askedBy(MINT)).toEqual([3, 4, 5, 6, 7]);
+  });
+
   it('DISARM of one group leaves the watcher of the other armed', async () => {
     const t = await setup();
     const a = await t.arm('g1');

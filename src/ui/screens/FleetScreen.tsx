@@ -107,6 +107,8 @@ const PICK_GROUP = 'Pick a group tab: the commands act on one group at a time.';
 /** Why a running group keeps its wallets, its amounts and its name (BUNNDLY-68). */
 const runningText = (name: string): string =>
   `${name} is running: wait for it to end or press STOP.`;
+/** Why an armed group neither buys nor sells by hand: its watcher buys (BUNNDLY-86). */
+const ARMED_TEXT = 'DISARM first: the armed watcher may buy this token at any moment.';
 
 const CONFIRM_TITLES = {
   buy: 'Buy in live mode?',
@@ -474,12 +476,14 @@ export function FleetScreen({
       ? 'A buy is running. Wait for it to end or press STOP.'
       : commandBusy
         ? 'Sending the command…'
-        : (buyBlocked ??
-          (buyMint === null
-            ? targetReason(targetCheck, BUY_TARGET)
-            : readyIndexes.length === 0
-              ? NO_READY
-              : null)),
+        : groupArmed
+          ? ARMED_TEXT
+          : (buyBlocked ??
+            (buyMint === null
+              ? targetReason(targetCheck, BUY_TARGET)
+              : readyIndexes.length === 0
+                ? NO_READY
+                : null)),
     arm: running
       ? 'A buy is running: you can arm the watcher when it ends.'
       : commandBusy
@@ -500,7 +504,7 @@ export function FleetScreen({
         : buyRouteOf(global.network) === null
           ? NO_BUY_ROUTE_MESSAGE
           : groupArmed
-            ? 'DISARM first: the armed watcher may buy this token at any moment.'
+            ? ARMED_TEXT
             : buyMint === null
               ? targetReason(targetCheck, SELL_TARGET)
               : !hasRpc
@@ -734,8 +738,11 @@ export function FleetScreen({
   const frozen = useMemo(() => {
     const out = new Map<number, string>();
     for (const g of groups) {
-      if (statusGroups?.find((s) => s.id === g.id)?.armed !== true) continue;
-      for (const i of g.wallets) out.set(i, runningText(g.name));
+      const s = statusGroups?.find((x) => x.id === g.id);
+      if (s?.armed !== true) continue;
+      // an armed watcher is stopped by DISARM, a buy or a sell by STOP
+      const why = s.watch?.armed === true && s.buy === null ? ARMED_TEXT : runningText(g.name);
+      for (const i of g.wallets) out.set(i, why);
     }
     return out;
   }, [groups, statusGroups]);
