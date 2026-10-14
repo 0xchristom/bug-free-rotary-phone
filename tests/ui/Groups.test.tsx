@@ -318,14 +318,16 @@ describe('wallet groups (BUNNDLY-69)', () => {
 
     await user.click(groupTab('Team C'));
     expect(screen.getByLabelText('Max spend W07')).toHaveProperty('disabled', false);
-    // C's wallets cannot go into the running B, but B is no reason to keep C from changing
+    // C's wallets cannot go into the running B, but B is no reason to keep C from changing.
+    // Only the selected W07 moves; W08 stays and goes to A when C is deleted.
+    await user.click(screen.getByRole('checkbox', { name: 'Select W08' }));
     await user.click(screen.getByRole('button', { name: 'Move to group' }));
     const move = screen.getByRole('dialog', { name: 'Move to group' });
     expect(within(move).getByRole('button', { name: 'Team B' })).toHaveProperty('disabled', true);
     expect(within(move).getByRole('button', { name: 'Team A' })).toHaveProperty('disabled', false);
     await user.click(within(move).getByRole('button', { name: 'Team A' }));
     await eventually(() => {
-      expect(tabText('Team C').count).toBe('0');
+      expect(tabText('Team C').count).toBe('1');
     });
 
     await user.click(screen.getByRole('button', { name: 'Rename' }));
@@ -350,14 +352,14 @@ describe('wallet groups (BUNNDLY-69)', () => {
     });
     expect(sent(requests, 'saveSettings').map((r) => r.settings.groups)).toEqual([
       [
-        { id: 'g1', name: 'Team A', wallets: [0, 1, 2, 6, 7] },
+        { id: 'g1', name: 'Team A', wallets: [0, 1, 2, 6] },
         { id: 'g2', name: 'Team B', wallets: [3, 4, 5] },
-        { id: 'g3', name: 'Team C', wallets: [] },
+        { id: 'g3', name: 'Team C', wallets: [7] },
       ],
       [
-        { id: 'g1', name: 'Team A', wallets: [0, 1, 2, 6, 7] },
+        { id: 'g1', name: 'Team A', wallets: [0, 1, 2, 6] },
         { id: 'g2', name: 'Team B', wallets: [3, 4, 5] },
-        { id: 'g3', name: 'Team Z', wallets: [] },
+        { id: 'g3', name: 'Team Z', wallets: [7] },
       ],
       [
         { id: 'g1', name: 'Team A', wallets: [0, 1, 2, 6, 7] },
