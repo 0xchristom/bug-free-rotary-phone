@@ -9,7 +9,21 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { AppError } from '../../src/core/errors.ts';
 import { App } from '../../src/ui/App.tsx';
 import type { VaultBalances, VaultRequest, VaultStatus } from '../../src/worker/protocol.ts';
-import { fleetInfo, mockStorage, mockVault } from './fakes.ts';
+import { TARGET_LABEL, TARGET_WAIT, fleetInfo, mockStorage, mockVault } from './fakes.ts';
+
+/**
+ * Well-formed addresses the fake worker calls token mints (the target field checks the
+ * address first, BUNNDLY-59). The names say the role each one plays in a test.
+ */
+const M = {
+  WrongMint: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v',
+  GoodMint: '2b1kV6DkPAnxd5ixfnxCpjxmKwqjjaYmCZfHsFu24GXo',
+  MintA: 'HEhuwZjGd8Za7jgjzzpsXJssnP89DQm4oYHghRpnpump',
+  MintB: 'FQ6WmS5szfK1NRVcGkAqeVbwNeL9kt4xJXhwviyWTB7K',
+  MintC: '6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P',
+  MintD: 'JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4',
+  Bad: '9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM',
+} as const;
 
 interface Deferred {
   resolve: (v: VaultBalances) => void;
@@ -50,6 +64,9 @@ function setup() {
   const pending = new Map<string, Deferred>();
   vault.request.mockImplementation((req: VaultRequest) => {
     if (req.type === 'status' || req.type === 'activity') return Promise.resolve(status());
+    if (req.type === 'classifyTarget') {
+      return Promise.resolve({ kind: 'mint', program: 'spl-token' } as const);
+    }
     if (req.type === 'refreshBalances') {
       const mint = req.mint;
       if (mint === undefined) return Promise.resolve(balancesFor(undefined, 0, 0n));
@@ -70,11 +87,13 @@ function setup() {
   return { pending, vault, user: userEvent.setup() };
 }
 
+/** Puts the address in the target field; a checked mint is read with the balances. */
 async function submitMint(user: ReturnType<typeof userEvent.setup>, text: string) {
-  const field = screen.getByLabelText('Token address (mint)');
+  const field = screen.getByLabelText(TARGET_LABEL);
   await user.clear(field);
-  if (text !== '') await user.type(field, text);
-  await user.click(screen.getByRole('button', { name: 'Show token balance' }));
+  if (text === '') return;
+  await user.type(field, text);
+  await screen.findByText('Token · SPL', {}, TARGET_WAIT);
 }
 
 async function settle(): Promise<void> {
@@ -103,21 +122,21 @@ describe('stale mint answers', () => {
   it('a late NOT_A_TOKEN_MINT for the old mint does not drop the new, valid mint', async () => {
     const { pending, user } = setup();
     await screen.findByText(/^Balances as of /u);
-    await submitMint(user, 'WrongMint');
+    await submitMint(user, M.WrongMint);
     await waitFor(() => {
-      expect(pending.has('WrongMint')).toBe(true);
+      expect(pending.has(M.WrongMint)).toBe(true);
     });
-    await submitMint(user, 'GoodMint');
+    await submitMint(user, M.GoodMint);
     act(() => {
-      pending.get('WrongMint')?.reject(new AppError('NOT_A_TOKEN_MINT'));
+      pending.get(M.WrongMint)?.reject(new AppError('NOT_A_TOKEN_MINT'));
     });
     await settle();
     // the new mint is still asked for
     await waitFor(() => {
-      expect(pending.has('GoodMint')).toBe(true);
+      expect(pending.has(M.GoodMint)).toBe(true);
     });
     act(() => {
-      pending.get('GoodMint')?.resolve(balancesFor('GoodMint', 6, 2_500_000n));
+      pending.get(M.GoodMint)?.resolve(balancesFor(M.GoodMint, 6, 2_500_000n));
     });
     await settle();
     expect(alerts()).not.toContain('is not a token mint');
@@ -127,21 +146,21 @@ describe('stale mint answers', () => {
   it('a late answer for the old mint is not shown under the new mint', async () => {
     const { pending, user } = setup();
     await screen.findByText(/^Balances as of /u);
-    await submitMint(user, 'MintA');
+    await submitMint(user, M.MintA);
     await waitFor(() => {
-      expect(pending.has('MintA')).toBe(true);
+      expect(pending.has(M.MintA)).toBe(true);
     });
-    await submitMint(user, 'MintB');
+    await submitMint(user, M.MintB);
     act(() => {
-      pending.get('MintA')?.resolve(balancesFor('MintA', 0, 777n));
+      pending.get(M.MintA)?.resolve(balancesFor(M.MintA, 0, 777n));
     });
     await settle();
     expect(screen.queryAllByText('777')).toHaveLength(0);
     await waitFor(() => {
-      expect(pending.has('MintB')).toBe(true);
+      expect(pending.has(M.MintB)).toBe(true);
     });
     act(() => {
-      pending.get('MintB')?.resolve(balancesFor('MintB', 0, 42n));
+      pending.get(M.MintB)?.resolve(balancesFor(M.MintB, 0, 42n));
     });
     await settle();
     expect(tokenCell('W02')).toBe('42');
@@ -150,13 +169,13 @@ describe('stale mint answers', () => {
   it('after clearing the field, late answers for the old mint (success or error) are ignored', async () => {
     const { pending, user, vault } = setup();
     await screen.findByText(/^Balances as of /u);
-    await submitMint(user, 'MintC');
+    await submitMint(user, M.MintC);
     await waitFor(() => {
-      expect(pending.has('MintC')).toBe(true);
+      expect(pending.has(M.MintC)).toBe(true);
     });
     await submitMint(user, ''); // cleared: SOL only
     act(() => {
-      pending.get('MintC')?.resolve(balancesFor('MintC', 0, 555n));
+      pending.get(M.MintC)?.resolve(balancesFor(M.MintC, 0, 555n));
     });
     await settle();
     expect(screen.queryAllByText('555')).toHaveLength(0);
@@ -169,13 +188,13 @@ describe('stale mint answers', () => {
     expect(last).toEqual({ type: 'refreshBalances' });
 
     // the same with an error for the old mint
-    await submitMint(user, 'MintD');
+    await submitMint(user, M.MintD);
     await waitFor(() => {
-      expect(pending.has('MintD')).toBe(true);
+      expect(pending.has(M.MintD)).toBe(true);
     });
     await submitMint(user, '');
     act(() => {
-      pending.get('MintD')?.reject(new AppError('NOT_A_TOKEN_MINT'));
+      pending.get(M.MintD)?.reject(new AppError('NOT_A_TOKEN_MINT'));
     });
     await settle();
     expect(alerts()).not.toContain('is not a token mint');
@@ -184,12 +203,12 @@ describe('stale mint answers', () => {
   it('a NOT_A_TOKEN_MINT for the current mint is still shown at the field', async () => {
     const { pending, user } = setup();
     await screen.findByText(/^Balances as of /u);
-    await submitMint(user, 'Bad');
+    await submitMint(user, M.Bad);
     await waitFor(() => {
-      expect(pending.has('Bad')).toBe(true);
+      expect(pending.has(M.Bad)).toBe(true);
     });
     act(() => {
-      pending.get('Bad')?.reject(new AppError('NOT_A_TOKEN_MINT'));
+      pending.get(M.Bad)?.reject(new AppError('NOT_A_TOKEN_MINT'));
     });
     await settle();
     expect(alerts()).toContain('is not a token mint');

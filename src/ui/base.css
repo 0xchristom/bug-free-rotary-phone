@@ -353,8 +353,7 @@ strong {
 
 .form > label,
 .field > label,
-.key-field > label,
-.token-bar > label {
+.key-field > label {
   margin-top: var(--s-2);
   color: var(--fg-2);
   font-size: var(--fs-note);
@@ -720,13 +719,49 @@ dl.summary dd {
   font-variant-numeric: tabular-nums;
 }
 
-.token-bar {
+/* Command bar (BUNNDLY-59): target field on the left, commands on the right */
+.cmd-bar {
   display: grid;
+  gap: var(--s-1);
+  padding: var(--s-3);
+  background: var(--surface-panel);
+  border: 1px solid var(--line);
+  border-radius: var(--r-pop);
+}
+
+.cmd-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
   gap: var(--s-2);
 }
 
-.token-bar .k-input {
-  width: min(520px, 100%);
+.cmd-row .spacer {
+  flex: 1;
+}
+
+.cmd-target {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  flex: 0 1 560px;
+  min-width: 0;
+}
+
+.cmd-target .cmd-input {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.cmd-target .k-chip,
+.cmd-row > .k-chip {
+  flex: none;
+}
+
+.cmd-bar .hint,
+.cmd-bar .field-error,
+.cmd-why {
+  margin: 0;
 }
 
 /* Buy and watch panels */

@@ -7,6 +7,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ExecutorEvent, RunPhase, WalletQuote, WalletResult } from '../executor/executor.ts';
 import type { WalletReason, WalletState } from '../executor/states.ts';
 import type { VerifyStatus } from '../executor/verify.ts';
+import type { BuyStatus } from '../worker/protocol.ts';
 import type { VaultClient } from '../worker/vault-client.ts';
 
 export interface BuyRow {
@@ -48,6 +49,17 @@ export const EMPTY_BUY: BuyView = {
   rows: new Map(),
   counts: { confirmed: 0, inProgress: 0, failedOrSkipped: 0 },
 };
+
+/**
+ * A buy runs. Events are newer than the polled status: a finished run is over even if the
+ * last status still shows it.
+ */
+export function isBuyRunning(view: BuyView, vaultBuy: BuyStatus | null): boolean {
+  const { run } = view;
+  return run === null
+    ? vaultBuy !== null
+    : run.phase !== 'finished' || (vaultBuy !== null && vaultBuy.runId !== run.runId);
+}
 
 /** Still working on it: in the pipeline, or UNKNOWN while the chain is checked. */
 export function inProgress(row: BuyRow): boolean {

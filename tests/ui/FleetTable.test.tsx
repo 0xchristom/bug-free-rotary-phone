@@ -5,7 +5,16 @@ import { AppError } from '../../src/core/errors.ts';
 import type { FleetSettingsV1 } from '../../src/core/index.ts';
 import { App } from '../../src/ui/App.tsx';
 import type { VaultInfo, VaultRequest, VaultStatus } from '../../src/worker/protocol.ts';
-import { fleetInfo, mockStorage, mockVault } from './fakes.ts';
+import {
+  TARGET_LABEL,
+  TARGET_WAIT,
+  TOKEN_2022_MINT,
+  TOKEN_ACCOUNT,
+  classifyFake,
+  fleetInfo,
+  mockStorage,
+  mockVault,
+} from './fakes.ts';
 import { setupUser } from './user.ts';
 
 const SOL = 1_000_000_000n;
@@ -56,6 +65,8 @@ function setup({
       case 'status':
       case 'activity':
         return Promise.resolve(status());
+      case 'classifyTarget':
+        return classifyFake(req.address);
       case 'refreshBalances':
         if (holdBalances) return new Promise(() => undefined);
         if (req.mint === 'NotAMint') return Promise.reject(new AppError('NOT_A_TOKEN_MINT'));
@@ -289,35 +300,32 @@ describe('fleet table', () => {
     expect(screen.queryByText('You have unsaved table changes.')).toBeNull();
   });
 
-  it('a token mint shows balances with decimals; a wrong mint shows an English error', async () => {
+  it('a token mint shows balances with decimals; a token account is named at the field', async () => {
     const { user } = setup();
     await ready();
     expect(cells('W02')[TOKEN]).toBe('—');
-    await user.type(screen.getByLabelText('Token address (mint)'), 'SomeMint111');
-    await user.click(screen.getByRole('button', { name: 'Show token balance' }));
-    expect(await screen.findByRole('columnheader', { name: 'Token (Token-2022)' })).toBeTruthy();
+    await user.type(screen.getByLabelText(TARGET_LABEL), TOKEN_2022_MINT);
+    expect(
+      await screen.findByRole('columnheader', { name: 'Token (Token-2022)' }, TARGET_WAIT),
+    ).toBeTruthy();
     expect(cells('W02')[TOKEN]).toBe('1.5');
     expect(cells('W03')[TOKEN]).toBe('3');
 
-    await user.clear(screen.getByLabelText('Token address (mint)'));
-    await user.type(screen.getByLabelText('Token address (mint)'), 'NotAMint');
-    await user.click(screen.getByRole('button', { name: 'Show token balance' }));
+    await user.clear(screen.getByLabelText(TARGET_LABEL));
+    await user.type(screen.getByLabelText(TARGET_LABEL), TOKEN_ACCOUNT);
     // the message sits at the field, the table stays
-    const alert = await screen.findByRole('alert');
-    expect(alert.textContent).toContain('is not a token mint');
-    expect(alert.id).toBe(
-      screen.getByLabelText('Token address (mint)').getAttribute('aria-describedby'),
-    );
+    const alert = await screen.findByRole('alert', {}, TARGET_WAIT);
+    expect(alert.textContent).toContain('is a token account, not a token');
+    expect(alert.id).toBe(screen.getByLabelText(TARGET_LABEL).getAttribute('aria-describedby'));
     expect(screen.getByRole('columnheader', { name: 'Token' })).toBeTruthy();
     expect(screen.getByRole('table')).toBeTruthy();
   });
 
-  it('after a wrong mint the SOL balances keep refreshing (without the mint)', async () => {
+  it('after a wrong target the SOL balances keep refreshing (without a mint)', async () => {
     const { user, vault, setBalances } = setup();
     await ready();
-    await user.type(screen.getByLabelText('Token address (mint)'), 'NotAMint');
-    await user.click(screen.getByRole('button', { name: 'Show token balance' }));
-    await screen.findByRole('alert');
+    await user.type(screen.getByLabelText(TARGET_LABEL), TOKEN_ACCOUNT);
+    await screen.findByRole('alert', {}, TARGET_WAIT);
     const refreshes = (): { mint?: string }[] =>
       vault.request.mock.calls.map(([r]) => r).filter((r) => r.type === 'refreshBalances');
     // right after the error it refreshes again without the mint
@@ -330,13 +338,14 @@ describe('fleet table', () => {
       expect(cells('W01')[BALANCE]).toBe('3');
     });
     expect(refreshes().at(-1)?.mint).toBeUndefined();
-    expect(screen.getByRole('alert').textContent).toContain('is not a token mint');
+    expect(screen.getByRole('alert').textContent).toContain('is a token account, not a token');
 
-    // a corrected mint clears the message and reads the token again
-    await user.clear(screen.getByLabelText('Token address (mint)'));
-    await user.type(screen.getByLabelText('Token address (mint)'), 'GoodMint1');
-    await user.click(screen.getByRole('button', { name: 'Show token balance' }));
-    expect(await screen.findByRole('columnheader', { name: 'Token (Token-2022)' })).toBeTruthy();
+    // a corrected mint clears the message and reads the token
+    await user.clear(screen.getByLabelText(TARGET_LABEL));
+    await user.type(screen.getByLabelText(TARGET_LABEL), TOKEN_2022_MINT);
+    expect(
+      await screen.findByRole('columnheader', { name: 'Token (Token-2022)' }, TARGET_WAIT),
+    ).toBeTruthy();
     expect(screen.queryByRole('alert')).toBeNull();
   });
 
@@ -428,7 +437,12 @@ describe('wallet cell', () => {
     const names = within(row('Wallet 1'))
       .getAllByRole('button')
       .map((b) => b.getAttribute('aria-label'));
-    expect(names).toEqual(['Copy address Wallet 1', 'QR code Wallet 1', 'Details Wallet 1']);
+    expect(names).toEqual([
+      'Copy address Wallet 1',
+      'Buy Wallet 1',
+      'QR code Wallet 1',
+      'Details Wallet 1',
+    ]);
   });
 
   it('the QR code opens in a popover with the address of its wallet; Esc gives the focus back', async () => {
@@ -725,9 +739,8 @@ describe('bulk actions and summary', () => {
     const { user } = setup();
     await ready();
     expect(summaryValue('Tokens held')).toBe('—');
-    await user.type(screen.getByLabelText('Token address (mint)'), 'SomeMint111');
-    await user.click(screen.getByRole('button', { name: 'Show token balance' }));
-    await screen.findByRole('columnheader', { name: 'Token (Token-2022)' });
+    await user.type(screen.getByLabelText(TARGET_LABEL), TOKEN_2022_MINT);
+    await screen.findByRole('columnheader', { name: 'Token (Token-2022)' }, TARGET_WAIT);
     expect(summaryValue('Tokens held')).toBe('4.5'); // 0 + 1.5 + 3
   });
 });

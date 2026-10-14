@@ -6,7 +6,15 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { App } from '../../src/ui/App.tsx';
 import type { WatchStatus } from '../../src/watcher/watch.ts';
 import type { VaultBalances, VaultRequest, VaultStatus } from '../../src/worker/protocol.ts';
-import { LOCKED, fleetInfo, mockStorage, mockVault, unlocked } from './fakes.ts';
+import {
+  LOCKED,
+  TARGET_LABEL,
+  TARGET_WAIT,
+  fleetInfo,
+  mockStorage,
+  mockVault,
+  unlocked,
+} from './fakes.ts';
 
 const CREATOR = '6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P';
 const MINT = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
@@ -385,16 +393,16 @@ describe('an unsaved fleet file on the screen', () => {
 });
 
 describe('devnet has no buy', () => {
-  it('“Buy now” and ARM are off with one sentence; no startBuy and no arm leave the UI', async () => {
+  it('BUY and ARM are off with one sentence; no startBuy and no arm leave the UI', async () => {
     const { user, requests } = setup(onDevnet());
     const sentence = 'Buying and the watcher are off on Devnet: Jupiter works on Mainnet only.';
-    const buy = await screen.findByRole<HTMLButtonElement>('button', { name: 'Buy now' });
+    const buy = await screen.findByRole<HTMLButtonElement>('button', { name: 'BUY' });
     expect(buy.disabled).toBe(true);
     expect(screen.getByText(sentence)).toBeTruthy();
     await user.click(buy);
 
-    await user.click(screen.getByRole('button', { name: 'Mode B: watch a creator' }));
-    await user.type(screen.getByLabelText(/Creator address/u), CREATOR);
+    await user.type(screen.getByLabelText(TARGET_LABEL), CREATOR);
+    await screen.findByText('Creator wallet', {}, TARGET_WAIT);
     const arm = screen.getByRole<HTMLButtonElement>('button', { name: 'ARM' });
     expect(arm.disabled).toBe(true);
     expect(screen.getByText(sentence)).toBeTruthy();
@@ -416,7 +424,7 @@ describe('devnet has no buy', () => {
         settings: { ...settings, global: { ...settings.global, network: 'mainnet' } },
       },
     });
-    await screen.findByRole('button', { name: 'Buy now' });
+    await screen.findByRole('button', { name: 'BUY' });
     expect(screen.queryByText(/off on Devnet/u)).toBeNull();
   });
 });

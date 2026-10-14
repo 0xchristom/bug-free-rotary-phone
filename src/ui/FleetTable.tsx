@@ -23,6 +23,7 @@ import {
   IconButton,
   InfoIcon,
   NumberInput,
+  PlayIcon,
   Popover,
   QrIcon,
   SolIcon,
@@ -55,6 +56,10 @@ interface RowProps extends FleetRowData {
   readonly decimals: number | null;
   readonly explorer: Explorer;
   readonly network: Network;
+  /** Buys with this wallet alone (BUNNDLY-59); absent: no row action. */
+  readonly onBuy?: ((index: number) => void) | undefined;
+  /** Why no buy can start now (the same for every row), or null. */
+  readonly buyBlocked: string | null;
 }
 
 /** Shown where there is no value yet. */
@@ -248,6 +253,9 @@ const FleetRow = memo(function FleetRow(p: RowProps) {
   const explorerUrl = addressUrl(p.explorer, p.network, p.address);
   const idle = idleStatus(state, p.selected, p.balance, maxSpend);
   const why = whyOf(p.buy);
+  const rowBuyBlocked =
+    p.buyBlocked ??
+    (state.ready ? null : 'This wallet is not ready: ' + idle.text.toLowerCase() + '.');
   const amountError =
     input !== null && !input.ok
       ? input.message
@@ -341,6 +349,19 @@ const FleetRow = memo(function FleetRow(p: RowProps) {
         </td>
         <td className="c-acts">
           <div className="acts">
+            {p.onBuy && (
+              <IconButton
+                size="sm"
+                variant="success"
+                label={`Buy ${p.label}`}
+                icon={<PlayIcon />}
+                disabled={rowBuyBlocked !== null}
+                aria-description={rowBuyBlocked ?? undefined}
+                onClick={() => {
+                  p.onBuy?.(p.index);
+                }}
+              />
+            )}
             <Popover
               open={qrOpen}
               onClose={() => {
@@ -419,6 +440,10 @@ export interface FleetTableProps {
   readonly network?: Network;
   /** Controls on the right of the bar above the table. */
   readonly tools?: ReactNode;
+  /** Row action "Buy" with that wallet alone (BUNNDLY-59). */
+  readonly onBuyWallet?: (index: number) => void;
+  /** Why no buy can start now, for every row; null when rows may buy. */
+  readonly rowBuyBlocked?: string | null;
 }
 
 /**
@@ -490,6 +515,8 @@ export function FleetTable(t: FleetTableProps) {
                 decimals={decimals}
                 explorer={explorer}
                 network={network}
+                onBuy={t.onBuyWallet}
+                buyBlocked={t.rowBuyBlocked ?? null}
               />
             ))}
           </tbody>

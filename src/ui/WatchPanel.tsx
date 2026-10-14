@@ -1,13 +1,9 @@
 import { useEffect, useId, useState } from 'react';
 import { toUserMessage } from '../core/errors.ts';
-import { DEFAULT_NETWORK, NETWORK_LABELS } from '../core/network.ts';
 import type { BuyMode } from '../core/settings.ts';
-import type { ApiKeyFlags } from '../worker/protocol.ts';
 import type { WatchDetection } from '../watcher/watch.ts';
-import { formatSol } from './sol.ts';
 import { useVault } from './vault-state.ts';
 import {
-  isCreatorAddress,
   PATH_LABELS,
   SOURCE_LABELS,
   connectionLabel,
@@ -15,20 +11,9 @@ import {
   problemLabel,
 } from './watch-labels.ts';
 import { useWatchRuntime } from './watch-runtime.ts';
-import { Button, Input, Modal } from './kit/index.ts';
+import { Button, Modal } from './kit/index.ts';
 
 export interface WatchPanelProps {
-  /** Indexes of the wallets selected in the table: the arming buys with them. */
-  readonly wallets: readonly number[];
-  readonly readyCount: number;
-  readonly toSpend: bigint;
-  readonly dryRun: boolean;
-  /** A buy runs (mode A or B): arming waits for it. */
-  readonly buyRunning: boolean;
-  /** Why buying is blocked now (e.g. unsaved table), or null. */
-  readonly blocked: string | null;
-  readonly fleetAddresses: readonly string[];
-  readonly apiKeys: ApiKeyFlags;
   readonly mode: BuyMode;
   /** Saves the one-shot/continuous setting in the vault. */
   readonly onMode: (mode: BuyMode) => Promise<void>;
@@ -51,29 +36,16 @@ function verifiedLabel(d: WatchDetection): string {
 }
 
 /**
- * Mode B controls (SPEC 3.4, BUNNDLY-35, D-039): the creator address, one-shot or
- * continuous, the big ARM / DISARM button (live mode only after a confirmation),
- * the connection state and the detections.
+ * Mode B state (SPEC 3.4, BUNNDLY-35, D-039): the watched creator, one-shot or continuous,
+ * the connection and the detections. The creator field and ARM / DISARM are in the command
+ * bar (BUNNDLY-59).
  */
-export function WatchPanel({
-  wallets,
-  readyCount,
-  toSpend,
-  dryRun,
-  buyRunning,
-  blocked,
-  fleetAddresses,
-  apiKeys,
-  mode,
-  onMode,
-}: WatchPanelProps) {
-  const { client, status, refresh } = useVault();
-  const { alarm, wake } = useWatchRuntime();
+export function WatchPanel({ mode, onMode }: WatchPanelProps) {
+  const { status } = useVault();
+  const { wake } = useWatchRuntime();
   const ids = useId();
   const watch = status?.watch ?? null;
   const armed = watch?.armed ?? false;
-  const [creatorText, setCreatorText] = useState('');
-  const [confirmArm, setConfirmArm] = useState(false);
   const [confirmContinuous, setConfirmContinuous] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -91,23 +63,6 @@ export function WatchPanel({
     };
   }, [watch]);
 
-  const creator = creatorText.trim();
-  const creatorValid = isCreatorAddress(creator);
-  const inFleet = creatorValid && fleetAddresses.includes(creator);
-  const hasHelius =
-    (apiKeys.helius || apiKeys.heliusWsUrl) && (apiKeys.helius || apiKeys.heliusRpcUrl);
-  const missing =
-    blocked ??
-    (!hasHelius
-      ? 'The watcher needs a Helius key (Settings).'
-      : readyCount === 0
-        ? 'No ready wallets: mark wallets as active and set their max spend.'
-        : !creatorValid
-          ? 'Enter a valid creator address.'
-          : buyRunning
-            ? 'A buy is running: you can arm the watcher when it ends.'
-            : null);
-
   const act = async (task: () => Promise<unknown>): Promise<void> => {
     setError(null);
     setBusy(true);
@@ -120,24 +75,6 @@ export function WatchPanel({
     }
   };
 
-  const arm = (): void => {
-    setConfirmArm(false);
-    alarm.prime(); // the click allows the alarm sound later (autoplay policy)
-    void act(async () => {
-      await client.request({ type: 'arm', creator, wallets });
-      await refresh();
-    });
-  };
-  const disarm = (): void => {
-    void act(async () => {
-      await client.request({ type: 'disarm' });
-      await refresh();
-    });
-  };
-  const onArmClick = (): void => {
-    if (dryRun) arm();
-    else setConfirmArm(true);
-  };
   const chooseMode = (next: BuyMode): void => {
     setConfirmContinuous(false);
     void act(() => onMode(next));
@@ -161,40 +98,10 @@ export function WatchPanel({
 
   return (
     <div className="watch-panel">
-      {armed && watch ? (
+      {armed && watch && (
         <p>
           Watched creator: <code className="address">{watch.creator}</code>
         </p>
-      ) : (
-        <div className="field">
-          <label htmlFor={`${ids}-creator`}>Creator address</label>
-          <Input
-            id={`${ids}-creator`}
-            value={creatorText}
-            spellCheck={false}
-            autoComplete="off"
-            aria-invalid={creator !== '' && !creatorValid}
-            aria-describedby={`${ids}-creator-help`}
-            onChange={(e) => {
-              setCreatorText(e.target.value);
-            }}
-          />
-          {creator !== '' && !creatorValid ? (
-            <p className="field-error" id={`${ids}-creator-help`} role="alert">
-              This is not a valid wallet address (base58, 32 bytes, not the SOL mint).
-            </p>
-          ) : (
-            <p className="hint" id={`${ids}-creator-help`}>
-              The wallet that will create the token. The watcher buys every new token this address
-              signs.
-            </p>
-          )}
-          {inFleet && (
-            <p className="notice warning" role="status">
-              This is a wallet from this fleet. Make sure you want to watch your own wallet.
-            </p>
-          )}
-        </div>
       )}
 
       <fieldset className="watch-mode" disabled={armed || busy}>
@@ -259,54 +166,6 @@ export function WatchPanel({
           {!armed && ' · watcher disarmed'}
         </p>
       )}
-
-      {confirmArm && !armed && (
-        <Modal
-          open
-          role="alertdialog"
-          tone="danger"
-          title="Arm the watcher in live mode?"
-          onClose={() => {
-            setConfirmArm(false);
-          }}
-          footer={
-            <>
-              <Button
-                variant="ghost"
-                onClick={() => {
-                  setConfirmArm(false);
-                }}
-              >
-                Cancel
-              </Button>
-              <Button variant="danger" onClick={arm}>
-                Yes, arm
-              </Button>
-            </>
-          }
-        >
-          <p>
-            Network: {NETWORK_LABELS[status?.network ?? DEFAULT_NETWORK]}. After a token is detected
-            the fleet buys automatically: up to {formatSol(toSpend)} SOL from {readyCount}{' '}
-            {readyCount === 1 ? 'wallet' : 'wallets'}
-            {mode === 'continuous' ? ' for every token' : ''}. On-chain transactions cannot be
-            undone.
-          </p>
-        </Modal>
-      )}
-
-      <div className="actions">
-        {armed ? (
-          <Button variant="warn" disabled={busy} onClick={disarm}>
-            DISARM
-          </Button>
-        ) : (
-          <Button variant="watch" disabled={busy || missing !== null} onClick={onArmClick}>
-            {busy ? 'Arming…' : 'ARM'}
-          </Button>
-        )}
-        {!armed && missing && <span className="muted">{missing}</span>}
-      </div>
 
       {armed && (
         <p className="notice warning" role="status">

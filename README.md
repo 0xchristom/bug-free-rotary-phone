@@ -117,7 +117,7 @@ Otwórz `https://<project>.pages.dev` w oknie prywatnym. Powinna się pokazać s
 6. **Zasil portfele:** na ekranie **Fleet** każdy portfel ma w wierszu skrócony adres (4 pierwsze i 4 ostatnie znaki), ikonę kopiowania pełnego adresu, ikonę eksploratora i ikonę kodu QR. Pełny adres jest też w szczegółach wiersza (ikona **Details**). Wyślij SOL z własnego portfela na wybrane adresy. Salda odświeżają się co ok. 12 s.
 7. **Tabela floty:** ustaw kwotę (max spend) dla portfeli w kolumnie **Amount** (ręcznie albo akcjami zbiorczymi: kwota dla wszystkich lub % salda) i zaznacz portfele, które mają brać udział w zakupie (pole wyboru w wierszu; pole w nagłówku zaznacza albo odznacza wszystkie). Rezerwa (saldo − max spend) musi wynosić co najmniej `MIN_RESERVE_SOL` (domyślnie 0,015 SOL); za małą rezerwę aplikacja opisuje pod polem kwoty. Zapisz: **Save table changes**, potem **Save the updated fleet file**.
 8. **Kolejne portfele:** **Create wallets** nad tabelą, wpisz liczbę, **Create**, potem **Save the updated fleet file**. Nowe portfele nazywają się **Wallet N** (numer od 0); portfele z wcześniej zapisanych plików zachowują swoje nazwy (np. W01).
-9. **Saldo tokenu:** wpisz adres mintu w polu **Token address (mint)** i kliknij **Show token balance**.
+9. **Saldo tokenu:** wklej adres mintu w pole celu na pasku komend (**Token mint or creator wallet**). Gdy aplikacja rozpozna mint, tabela pokaże kolumnę z saldem tokenu.
 10. **Później:** **Open a fleet file** > wybierz plik > sprawdź podgląd adresów > wpisz hasło. Po 15 minutach bezczynności flota blokuje się sama.
 
 ## Sieć: Mainnet i Devnet
@@ -127,7 +127,7 @@ W nagłówku, na każdym ekranie, jest przełącznik **Mainnet / Devnet**. Nowa 
 1. **Przełączenie:** otwórz flotę i kliknij **Devnet** albo **Mainnet**. Sieć zmienia się od razu: salda są czytane od nowa, a linki do transakcji prowadzą do stron wybranej sieci.
 2. **Zapis:** sieć jest ustawieniem floty, więc po przełączeniu kliknij **Save the fleet file with the new network**. Stary plik otworzy flotę na poprzedniej sieci.
 3. **Kiedy się nie da:** w trakcie zakupu, przy uzbrojonym watcherze i gdy czeka niezapisany plik floty. Aplikacja mówi, co trzeba najpierw zrobić.
-4. **Devnet służy do testów:** zakup (**Buy now**) i watcher są tam wyłączone, bo Jupiter działa tylko na Mainnecie; aplikacja nie wysyła wtedy do Jupitera żadnego zapytania. **Test connections** sprawdza na Devnecie sam Helius.
+4. **Devnet służy do testów:** zakup (**BUY**) i watcher (**ARM**) są tam wyłączone, bo Jupiter działa tylko na Mainnecie; aplikacja nie wysyła wtedy do Jupitera żadnego zapytania. **Test connections** sprawdza na Devnecie sam Helius.
 5. **Klucz Helius:** aplikacja używa na obu sieciach tego samego klucza z **Settings**. Własne adresy RPC i WebSocket z **Settings** działają tylko na tej sieci, na którą wskazuje ich host (`devnet.helius-rpc.com` to Devnet, każdy inny to Mainnet); na drugiej sieci aplikacja używa adresu zbudowanego z klucza.
 6. **Powrót na Mainnet z wyłączonym DRY-RUN** wymaga potwierdzenia, bo następny zakup wyda prawdziwe SOL.
 
@@ -135,10 +135,12 @@ Sieć jest też w dzienniku operacji (kolumna `network` w CSV i JSON) i w dialog
 
 ## Zakup: tryb A
 
-Tryb A kupuje token od razu wszystkimi gotowymi portfelami (zaznaczony, max spend > 0, rezerwa co najmniej `MIN_RESERVE_SOL`). Każdy portfel kupuje za swój max spend, najwyżej raz.
+Tryb A kupuje token od razu portfelami zaznaczonymi w tabeli, które mają zapisany max spend > 0 (portfel z rezerwą poniżej `MIN_RESERVE_SOL` jest pomijany). Każdy portfel kupuje za swój max spend, najwyżej raz.
 
-1. **Mint:** na ekranie **Fleet** wpisz adres tokenu w polu **Token address (mint)** i kliknij **Show token balance**. Aplikacja sprawdza, że to mint SPL albo Token-2022. Dopiero wtedy **Buy now** staje się aktywny.
-2. **Podsumowanie:** panel **Buy**, zakładka **Mode A: mint**, pokazuje mint, liczbę gotowych portfeli, łączną kwotę do wydania i tryb. Zakup używa ustawień zapisanych w sejfie, więc najpierw zapisz zmiany w tabeli.
+Na ekranie **Fleet** nad tabelą jest pasek komend: jedno pole celu i przyciski **ARM**, **BUY**, **SELL**, **STOP**. Przycisk, który nie może teraz zadziałać, jest wyłączony, a zdanie pod paskiem (i opis przycisku) mówi dlaczego. **SELL** czeka na sprzedaż (BUNNDLY-60).
+
+1. **Cel:** wklej w pole **Token mint or creator wallet** adres tokenu. Aplikacja sama sprawdza w łańcuchu, czym jest adres, i pokazuje etykietę: **Token · SPL**, **Token · Token-2022** albo **Creator wallet**. Adres konta tokenowego, programu albo innego konta zostaje odrzucony z opisem przy polu. Dopiero mint włącza **BUY**.
+2. **Podsumowanie:** panel **Buy** pokazuje liczbę gotowych portfeli, łączną kwotę do wydania i tryb. Zakup wydaje kwoty zapisane w sejfie, więc niezapisane zmiany kwot blokują **BUY** do **Save table changes**. Zmiana zaznaczenia nie wymaga zapisu.
 3. **DRY-RUN (domyślnie):** etykieta **DRY-RUN** przy panelu. Aplikacja pyta Jupitera o cenę (`/order`), sprawdza i podpisuje transakcje, ale **niczego nie wysyła**. Każdy portfel kończy jako „DRY-RUN” z wyceną i czasami. Tak sprawdzisz klucze, limity i salda bez wydawania środków.
 4. **Tryb na żywo:**
    - przełączasz przyciskiem **Switch to live mode…**;
@@ -147,12 +149,12 @@ Tryb A kupuje token od razu wszystkimi gotowymi portfelami (zaznaczony, max spen
    - tryb na żywo wymaga klucza Helius, bo przed każdym ponowieniem aplikacja sprawdza w łańcuchu, czy poprzednia transakcja nie wylądowała;
    - powrót: **Back to DRY-RUN**, bez potwierdzenia;
    - tryb zapisuje się w pliku floty, więc potem kliknij **Save the updated fleet file**.
-5. **Buy now:** start. **Nie zamykaj ani nie przeładowuj karty** do końca zakupu: klucze i zakup działają tylko w niej, a przeglądarka zapyta przed zamknięciem.
+5. **BUY** (skrót **B**, poza polem tekstowym): start zaznaczonymi portfelami; ich wiersze od razu pokazują „Queued”. Gdy aplikacja odmówi startu, wiersze wracają do poprzedniego stanu, a pod paskiem pojawia się powód. Przycisk ▶ w wierszu kupuje tylko tym jednym portfelem. W trybie na żywo dialog **Buy in live mode?** podaje liczbę portfeli, łączną kwotę, sieć i tryb, a zakup rusza dopiero po **Yes, buy**. **Nie zamykaj ani nie przeładowuj karty** do końca zakupu: klucze i zakup działają tylko w niej, a przeglądarka zapyta przed zamknięciem.
 6. **Postęp:**
    - pasek pokazuje potwierdzone, w trakcie oraz nieudane albo pominięte, a także czas od startu do pierwszego i do ostatniego potwierdzenia;
    - w tabeli floty kolumna **Status** pokazuje stan zakupu portfela (kolor i tekst z powodem), a szczegóły wiersza (ikona **Details**): czas, próby, kupione tokeny, wydany SOL, cenę (SOL za token), wynik sprawdzenia saldem tokenu („confirmed” albo ostrzeżenie) i link **Transaction** do eksploratora z **Settings**;
    - „Checking the chain” znaczy, że wynik wysłanej transakcji nie jest jeszcze znany. Portfel nie spróbuje ponownie, dopóki łańcuch nie pokaże, że transakcja nie wylądowała.
-7. **STOP:** duży czerwony przycisk widoczny przez cały zakup. Zatrzymuje nowe zapytania; transakcje już wysłane są śledzone do końca, a reszta portfeli kończy jako „Skipped”.
+7. **STOP** (skrót **Esc**)**:** czerwony przycisk na pasku komend, aktywny przez cały zakup. Zatrzymuje nowe zapytania; transakcje już wysłane są śledzone do końca, a reszta portfeli kończy jako „Skipped”.
 8. **Dziennik operacji:** panel **Operations log**, przyciski **Download CSV** i **Download JSON**:
    - każda zmiana stanu każdego portfela z czasem, kwotami (lamporty i jednostki tokena, bez zaokrągleń), routerem, sygnaturą i powodem;
    - bez kluczy i podpisanych transakcji;
@@ -162,13 +164,14 @@ Tryb A kupuje token od razu wszystkimi gotowymi portfelami (zaznaczony, max spen
 
 Tryb B obserwuje portfel twórcy i kupuje sam, gdy ten portfel utworzy token. Etykieta DRY-RUN/LIVE, STOP, postęp i dziennik są te same co w trybie A.
 
-1. **Adres twórcy:** w panelu **Buy** wybierz **Mode B: watch a creator** i wpisz adres portfela twórcy (base58, 32 bajty). Gdy to adres z Twojej floty, panel to pokaże.
+1. **Adres twórcy:** wklej adres portfela twórcy w to samo pole celu na pasku komend; etykieta pokaże **Creator wallet**. Gdy to adres z Twojej floty, ekran to pokaże. **BUY** czeka wtedy na token tego twórcy: najnowsze wykrycie pojawia się na pasku jako etykieta **Detected …**, a **BUY** kupuje ten token.
 2. **Po wykryciu** (**After a detection**)**:**
    - **one-shot** (domyślny): pierwszy wykryty token rozbraja watcher, a zakup trwa dalej;
    - **continuous**: watcher zostaje uzbrojony i kupuje każdy kolejny token twórcy, jeden zakup po drugim. Włączenie wymaga potwierdzenia, a zmiana zapisuje się w pliku floty.
 3. **ARM:**
    - wymaga zapisanej tabeli, klucza Helius i co najmniej jednego gotowego portfela; przycisk mówi, czego brakuje;
-   - w trybie na żywo dialog podaje kwotę i liczbę portfeli („the fleet buys automatically: up to X SOL from N wallets”) i wymaga potwierdzenia **Yes, arm**; w DRY-RUN nic nie jest wysyłane, więc potwierdzenia nie ma;
+   - watcher kupuje portfelami zaznaczonymi w chwili uzbrojenia; późniejsza zmiana zaznaczenia go nie zmienia;
+   - w trybie na żywo dialog **Arm the watcher in live mode?** podaje liczbę portfeli, kwotę na jeden token, sieć i tryb i wymaga potwierdzenia **Yes, arm**; w DRY-RUN nic nie jest wysyłane, więc potwierdzenia nie ma;
    - przed uzbrojeniem aplikacja czyta salda portfeli, a potem odświeża je co 30 s, żeby zakup po wykryciu nie czekał na sieć.
 4. **Stan połączenia:** „Connecting…”, „Connected”, „Reconnecting (attempt n)” albo „Disconnected”, z czasem od ostatniej wiadomości z Helius.
 5. **Alarm:** utrata połączenia przy uzbrojonym watcherze pokazuje czerwony baner i co 3 s gra krótki dźwięk, dopóki połączenie nie wróci albo nie klikniesz **Mute**. Po powrocie połączenia aplikacja nadrabia przerwę: sprawdza transakcje twórcy z czasu rozłączenia.
