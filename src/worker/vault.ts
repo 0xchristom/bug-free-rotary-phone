@@ -73,8 +73,12 @@ import {
   publicRpcUrl,
   effectiveJupiterPlan,
   validateGlobalSettings,
+  validateTradeSettings,
   wipe,
   type ApiKeyName,
+  type BuyAmount,
+  type TradeSettingsV1,
+  type WalletTradeV1,
   type ApiKeysV1,
   type ConnectionReport,
   type FetchLike,
@@ -261,8 +265,61 @@ function isIndexIn(value: unknown, indices: ReadonlySet<number>): value is numbe
   return typeof value === 'number' && indices.has(value);
 }
 
-/** Full settings from the UI; anything malformed or out of range is INVALID_SETTINGS. */
-function parseSettings(value: unknown, walletIndices: ReadonlySet<number>): FleetSettingsV1 {
+const SLIPPAGE_KEYS = ['buySlippageBps', 'sellSlippageBps'] as const;
+const FEE_KEYS = ['buyPriorityFeeLamports', 'sellPriorityFeeLamports'] as const;
+
+/** A buy amount from the UI: null, or exactly one of the two kinds. */
+function buyAmountOf(value: unknown): BuyAmount | null {
+  if (value === null) return null;
+  if (!isRecord(value)) return invalidSettings();
+  if (value.kind === 'percent' && typeof value.percent === 'number') {
+    return { kind: 'percent', percent: value.percent };
+  }
+  if (value.kind === 'lamports' && typeof value.lamports === 'bigint') {
+    return { kind: 'lamports', lamports: value.lamports };
+  }
+  return invalidSettings();
+}
+
+/**
+ * Trade parameters from the UI (BUNNDLY-58), copied field by field; the ranges are
+ * checked with the rest of the settings in `parseSettings`.
+ */
+function parseTrade(value: unknown, walletIndices: ReadonlySet<number>): TradeSettingsV1 {
+  if (!isRecord(value) || !isRecord(value.fleet) || !Array.isArray(value.wallets)) {
+    return invalidSettings();
+  }
+  const f = value.fleet;
+  const fleet = {
+    buyAmount: buyAmountOf(f.buyAmount),
+    sellPercent: f.sellPercent,
+    buySlippageBps: f.buySlippageBps,
+    sellSlippageBps: f.sellSlippageBps,
+    buyPriorityFeeLamports: f.buyPriorityFeeLamports,
+    sellPriorityFeeLamports: f.sellPriorityFeeLamports,
+  } as TradeSettingsV1['fleet'];
+  const items: unknown[] = value.wallets;
+  const wallets = items.map((item): WalletTradeV1 => {
+    if (!isRecord(item) || !isIndexIn(item.index, walletIndices)) return invalidSettings();
+    const entry: Record<string, unknown> = { index: item.index };
+    for (const key of ['buyPercent', 'sellPercent', ...SLIPPAGE_KEYS, ...FEE_KEYS]) {
+      if (item[key] !== undefined) entry[key] = item[key];
+    }
+    return entry as unknown as WalletTradeV1;
+  });
+  if (new Set(wallets.map((w) => w.index)).size !== wallets.length) invalidSettings();
+  return { fleet, wallets };
+}
+
+/**
+ * Full settings from the UI; anything malformed or out of range is INVALID_SETTINGS.
+ * Without `trade` the current trade parameters stay.
+ */
+function parseSettings(
+  value: unknown,
+  walletIndices: ReadonlySet<number>,
+  currentTrade: TradeSettingsV1,
+): FleetSettingsV1 {
   if (!isRecord(value) || !Array.isArray(value.maxSpend) || !Array.isArray(value.active)) {
     return invalidSettings();
   }
@@ -306,7 +363,11 @@ function parseSettings(value: unknown, walletIndices: ReadonlySet<number>): Flee
     network: g.network,
   } as FleetSettingsV1['global'];
   if (validateGlobalSettings(global).length > 0) return invalidSettings();
-  return { maxSpend, active, global };
+  const trade = value.trade === undefined ? currentTrade : parseTrade(value.trade, walletIndices);
+  // Checked against this request's maxSpend: a SOL amount and a percent never both.
+  const withSol = new Set(maxSpend.filter((m) => m.lamports > 0n).map((m) => m.index));
+  if (validateTradeSettings(trade, walletIndices, withSol).length > 0) return invalidSettings();
+  return { maxSpend, active, global, trade };
 }
 
 /** Applies write-only key changes: missing keeps, null removes, a string replaces. */
@@ -996,7 +1057,7 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
       case 'saveSettings': {
         const vault = requireUnlocked();
         const indices = new Set(vault.wallets.map((w) => w.index));
-        const settings = parseSettings(request.settings, indices);
+        const settings = parseSettings(request.settings, indices, vault.settings.trade);
         const switched = settings.global.network !== networkOf(vault);
         // A running buy keeps its network to the end (an armed watcher is refused above).
         if (switched && buy !== null) throw new AppError('BUY_RUNNING');

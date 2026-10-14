@@ -1,6 +1,7 @@
 import { vi } from 'vitest';
 import { AppError } from '../../src/core/errors.ts';
 import { DEFAULT_GLOBAL_SETTINGS } from '../../src/core/settings.ts';
+import { DEFAULT_TRADE_SETTINGS } from '../../src/core/trade.ts';
 import type { DirectoryHandleLike, StorageEnv } from '../../src/storage/keystore-file.ts';
 import type {
   VaultInfo,
@@ -29,7 +30,12 @@ export function fleetInfo(count = 3, fleetName = 'Flota testowa'): VaultInfo {
       derivationPath: `m/44'/501'/${String(index)}'/0'`,
       label: `W${String(index + 1).padStart(2, '0')}`,
     })),
-    settings: { maxSpend: [], active: [], global: DEFAULT_GLOBAL_SETTINGS },
+    settings: {
+      maxSpend: [],
+      active: [],
+      global: DEFAULT_GLOBAL_SETTINGS,
+      trade: DEFAULT_TRADE_SETTINGS,
+    },
     apiKeys: { helius: false, jupiter: false, heliusRpcUrl: false, heliusWsUrl: false },
   };
 }

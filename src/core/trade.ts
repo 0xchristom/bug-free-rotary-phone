@@ -146,6 +146,7 @@ const MESSAGES = {
   slippage: 'Slippage must be Auto or from 0.1 to 100 % in steps of 0.01 %.',
   priorityFee: 'The priority fee must be Auto or more than 0 and at most 0.1 SOL.',
   lamports: 'The buy amount must be more than 0 SOL.',
+  amountKind: 'The default buy amount must be none, a SOL amount or a percent.',
   twoAmounts: 'A wallet has either a SOL amount or a percent, not both.',
   unknownWallet: 'This wallet is not in the fleet.',
   duplicate: 'This wallet has two entries.',
@@ -180,9 +181,13 @@ export function validateTradeSettings(
   sides('fleet', f);
   const amount = f.buyAmount;
   if (amount !== null) {
-    if (amount.kind === 'percent' && !isTradePercent(amount.percent)) {
-      add('fleet.buyAmount', MESSAGES.percent);
-    } else if (amount.kind === 'lamports' && !(amount.lamports > 0n)) {
+    // Read as unknown: a value from a file or a request may be anything.
+    const a = (typeof amount === 'object' ? amount : {}) as Record<string, unknown>;
+    if (a.kind === 'percent') {
+      if (!isTradePercent(a.percent)) add('fleet.buyAmount', MESSAGES.percent);
+    } else if (a.kind !== 'lamports' || typeof a.lamports !== 'bigint') {
+      add('fleet.buyAmount', MESSAGES.amountKind);
+    } else if (a.lamports <= 0n) {
       add('fleet.buyAmount', MESSAGES.lamports);
     }
   }

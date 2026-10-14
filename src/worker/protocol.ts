@@ -56,8 +56,13 @@ export type VaultRequest =
   | { readonly type: 'status' }
   | {
       readonly type: 'saveSettings';
-      /** Replaces all settings (global, maxSpend, active). */
-      readonly settings: FleetSettingsV1;
+      /**
+       * Replaces global, maxSpend and active; the trade parameters too when present,
+       * otherwise they stay as they are (BUNNDLY-58).
+       */
+      readonly settings: Omit<FleetSettingsV1, 'trade' | 'resetFields' | 'resetTradeFields'> & {
+        readonly trade?: FleetSettingsV1['trade'];
+      };
       readonly apiKeys?: ApiKeyChanges;
     }
   /**
