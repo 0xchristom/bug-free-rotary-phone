@@ -19,7 +19,7 @@ import { FakeClock } from '../helpers/fake-clock.ts';
 import { FakeJupiter } from '../helpers/fake-jupiter.ts';
 import { FakeSocket } from '../helpers/fake-socket.ts';
 import { launch, signatureOf } from '../helpers/launch-fixtures.ts';
-import { USDC, buildTransaction } from '../helpers/tx-fakes.ts';
+import { USDC, buildTransaction, orderFor } from '../helpers/tx-fakes.ts';
 
 vi.setConfig({ testTimeout: 60_000 });
 
@@ -93,11 +93,11 @@ async function setup(
     transaction: (taker) => buildTransaction({ feePayer: taker }),
     orderDelayMs: ({ taker }) => (probes.has(taker) ? 100 : holdMs),
   });
-  /** Every /order as it is called: the mint and the taker. */
-  const orders: { mint: string; taker: string }[] = [];
+  /** Every /order as it is called: the mint, the taker and the lamports asked. */
+  const orders: { mint: string; taker: string; amount: bigint }[] = [];
   const jupiter: JupiterClient = {
     getOrder: (request) => {
-      orders.push({ mint: request.outputMint, taker: request.taker ?? '' });
+      orders.push({ mint: request.outputMint, taker: request.taker ?? '', amount: request.amount });
       return fake.getOrder(request);
     },
     execute: (request) => fake.execute(request),
@@ -189,6 +189,7 @@ async function setup(
   return {
     clock,
     h,
+    addresses,
     events,
     orders,
     status,
@@ -257,6 +258,54 @@ describe('a buy in one group', () => {
     await t.clock.runUntil(t.clock.now() + RPC_DELAY_MS);
     expect(await sell).toBe('INTERNAL_ERROR');
     expect(t.orders).toEqual([]);
+  });
+});
+
+describe('a wallet signs within the plan of its own group (money path)', () => {
+  it("A buys USDC with 0.01 SOL, B buys MINT with 0.02 SOL at once: B signs up to B's amount, never A's", async () => {
+    const t = await setup();
+    // B's wallets get 20 000 000 lamports, A's keep 10 000 000 (worked out by hand: 0.02
+    // and 0.01 SOL), so the two plans differ for every wallet.
+    const B_SPEND = 20_000_000n;
+    const A_SPEND = 10_000_000n;
+    await t.saveWith((s) => ({
+      ...s,
+      maxSpend: s.maxSpend.map((m) => (m.index >= 3 ? { index: m.index, lamports: B_SPEND } : m)),
+    }));
+    await t.startBuy('g1', USDC);
+    await t.startBuy('g2', MINT);
+
+    const buyOrder = (index: number, mint: string, amount: bigint) =>
+      t.h.signOrder(
+        index,
+        { outputMint: mint, amount },
+        orderFor(t.addresses[index] ?? '', buildTransaction({ feePayer: t.addresses[index] }), {
+          outputMint: mint,
+          inAmount: amount,
+        }),
+      );
+    // B's wallet: its own plan, up to the lamport
+    expect(await buyOrder(4, MINT, B_SPEND)).toMatchObject({ ok: true });
+    expect(await buyOrder(4, MINT, B_SPEND + 1n)).toEqual({ ok: false, problem: 'OVER_MAX_SPEND' });
+    // A's wallet: A's plan, not B's larger one
+    expect(await buyOrder(1, USDC, A_SPEND)).toMatchObject({ ok: true });
+    expect(await buyOrder(1, USDC, A_SPEND + 1n)).toEqual({ ok: false, problem: 'OVER_MAX_SPEND' });
+
+    await t.untilIdle();
+    // every /order of B asked B's amount for MINT, every one of A A's amount for USDC
+    const asked = (mint: string) =>
+      t.orders
+        .filter((o) => o.mint === mint)
+        .map((o) => [t.addresses.indexOf(o.taker), o.amount])
+        .sort(([a], [b]) => Number(a) - Number(b));
+    expect(asked(MINT)).toEqual([3, 4, 5, 6, 7].map((i) => [i, B_SPEND]));
+    expect(asked(USDC)).toEqual([0, 1, 2].map((i) => [i, A_SPEND]));
+    // and every wallet of both groups was signed and went to the end of its DRY-RUN
+    const finals = t.events
+      .filter((e) => e.kind === 'wallet' && e.state === 'SKIPPED')
+      .map((e) => (e.kind === 'wallet' ? [e.index, e.reason?.code] : []))
+      .sort(([a], [b]) => Number(a) - Number(b));
+    expect(finals).toEqual([0, 1, 2, 3, 4, 5, 6, 7].map((i) => [i, 'DRY_RUN']));
   });
 });
 
