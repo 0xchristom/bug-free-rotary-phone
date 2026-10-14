@@ -221,7 +221,7 @@ describe('fleet table', () => {
       '0.985',
     );
     expect(row('W01').dataset.ready).toBe('true');
-    expect(within(row('W01')).getByText('Ready')).toBeTruthy();
+    expect(within(row('W01')).getByText('Idle')).toBeTruthy();
     expect(within(row('W01')).queryByText(/minimum reserve/u)).toBeNull();
 
     expect(row('W02').className).toBe('row-error');

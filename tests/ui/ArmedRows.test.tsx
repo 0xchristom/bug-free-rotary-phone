@@ -99,7 +99,7 @@ function tabCount(label: string): string {
 }
 
 describe('rows of an armed group', () => {
-  it('selected wallets are Armed and wait for the token; In flight counts them like Fleet fill; DISARM brings Ready back', async () => {
+  it('selected wallets are Armed and wait for the token; In flight counts them like Fleet fill; DISARM brings Idle back', async () => {
     const { user } = setup();
     await screen.findByText(/^Slot \S+ · /u);
     await waitFor(() => {
@@ -115,9 +115,9 @@ describe('rows of an armed group', () => {
 
     await user.click(screen.getByRole('button', { name: 'Disarm' }));
     await waitFor(() => {
-      expect(stateOf('W01')).toBe('Ready');
+      expect(stateOf('W01')).toBe('Idle');
     });
-    expect(stateOf('W02')).toBe('Ready');
+    expect(stateOf('W02')).toBe('Idle');
     expect(tabCount('In flight')).toBe('0');
     expect(screen.getByText(/^Fleet fill · 0 of 2 filled$/u)).toBeTruthy();
   });
