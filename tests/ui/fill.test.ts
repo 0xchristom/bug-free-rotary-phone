@@ -10,7 +10,14 @@ import type {
   WalletResult,
   WalletState,
 } from '../../src/executor/index.ts';
-import { fillOf, fleetFill, tokensText, type Fill, type FillInput } from '../../src/ui/fill.ts';
+import {
+  fillOf,
+  fleetFill,
+  ordinal,
+  tokensText,
+  type Fill,
+  type FillInput,
+} from '../../src/ui/fill.ts';
 
 const skipped = (code: 'DRY_RUN' | 'INSUFFICIENT_SOL' | 'STOPPED'): WalletReason => ({
   kind: 'SKIPPED',
@@ -257,5 +264,87 @@ describe('fleet bar', () => {
     expect(fleetFill([live('IDLE'), live('IDLE')].map(fillOf)).text).toBe(
       'Fleet fill · 0 of 2 filled',
     );
+  });
+});
+
+// BUNNDLY-89: a retry is visible. The executor numbers attempts from 1 on the first /order
+// (QUEUED before it carries 0); QUEUED after an attempt waits to try again.
+describe('retry and attempt number in the fill (BUNNDLY-89)', () => {
+  const at = (state: WalletState, attempt: number, reason: WalletReason | null = null) => ({
+    ...live(state, null, reason),
+    attempt,
+  });
+  const rows: [string, FillInput, Fill][] = [
+    ['QUEUED before any attempt', at('QUEUED', 0), { percent: 5, tone: 'run', label: 'Queued' }],
+    [
+      'QUEUED after the 1st attempt',
+      at('QUEUED', 1),
+      { percent: 5, tone: 'run', label: 'Retrying' },
+    ],
+    [
+      'QUEUED after the 2nd attempt',
+      at('QUEUED', 2),
+      { percent: 5, tone: 'run', label: 'Retrying' },
+    ],
+    ['QUOTING, 1st attempt', at('QUOTING', 1), { percent: 20, tone: 'run', label: 'Quote' }],
+    [
+      'QUOTING, 2nd attempt',
+      at('QUOTING', 2),
+      { percent: 20, tone: 'run', label: 'Quote · 2nd attempt' },
+    ],
+    [
+      'SIGNING, 2nd attempt',
+      at('SIGNING', 2),
+      { percent: 35, tone: 'run', label: 'Signing · 2nd attempt' },
+    ],
+    [
+      'SUBMITTED, 3rd attempt',
+      at('SUBMITTED', 3),
+      { percent: 60, tone: 'run', label: 'Sent · 3rd attempt' },
+    ],
+    [
+      'checking the chain, 2nd attempt',
+      at('UNKNOWN', 2, noAnswer),
+      { percent: 80, tone: 'run', label: 'Checking chain · 2nd attempt' },
+    ],
+    [
+      'FAILED after 3 attempts: the reason only',
+      at('FAILED', 3, failed),
+      { percent: 0, tone: 'bad', label: 'All attempts are used up.' },
+    ],
+  ];
+  it.each(rows)('%s', (_name, input, expected) => {
+    expect(fillOf(input)).toEqual(expected);
+  });
+
+  it('a retrying wallet counts as in flight in the fleet bar', () => {
+    const fleet = fleetFill([fillOf(at('QUEUED', 1)), fillOf(at('QUOTING', 2))]);
+    expect(fleet.counts.inFlight).toBe(2);
+    expect(fleet.counts.failed).toBe(0);
+  });
+
+  it('DRY-RUN: the 2nd attempt is said on the stage, the end stays Simulated', () => {
+    expect(fillOf({ ...at('SIGNING', 2), dryRun: true }).label).toBe('Signing · 2nd attempt');
+    expect(fillOf({ ...at('SKIPPED', 2, skipped('DRY_RUN')), dryRun: true })).toEqual({
+      percent: 100,
+      tone: 'sim',
+      label: 'Simulated',
+    });
+  });
+
+  it.each([
+    [1, '1st'],
+    [2, '2nd'],
+    [3, '3rd'],
+    [4, '4th'],
+    [10, '10th'],
+    [11, '11th'],
+    [12, '12th'],
+    [13, '13th'],
+    [21, '21st'],
+    [22, '22nd'],
+    [111, '111th'],
+  ])('ordinal(%i) is %s', (n, text) => {
+    expect(ordinal(n)).toBe(text);
   });
 });

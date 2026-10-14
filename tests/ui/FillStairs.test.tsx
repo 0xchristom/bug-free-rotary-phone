@@ -317,6 +317,75 @@ describe('Fill column and fleet fill (BUNNDLY-56)', () => {
   });
 });
 
+/** The state chip in the Status column of a wallet: its text and its tone. */
+function chipOf(label: string): { readonly text: string; readonly tone: string | undefined } {
+  const bar = screen.getByRole('progressbar', { name: `Fill of ${label}` });
+  const row = bar.closest('tr');
+  const chip = row?.querySelector<HTMLElement>('.c-status .k-chip');
+  if (!chip) throw new Error(`no state chip in ${label}`);
+  return { text: chip.textContent.trim(), tone: chip.dataset.tone };
+}
+
+describe('state chip: Sold, Stopped, Retrying (BUNNDLY-89)', () => {
+  it('a confirmed sell says Sold; a confirmed buy still says Bought', async () => {
+    const { vault, user } = setup({ dryRun: false });
+    await showMint(user);
+    act(() => {
+      vault.emit({ ...runEvent('started', false), side: 'sell' });
+      vault.emit(walletEvent(0, 'CONFIRMED'));
+    });
+    await eventually(() => {
+      expect(chipOf('W01')).toEqual({ text: 'Sold', tone: 'ok' });
+    });
+    act(() => {
+      vault.emit({ ...runEvent('started', false), runId: 2, side: 'buy' });
+      vault.emit({ ...walletEvent(0, 'CONFIRMED'), runId: 2 });
+    });
+    await eventually(() => {
+      expect(chipOf('W01')).toEqual({ text: 'Bought', tone: 'ok' });
+    });
+  });
+
+  it('skipped by STOP says Stopped in amber; other skips stay muted Skipped', async () => {
+    const { vault, user } = setup({ dryRun: false });
+    await showMint(user);
+    act(() => {
+      vault.emit(runEvent('started', false));
+      vault.emit(
+        walletEvent(0, 'SKIPPED', { reason: { kind: 'SKIPPED', code: 'STOPPED', detail: null } }),
+      );
+      vault.emit(
+        walletEvent(1, 'SKIPPED', {
+          reason: { kind: 'SKIPPED', code: 'INSUFFICIENT_SOL', detail: null },
+        }),
+      );
+    });
+    await eventually(() => {
+      expect(chipOf('W01')).toEqual({ text: 'Stopped', tone: 'warn' });
+    });
+    expect(chipOf('W02')).toEqual({ text: 'Skipped', tone: 'muted' });
+  });
+
+  it('back in the queue after an attempt says Retrying; the 2nd attempt is named in Fill', async () => {
+    const { vault, user } = setup({ dryRun: false });
+    await showMint(user);
+    act(() => {
+      vault.emit(runEvent('started', false));
+      vault.emit(walletEvent(0, 'QUEUED', { attempt: 0 }));
+      vault.emit(walletEvent(1, 'QUEUED', { attempt: 1 }));
+      vault.emit(walletEvent(2, 'QUOTING', { attempt: 2 }));
+    });
+    await eventually(() => {
+      expect(chipOf('W02')).toEqual({ text: 'Retrying', tone: 'warn' });
+    });
+    expect(chipOf('W01')).toEqual({ text: 'Queued', tone: 'run' });
+    expect(fillOf('W01')).toEqual({ now: '5', text: '5%, Queued' });
+    expect(fillOf('W02')).toEqual({ now: '5', text: '5%, Retrying' });
+    expect(fillOf('W03')).toEqual({ now: '20', text: '20%, Quote · 2nd attempt' });
+    expect(chipOf('W03')).toEqual({ text: 'Quoting', tone: 'run' });
+  });
+});
+
 describe('Stairs in the toolbar (BUNNDLY-61 part 2)', () => {
   it('Immediate sends no steps; Stairs shows the fields and the plan, BUY sends them', async () => {
     const { requests, user } = setup();

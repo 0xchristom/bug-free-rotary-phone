@@ -110,6 +110,8 @@ interface RowProps extends FleetRowData {
   readonly fillPercent: number;
   readonly fillTone: FillTone;
   readonly fillLabel: string;
+  /** The run in `buy` is a buy or a sell: the chip of a CONFIRMED wallet says which. */
+  readonly side: Side;
   readonly explorer: Explorer;
   readonly network: Network;
   /** Buys with this wallet alone (BUNNDLY-59); absent: no row action. */
@@ -144,11 +146,19 @@ const STATE_LABELS: Record<WalletState, string> = {
   SKIPPED: 'Skipped',
 };
 
-function stateLabel(row: BuyRow): string {
+/** Back in the queue after an attempt: it tries again. */
+function retrying(row: BuyRow): boolean {
+  return row.state === 'QUEUED' && row.attempt >= 1;
+}
+
+function stateLabel(row: BuyRow, side: Side): string {
   if (row.state === 'UNKNOWN' && row.reason?.code === 'EXECUTE_NO_ANSWER') {
     return 'Checking the chain';
   }
   if (row.state === 'SKIPPED' && row.reason?.code === 'DRY_RUN') return 'DRY-RUN';
+  if (row.state === 'SKIPPED' && row.reason?.code === 'STOPPED') return 'Stopped';
+  if (row.state === 'CONFIRMED' && side === 'sell') return 'Sold';
+  if (retrying(row)) return 'Retrying';
   return STATE_LABELS[row.state];
 }
 
@@ -157,7 +167,11 @@ function stateTone(row: BuyRow): Tone {
   if (row.state === 'CONFIRMED') return 'ok';
   if (row.state === 'FAILED') return 'danger';
   if (row.state === 'UNKNOWN') return 'warn';
-  if (row.state === 'SKIPPED') return row.reason?.code === 'DRY_RUN' ? 'sim' : 'muted';
+  if (row.state === 'SKIPPED') {
+    if (row.reason?.code === 'DRY_RUN') return 'sim';
+    return row.reason?.code === 'STOPPED' ? 'warn' : 'muted';
+  }
+  if (retrying(row)) return 'warn';
   return 'run';
 }
 
@@ -428,7 +442,7 @@ const FleetRow = memo(function FleetRow(p: RowProps) {
           <Chip tone={idle.tone}>{idle.text}</Chip>
         ) : (
           <Chip tone={stateTone(p.buy)} dot={stateTone(p.buy) === 'run'}>
-            {stateLabel(p.buy)}
+            {stateLabel(p.buy, p.side)}
           </Chip>
         )}
         {message && (
@@ -821,6 +835,7 @@ export function FleetTable(t: FleetTableProps) {
                       verify: buy.verify,
                       dryRun: t.runDryRun ?? false,
                       side: t.runSide ?? 'buy',
+                      attempt: buy.attempt,
                       scheduledAt: buy.scheduledAt ?? null,
                       // only a scheduled row counts down: the others keep their props (memo)
                       now: buy.state === 'SCHEDULED' ? (t.now ?? buy.scheduledAt ?? 0) : 0,
@@ -856,6 +871,7 @@ export function FleetTable(t: FleetTableProps) {
                   fillPercent={fill.percent}
                   fillTone={fill.tone}
                   fillLabel={fill.label}
+                  side={t.runSide ?? 'buy'}
                   explorer={explorer}
                   network={network}
                   onBuy={t.onBuyWallet}
