@@ -623,6 +623,7 @@ describe('the rail says what a command did (BUNNDLY-90)', () => {
     const { user } = setup();
     await showMint(user);
     expect(said()).toBe('');
+    await user.click(within(toolbar()).getByRole('button', { name: 'Immediate' }));
     await user.click(within(toolbar()).getByRole('button', { name: 'Buy' }));
     // the fake worker accepts 3 wallets, DRY-RUN, no steps
     await eventually(() => {
@@ -681,7 +682,7 @@ describe('the rail says what a command did (BUNNDLY-90)', () => {
     const timers = vi.spyOn(window, 'setTimeout');
     await user.click(within(toolbar()).getByRole('button', { name: 'Buy' }));
     await eventually(() => {
-      expect(said()).toBe('Buy started on 3 wallets · Immediate · DRY-RUN');
+      expect(said()).toBe('Buy started on 3 wallets · Stairs · DRY-RUN');
     });
     // the passive effect that sets the timer runs after the commit that shows the text
     await act(() => Promise.resolve());
