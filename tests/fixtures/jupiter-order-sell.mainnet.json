@@ -1,0 +1,82 @@
+{
+  "source": "GET https://api.jup.ag/swap/v2/order, Keyless (bez klucza API), bez taker i bez /execute: sama wycena sprzedaży. Nic nie zostało podpisane ani wysłane.",
+  "fetchedAt": "2026-10-13T09:27:18Z",
+  "notes": {
+    "noTakerSell": "USDC -> SOL, 1 USDC. feeMint to SOL (opłata po stronie wyjścia), transaction null, bo nie ma taker."
+  },
+  "cases": {
+    "noTakerSell": {
+      "request": {
+        "method": "GET",
+        "path": "/swap/v2/order",
+        "query": {
+          "inputMint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+          "outputMint": "So11111111111111111111111111111111111111112",
+          "amount": "1000000"
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json",
+          "x-ratelimit-remaining": "19",
+          "x-ratelimit-current": "1",
+          "x-ratelimit-reset": "1791883648"
+        },
+        "body": {
+          "inputMint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+          "outputMint": "So11111111111111111111111111111111111111112",
+          "inAmount": "1000000",
+          "outAmount": "9333744",
+          "otherAmountThreshold": "9333744",
+          "swapMode": "ExactIn",
+          "slippageBps": 0,
+          "priceImpactPct": "-0.00011224821204464809",
+          "routePlan": [
+            {
+              "percent": 100,
+              "bps": 10000,
+              "usdValue": 0.9998298035644986,
+              "swapInfo": {
+                "ammKey": "7rhxnLV8C77o6d8oz26AgK8x8m5ePsdeRawjqvojbjnQ",
+                "label": "JupiterZ",
+                "inputMint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+                "outputMint": "So11111111111111111111111111111111111111112",
+                "inAmount": "1000000",
+                "outAmount": "9333744"
+              }
+            }
+          ],
+          "feeMint": "So11111111111111111111111111111111111111112",
+          "feeBps": 2,
+          "transaction": null,
+          "gasless": true,
+          "jitOptimized": false,
+          "signatureFeeLamports": 0,
+          "signatureFeePayer": null,
+          "prioritizationFeeLamports": 0,
+          "prioritizationFeePayer": null,
+          "rentFeeLamports": 0,
+          "rentFeePayer": null,
+          "requestId": "01a13496-783e-70bd-92bb-50842e204768",
+          "swapType": "rfq",
+          "router": "jupiterz",
+          "guaranteedPrice": true,
+          "quoteId": "ff3d7d10-d897-51b0-9e54-924caa062e25",
+          "maker": "7rhxnLV8C77o6d8oz26AgK8x8m5ePsdeRawjqvojbjnQ",
+          "taker": null,
+          "platformFee": {
+            "feeBps": 2,
+            "feeMint": "So11111111111111111111111111111111111111112"
+          },
+          "inUsdValue": 0.9998298035644987,
+          "outUsdValue": 0.9997175744566996,
+          "swapUsdValue": 0.9998298035644987,
+          "priceImpact": -0.011224821204464809,
+          "mode": "ultra",
+          "totalTime": 96
+        }
+      }
+    }
+  }
+}

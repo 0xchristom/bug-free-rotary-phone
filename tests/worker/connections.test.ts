@@ -1,5 +1,5 @@
 /** testConnections in the vault worker (BUNNDLY-16): saved keys in, statuses out. */
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { AppError, defaultFleetSettings, type ConnectionReport } from '../../src/core/index.ts';
 import { createVaultHandler, type VaultHandler } from '../../src/worker/vault.ts';
 import {
@@ -11,6 +11,8 @@ import {
   type FetchCall,
   type FetchReply,
 } from '../helpers/net-fakes.ts';
+
+vi.mock('@noble/hashes/scrypt.js', () => import('../helpers/fast-kdf.ts'));
 
 const PASSWORD = 'correct horse battery staple';
 const HELIUS = 'heliusSecretKey777';

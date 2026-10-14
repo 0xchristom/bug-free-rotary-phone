@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { beforeAll, describe, expect, it } from 'vitest';
+import { DEFAULT_TRADE_SETTINGS } from '../../src/core/trade.ts';
 import {
   AppError,
   DEFAULT_GLOBAL_SETTINGS,
@@ -240,6 +241,8 @@ describe('settings in the keystore secrets', () => {
           jupiterPlan: 'launch',
           orderRpm: 3000,
         },
+        trade: DEFAULT_TRADE_SETTINGS,
+        groups: [],
       },
       apiKeys: {
         helius: 'h',
@@ -259,6 +262,8 @@ describe('settings in the keystore secrets', () => {
       maxSpend: [{ index: 0, lamports: 5n }],
       active: [],
       global: DEFAULT_GLOBAL_SETTINGS,
+      trade: DEFAULT_TRADE_SETTINGS,
+      groups: [],
     });
   });
 

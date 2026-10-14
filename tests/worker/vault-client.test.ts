@@ -72,6 +72,7 @@ describe('vault client ↔ handler', () => {
       info: null,
       buy: null,
       watch: null,
+      groups: [],
     });
     const err = await rejection(client.request({ type: 'addWallets', count: 1 }));
     expect(err).toBeInstanceOf(AppError);

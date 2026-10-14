@@ -14,6 +14,8 @@ import {
   type VaultHandler,
 } from '../../src/worker/vault.ts';
 
+vi.mock('@noble/hashes/scrypt.js', () => import('../helpers/fast-kdf.ts'));
+
 const PASSWORD = 'correct horse battery staple';
 const MNEMONIC_12 = `${'abandon '.repeat(11)}about`;
 const KEY = 'heliusSecretKey777';

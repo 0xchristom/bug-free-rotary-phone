@@ -1,6 +1,7 @@
 import { vi } from 'vitest';
 import { AppError } from '../../src/core/errors.ts';
 import { DEFAULT_GLOBAL_SETTINGS } from '../../src/core/settings.ts';
+import { DEFAULT_TRADE_SETTINGS } from '../../src/core/trade.ts';
 import type { DirectoryHandleLike, StorageEnv } from '../../src/storage/keystore-file.ts';
 import type {
   VaultInfo,
@@ -17,6 +18,7 @@ export const LOCKED: VaultStatus = {
   info: null,
   buy: null,
   watch: null,
+  groups: [],
 };
 
 export function fleetInfo(count = 3, fleetName = 'Flota testowa'): VaultInfo {
@@ -29,13 +31,27 @@ export function fleetInfo(count = 3, fleetName = 'Flota testowa'): VaultInfo {
       derivationPath: `m/44'/501'/${String(index)}'/0'`,
       label: `W${String(index + 1).padStart(2, '0')}`,
     })),
-    settings: { maxSpend: [], active: [], global: DEFAULT_GLOBAL_SETTINGS },
+    settings: {
+      maxSpend: [],
+      active: [],
+      global: DEFAULT_GLOBAL_SETTINGS,
+      trade: DEFAULT_TRADE_SETTINGS,
+      groups: [],
+    },
     apiKeys: { helius: false, jupiter: false, heliusRpcUrl: false, heliusWsUrl: false },
   };
 }
 
 export function unlocked(armed = false): VaultStatus {
-  return { locked: false, network: 'mainnet', armed, info: fleetInfo(), buy: null, watch: null };
+  return {
+    locked: false,
+    network: 'mainnet',
+    armed,
+    info: fleetInfo(),
+    buy: null,
+    watch: null,
+    groups: [],
+  };
 }
 
 type CreateHandler = (
@@ -89,6 +105,7 @@ export function mockVault(initial: VaultStatus, onCreate?: CreateHandler) {
                 info: (result as { info: VaultInfo }).info,
                 buy: null,
                 watch: null,
+                groups: [],
               };
               return result;
             });

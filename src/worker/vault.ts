@@ -28,10 +28,18 @@ import {
   type RpcSource,
   type WebSocketFactory,
 } from '../chain/index.ts';
-import { startRun, type ExecutorEvent, type ExecutorRun } from '../executor/executor.ts';
+import {
+  startRun,
+  type ExecutorEvent,
+  type ExecutorRun,
+  type ExecutorWallet,
+  type Side,
+} from '../executor/executor.ts';
+import { isSellPercent, sellAmount } from '../executor/sell-plan.ts';
+import { percentBuyAmount } from '../executor/buy-plan.ts';
 import { startWatch, type BuyTrigger, type Watch } from '../watcher/watch.ts';
 import type { LandingChecker } from '../executor/landing.ts';
-import { createVerifier, type TokenReader } from '../executor/verify.ts';
+import { createVerifier, type SolReader, type TokenReader } from '../executor/verify.ts';
 import { ExecuteLimiter, OrderLimiter, realClock, type LimiterClock } from '../executor/limiter.ts';
 import { checkOrderTransaction, type OrderCheckProblem } from '../executor/order-check.ts';
 import {
@@ -66,17 +74,28 @@ import {
   publicRpcUrl,
   effectiveJupiterPlan,
   validateGlobalSettings,
+  validateGroups,
+  validateTradeSettings,
+  effectiveGroups,
+  groupOf,
+  walletTrade,
   wipe,
+  withNewWallets,
   type ApiKeyName,
+  type BuyAmount,
+  type TradeSettingsV1,
+  type WalletTradeV1,
   type ApiKeysV1,
   type ConnectionReport,
   type FetchLike,
   type FleetSettingsV1,
+  type GlobalSettingsV1,
   type KeystoreSecretsV1,
   type KeystoreSession,
   type Network,
   type OpenedKeystore,
   type PublicWalletV1,
+  type WalletGroupV1,
 } from '../core/index.ts';
 import { DEFAULT_AUTO_LOCK_MS } from './protocol.ts';
 import type {
@@ -122,8 +141,13 @@ export interface ExecutorOptions {
   readonly steady?: boolean;
   /** Chain check before retries; by default over Helius with the public fallback. */
   readonly landing?: LandingChecker;
-  /** Token balance reads for the confirmation after a buy; by default over Helius. */
+  /**
+   * Token balance reads for the confirmation after a buy or a sell, and for the plan of a
+   * sell; by default over Helius.
+   */
   readonly tokens?: TokenReader;
+  /** SOL balance reads for the confirmation after a sell; by default over Helius. */
+  readonly sol?: SolReader;
 }
 
 /** Mode B dependencies; the socket comes from `net.createWebSocket`, the clock from `executor`. */
@@ -180,8 +204,13 @@ export interface VaultHandleOptions {
 
 /** What the executor asked `/order` for, for one wallet (BUNNDLY-22). */
 export interface OrderSignRequest {
+  /** A sell only: the token sold. The vault signs it only for its own running sell. */
+  readonly inputMint?: string;
   readonly outputMint: string;
-  /** Lamports asked for; must equal the order's inAmount and fit the max spend. */
+  /**
+   * Input units asked for; must equal the order's inAmount and fit the wallet's limit: its
+   * max spend for a buy, its planned token amount for a sell.
+   */
   readonly amount: bigint;
 }
 
@@ -189,7 +218,13 @@ export type SignOrderResult =
   | ({ readonly ok: true } & SignedOrder)
   | {
       readonly ok: false;
-      readonly problem: OrderCheckProblem | 'VAULT_LOCKED' | 'UNKNOWN_WALLET' | 'SIGNING_FAILED';
+      readonly problem:
+        | OrderCheckProblem
+        | 'VAULT_LOCKED'
+        | 'UNKNOWN_WALLET'
+        | 'SIGNING_FAILED'
+        /** A sell the vault did not plan: another mint, or no sell running. */
+        | 'NO_SELL_PLAN';
     };
 
 export interface VaultHandler {
@@ -198,7 +233,8 @@ export interface VaultHandler {
   /**
    * For the executor inside the worker only (BUNNDLY-22, D-028); not reachable through
    * `handle` or the message protocol. Signs the `/order` transaction of one wallet after
-   * the checks pass; the max spend comes from the vault's own settings. Never throws.
+   * the checks pass; the limit is the vault's own: the max spend from its settings for a
+   * buy, the plan it made at `startSell` for a sell. Never throws.
    */
   signOrder(
     walletIndex: number,
@@ -237,8 +273,76 @@ function isIndexIn(value: unknown, indices: ReadonlySet<number>): value is numbe
   return typeof value === 'number' && indices.has(value);
 }
 
-/** Full settings from the UI; anything malformed or out of range is INVALID_SETTINGS. */
-function parseSettings(value: unknown, walletIndices: ReadonlySet<number>): FleetSettingsV1 {
+const SLIPPAGE_KEYS = ['buySlippageBps', 'sellSlippageBps'] as const;
+const FEE_KEYS = ['buyPriorityFeeLamports', 'sellPriorityFeeLamports'] as const;
+
+/** A buy amount from the UI: null, or exactly one of the two kinds. */
+function buyAmountOf(value: unknown): BuyAmount | null {
+  if (value === null) return null;
+  if (!isRecord(value)) return invalidSettings();
+  if (value.kind === 'percent' && typeof value.percent === 'number') {
+    return { kind: 'percent', percent: value.percent };
+  }
+  if (value.kind === 'lamports' && typeof value.lamports === 'bigint') {
+    return { kind: 'lamports', lamports: value.lamports };
+  }
+  return invalidSettings();
+}
+
+/**
+ * Trade parameters from the UI (BUNNDLY-58), copied field by field; the ranges are
+ * checked with the rest of the settings in `parseSettings`.
+ */
+function parseTrade(value: unknown, walletIndices: ReadonlySet<number>): TradeSettingsV1 {
+  if (!isRecord(value) || !isRecord(value.fleet) || !Array.isArray(value.wallets)) {
+    return invalidSettings();
+  }
+  const f = value.fleet;
+  const fleet = {
+    buyAmount: buyAmountOf(f.buyAmount),
+    sellPercent: f.sellPercent,
+    buySlippageBps: f.buySlippageBps,
+    sellSlippageBps: f.sellSlippageBps,
+    buyPriorityFeeLamports: f.buyPriorityFeeLamports,
+    sellPriorityFeeLamports: f.sellPriorityFeeLamports,
+  } as TradeSettingsV1['fleet'];
+  const items: unknown[] = value.wallets;
+  const wallets = items.map((item): WalletTradeV1 => {
+    if (!isRecord(item) || !isIndexIn(item.index, walletIndices)) return invalidSettings();
+    const entry: Record<string, unknown> = { index: item.index };
+    for (const key of ['buyPercent', 'sellPercent', ...SLIPPAGE_KEYS, ...FEE_KEYS]) {
+      if (item[key] !== undefined) entry[key] = item[key];
+    }
+    return entry as unknown as WalletTradeV1;
+  });
+  if (new Set(wallets.map((w) => w.index)).size !== wallets.length) invalidSettings();
+  return { fleet, wallets };
+}
+
+/** Wallet groups from a request: the shape here, the rules in validateGroups. */
+function parseGroups(value: unknown, walletIndices: ReadonlySet<number>): WalletGroupV1[] {
+  if (!Array.isArray(value)) return invalidSettings();
+  const items: unknown[] = value;
+  const groups = items.map((item): WalletGroupV1 => {
+    if (!isRecord(item) || !Array.isArray(item.wallets)) return invalidSettings();
+    if (typeof item.id !== 'string' || typeof item.name !== 'string') return invalidSettings();
+    const wallets: unknown[] = item.wallets;
+    if (!wallets.every((w): w is number => isIndexIn(w, walletIndices))) invalidSettings();
+    return { id: item.id, name: item.name, wallets: [...wallets] };
+  });
+  if (validateGroups(groups, walletIndices).length > 0) invalidSettings();
+  return groups;
+}
+
+/**
+ * Full settings from the UI; anything malformed or out of range is INVALID_SETTINGS.
+ * Without `trade` or `groups` the current ones stay.
+ */
+function parseSettings(
+  value: unknown,
+  walletIndices: ReadonlySet<number>,
+  current: Pick<FleetSettingsV1, 'trade' | 'groups'>,
+): FleetSettingsV1 {
   if (!isRecord(value) || !Array.isArray(value.maxSpend) || !Array.isArray(value.active)) {
     return invalidSettings();
   }
@@ -282,7 +386,13 @@ function parseSettings(value: unknown, walletIndices: ReadonlySet<number>): Flee
     network: g.network,
   } as FleetSettingsV1['global'];
   if (validateGlobalSettings(global).length > 0) return invalidSettings();
-  return { maxSpend, active, global };
+  const trade = value.trade === undefined ? current.trade : parseTrade(value.trade, walletIndices);
+  // Checked against this request's maxSpend: a SOL amount and a percent never both.
+  const withSol = new Set(maxSpend.filter((m) => m.lamports > 0n).map((m) => m.index));
+  if (validateTradeSettings(trade, walletIndices, withSol).length > 0) return invalidSettings();
+  const groups =
+    value.groups === undefined ? current.groups : parseGroups(value.groups, walletIndices);
+  return { maxSpend, active, global, trade, groups };
 }
 
 /** Applies write-only key changes: missing keeps, null removes, a string replaces. */
@@ -370,15 +480,43 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
   let session = 0;
   /** SOL balances from the last refresh of this session (pre-check before `/order`). */
   let balances = new Map<number, bigint>();
-  let buy: { readonly run: ExecutorRun; status: BuyStatus } | null = null;
+  /** What one wallet group (BUNNDLY-68) is doing; groups run independently. */
+  interface GroupRun {
+    buy: { readonly run: ExecutorRun; status: BuyStatus } | null;
+    /**
+     * The group's running buy or sell: its mint and what each wallet may put in, fixed at
+     * its start (a sell: from the balance read then, BUNNDLY-60; a buy: the SOL amount or
+     * the percent of the balance, BUNNDLY-58). The signer checks every order against it.
+     */
+    runPlan: {
+      readonly side: Side;
+      readonly mint: string;
+      readonly amounts: ReadonlyMap<number, bigint>;
+    } | null;
+    /** The group's last arming (mode B); kept after it disarms, for its status. */
+    watch: Watch | null;
+  }
+  /** By group id; a group without an entry has never run in this session. */
+  let groupRuns = new Map<string, GroupRun>();
+  const runOf = (id: string): GroupRun => {
+    let run = groupRuns.get(id);
+    if (run === undefined) {
+      run = { buy: null, runPlan: null, watch: null };
+      groupRuns.set(id, run);
+    }
+    return run;
+  };
+  const allRuns = (): GroupRun[] => [...groupRuns.values()];
+  const watchActive = (run: GroupRun): boolean => run.watch?.active() ?? false;
+  const groupBusy = (run: GroupRun): boolean => run.buy !== null || watchActive(run);
+  const anyBuy = (): boolean => allRuns().some((r) => r.buy !== null);
+  const anyWatch = (): boolean => allRuns().some(watchActive);
   let nextRunId = 1;
   const listeners = new Set<(event: WorkerEvent) => void>();
   /** Limiters live across runs, so a new buy respects the window of the last one. */
   const limiters = new Map<string, { order: OrderLimiter; execute: ExecuteLimiter }>();
-  /** The last arming of this session (mode B); kept after it disarms, for its status. */
-  let watch: Watch | null = null;
-  const watchActive = (): boolean => watch?.active() ?? false;
-  const isArmed = (): boolean => buy !== null || watchActive();
+  /** Some group buys, sells or watches: no auto-lock, no lock, no other fleet. */
+  const isArmed = (): boolean => allRuns().some(groupBusy);
   let lastActivity = now();
   let tail: Promise<unknown> = Promise.resolve();
 
@@ -391,7 +529,7 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
     unlocked = null;
     session += 1;
     balances = new Map();
-    watch = null; // never active here: lock is refused while armed
+    groupRuns = new Map(); // none busy here: lock is refused while armed
   };
 
   const install = (opened: OpenedKeystore): void => {
@@ -404,14 +542,47 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
   const networkOf = (vault: UnlockedVault | null): Network =>
     vault?.settings.global.network ?? DEFAULT_NETWORK;
 
-  const status = (): VaultStatus => ({
-    locked: unlocked === null,
-    network: networkOf(unlocked),
-    armed: isArmed(),
-    info: unlocked ? infoOf(unlocked) : null,
-    buy: buy === null ? null : { ...buy.status },
-    watch: watch?.status() ?? null,
-  });
+  /** The fleet's groups: the saved ones, or one with every wallet (BUNNDLY-68). */
+  const groupsOf = (vault: UnlockedVault): readonly WalletGroupV1[] =>
+    effectiveGroups(
+      vault.settings.groups,
+      vault.publicWallets.map((w) => w.index),
+    );
+
+  /** The group a request names; with one group the name may be left out. */
+  const groupFor = (vault: UnlockedVault, raw: unknown): WalletGroupV1 => {
+    const groups = groupsOf(vault);
+    const [only, ...more] = groups;
+    if (raw === undefined) return only !== undefined && more.length === 0 ? only : badRequest();
+    return groups.find((g) => g.id === raw) ?? badRequest();
+  };
+
+  const status = (): VaultStatus => {
+    const groups =
+      unlocked === null
+        ? []
+        : groupsOf(unlocked).map((g) => {
+            const run = groupRuns.get(g.id);
+            return {
+              id: g.id,
+              armed: run !== undefined && groupBusy(run),
+              buy: run?.buy ? { ...run.buy.status } : null,
+              watch: run?.watch?.status() ?? null,
+            };
+          });
+    // The fields from before groups show the first running buy and the first arming.
+    const watching = allRuns().find(watchActive) ?? allRuns().find((r) => r.watch !== null);
+    const buying = allRuns().find((r) => r.buy !== null);
+    return {
+      locked: unlocked === null,
+      network: networkOf(unlocked),
+      armed: isArmed(),
+      info: unlocked ? infoOf(unlocked) : null,
+      buy: buying?.buy ? { ...buying.buy.status } : null,
+      watch: watching?.watch?.status() ?? null,
+      groups,
+    };
+  };
 
   const requireUnlocked = (): UnlockedVault => {
     if (unlocked === null) throw new AppError('VAULT_LOCKED');
@@ -602,18 +773,42 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
     return pair;
   };
 
-  /** Active wallets with a max spend, with their last read balance. */
-  const buyWallets = (vault: UnlockedVault) => {
-    const inactive = new Set(vault.settings.active.filter((a) => !a.active).map((a) => a.index));
-    const spend = new Map(vault.settings.maxSpend.map((m) => [m.index, m.lamports]));
-    const wallets = vault.publicWallets
-      .filter((w) => !inactive.has(w.index) && (spend.get(w.index) ?? 0n) > 0n)
-      .map((w) => ({
-        index: w.index,
-        address: w.address,
-        maxSpend: spend.get(w.index) ?? 0n,
-        balance: balances.get(w.index) ?? null,
-      }));
+  /**
+   * Active wallets with a buy amount: their own (SOL or a percent) or the fleet default
+   * (BUNNDLY-58). A percent becomes lamports from the last balance read, never into the
+   * reserve; an unread balance is skipped by the executor before the amount matters.
+   */
+  const buyWallets = (vault: UnlockedVault, group: WalletGroupV1): ExecutorWallet[] => {
+    const { settings } = vault;
+    const inactive = new Set(settings.active.filter((a) => !a.active).map((a) => a.index));
+    const spend = new Map(settings.maxSpend.map((m) => [m.index, m.lamports]));
+    const members = new Set(group.wallets);
+    const wallets = vault.publicWallets.flatMap((w): ExecutorWallet[] => {
+      if (!members.has(w.index) || inactive.has(w.index)) return [];
+      const sol = spend.get(w.index);
+      const t = walletTrade(
+        settings.trade,
+        w.index,
+        sol !== undefined && sol > 0n ? sol : undefined,
+      );
+      if (t.buyAmount === null) return [];
+      const balance = balances.get(w.index) ?? null;
+      const maxSpend =
+        t.buyAmount.kind === 'lamports'
+          ? t.buyAmount.lamports
+          : balance === null
+            ? 0n
+            : percentBuyAmount(balance, t.buyAmount.percent, settings.global.minReserveLamports);
+      return [
+        {
+          index: w.index,
+          address: w.address,
+          maxSpend,
+          balance,
+          ...(t.buySlippageBps === null ? {} : { slippageBps: t.buySlippageBps }),
+        },
+      ];
+    });
     if (wallets.length === 0) throw new AppError('NO_WALLETS_TO_BUY');
     // Live mode never retries without the chain check, which needs the RPC.
     if (
@@ -631,57 +826,232 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
    * Mode B passes the detection (`trigger`): times count from it and the first `/order`
    * is reported back for `reactionMs` (BUNNDLY-34).
    */
-  const startBuy = (rawMint: unknown, trigger: BuyTrigger | null = null): BuyStatus => {
+  const startBuy = (
+    group: WalletGroupV1,
+    rawMint: unknown,
+    trigger: BuyTrigger | null = null,
+  ): BuyStatus => {
     const vault = requireUnlocked();
-    if (buy !== null) throw new AppError('BUY_RUNNING');
+    if (runOf(group.id).buy !== null) throw new AppError('BUY_RUNNING');
     requireBuyRoute(vault);
-    const network = networkOf(vault);
+    const mint = mintOf(rawMint);
+    return launch(vault, group.id, 'buy', mint, buyWallets(vault, group), trigger);
+  };
+
+  const mintOf = (rawMint: unknown): string => {
     const mint = str(rawMint).trim();
     if (!/^[1-9A-HJ-NP-Za-km-z]{32,44}$/u.test(mint) || mint === SOL_MINT) {
       throw new AppError('INVALID_MINT_ADDRESS');
     }
+    return mint;
+  };
+
+  /** RPC of the open fleet's network, Helius first; null without a Helius key. */
+  const runTransport = (vault: UnlockedVault): RpcTransport | null => {
+    const rpcUrl = rpcUrlOf(vault);
+    return rpcUrl === null
+      ? null
+      : createResilientTransport({
+          primary: createTransport(rpcUrl),
+          fallback: createTransport(publicRpcUrl(networkOf(vault))),
+          ...(options.chain?.sleep ? { sleep: options.chain.sleep } : {}),
+        });
+  };
+
+  const tokenReader = (transport: RpcTransport | null, mint: string): TokenReader | null =>
+    options.executor?.tokens ??
+    (transport === null
+      ? null
+      : async (owners) => {
+          const t = await fetchTokenBalances(createBalancesRpc(transport), mint, owners);
+          return { amounts: t.amounts, slot: t.slot };
+        });
+
+  /**
+   * startSell (BUNNDLY-60): reads the token balances now, plans each listed wallet's part
+   * and runs the executor with the mints swapped. The plan stays here: the signer refuses
+   * a sell order above it, whatever the executor asked for.
+   */
+  const startSell = async (
+    group: WalletGroupV1,
+    rawMint: unknown,
+    rawWallets: unknown,
+    rawPercent: unknown,
+  ): Promise<BuyStatus> => {
+    const vault = requireUnlocked();
+    const run = runOf(group.id);
+    // A sell is a command of its own; an armed watcher buys and must not meet one.
+    if (watchActive(run)) throw new AppError('WATCH_ARMED');
+    if (run.buy !== null) throw new AppError('BUY_RUNNING');
+    requireBuyRoute(vault);
+    const mint = mintOf(rawMint);
+    // Without a percent in the request each wallet sells its own part (BUNNDLY-58).
+    if (rawPercent !== undefined && !isSellPercent(rawPercent)) return badRequest();
+    if (!Array.isArray(rawWallets)) return badRequest();
+    const known = new Map(vault.publicWallets.map((w) => [w.index, w]));
+    const indices: unknown[] = rawWallets;
+    const picked = indices.map((i) => known.get(int(i)) ?? badRequest());
+    if (new Set(picked).size !== picked.length) return badRequest();
+    // Only the group's own wallets: another group may be buying with the rest.
+    if (!picked.every((w) => group.wallets.includes(w.index))) return badRequest();
+    if (picked.length === 0) throw new AppError('NO_WALLETS_TO_SELL');
+    // A sell is planned from a balance read, in DRY-RUN too.
+    const read = tokenReader(runTransport(vault), mint);
+    if (read === null) throw new AppError('HELIUS_KEY_MISSING');
+    // Live mode never retries without the chain check, which needs the RPC.
+    if (
+      !vault.settings.global.dryRun &&
+      rpcUrlOf(vault) === null &&
+      options.executor?.landing === undefined
+    ) {
+      throw new AppError('HELIUS_KEY_MISSING');
+    }
+    const readSession = session;
+    let amounts: readonly bigint[];
+    try {
+      amounts = (await read(picked.map((w) => w.address))).amounts;
+    } catch (e) {
+      // Only our own codes cross; anything else may carry the URL with the key.
+      throw isAppError(e) ? e : new AppError('RPC_UNAVAILABLE');
+    }
+    // Auto-lock runs outside the request queue and may lock the vault while it reads. A buy
+    // cannot start meanwhile: requests are queued and a watcher armed before is refused.
+    if (session !== readSession || unlocked === null) throw new AppError('VAULT_LOCKED');
+    const { trade } = unlocked.settings;
+    const wallets = picked.map((w, i): ExecutorWallet => {
+      const t = walletTrade(trade, w.index, undefined);
+      return {
+        index: w.index,
+        address: w.address,
+        maxSpend: sellAmount(amounts[i] ?? 0n, rawPercent ?? t.sellPercent),
+        balance: balances.get(w.index) ?? null,
+        ...(t.sellSlippageBps === null ? {} : { slippageBps: t.sellSlippageBps }),
+      };
+    });
+    return launch(unlocked, group.id, 'sell', mint, wallets, null);
+  };
+
+  /**
+   * True when the new settings change what a wallet of the running buy or sell trades
+   * with: its own value or a fleet default it takes (BUNNDLY-58). The run keeps the
+   * amounts of its start either way; the refusal keeps the table honest about them.
+   */
+  const changesRunWallets = (
+    vault: UnlockedVault,
+    before: FleetSettingsV1,
+    after: FleetSettingsV1,
+  ): boolean => {
+    const planned = allRuns().flatMap((r) =>
+      r.runPlan === null ? [] : [...r.runPlan.amounts.keys()],
+    );
+    // An armed group buys with what its wallets have at the detection, active or not
+    // included (D-039 as relaxed by BUNNDLY-68): they stay as they were at arming.
+    const armed = groupsOf(vault).flatMap((g) => {
+      const run = groupRuns.get(g.id);
+      return run !== undefined && watchActive(run) ? g.wallets : [];
+    });
+    if (planned.length === 0 && armed.length === 0) return false;
+    const solOf = (s: FleetSettingsV1, index: number): bigint | undefined => {
+      const lamports = s.maxSpend.find((m) => m.index === index)?.lamports;
+      return lamports !== undefined && lamports > 0n ? lamports : undefined;
+    };
+    const key = (s: FleetSettingsV1, index: number): string =>
+      JSON.stringify(walletTrade(s.trade, index, solOf(s, index)), (_k, v: unknown) =>
+        typeof v === 'bigint' ? v.toString() : v,
+      );
+    const activeOf = (s: FleetSettingsV1, index: number): boolean =>
+      s.active.find((a) => a.index === index)?.active ?? true;
+    return (
+      planned.some((i) => key(before, i) !== key(after, i)) ||
+      armed.some(
+        (i) => key(before, i) !== key(after, i) || activeOf(before, i) !== activeOf(after, i),
+      )
+    );
+  };
+
+  /**
+   * True when the new settings change what an armed watcher's buy depends on: the global
+   * settings it reads at the detection (all but the explorer and the auto-lock time) or
+   * the API keys (D-039 as relaxed by BUNNDLY-68).
+   */
+  const changesArmedGlobals = (
+    before: FleetSettingsV1,
+    after: FleetSettingsV1,
+    keysBefore: ApiKeysV1,
+    keysAfter: ApiKeysV1,
+  ): boolean => {
+    const free: readonly string[] = ['explorer', 'autoLockMinutes'];
+    const globals = (Object.keys(before.global) as (keyof GlobalSettingsV1)[]).filter(
+      (k) => !free.includes(k),
+    );
+    return (
+      globals.some((k) => before.global[k] !== after.global[k]) ||
+      API_KEY_NAMES.some((name) => keysBefore[name] !== keysAfter[name])
+    );
+  };
+
+  /**
+   * True when a busy group (buying, selling or armed) would gain or lose a wallet: its
+   * members stay as they were at its start until it ends (BUNNDLY-68). A name may change.
+   */
+  const changesBusyGroups = (
+    vault: UnlockedVault,
+    after: readonly WalletGroupV1[],
+    afterIndices: readonly number[],
+  ): boolean => {
+    const next = effectiveGroups(after, afterIndices);
+    const members = (g: WalletGroupV1): string => [...g.wallets].sort((a, b) => a - b).join(',');
+    return groupsOf(vault).some((g) => {
+      const run = groupRuns.get(g.id);
+      if (run === undefined || !groupBusy(run)) return false;
+      const same = next.find((n) => n.id === g.id);
+      return same === undefined || members(same) !== members(g);
+    });
+  };
+
+  /** Starts the executor for a buy or a sell and keeps it as the running one. */
+  const launch = (
+    vault: UnlockedVault,
+    groupId: string,
+    side: Side,
+    mint: string,
+    wallets: readonly ExecutorWallet[],
+    trigger: BuyTrigger | null,
+  ): BuyStatus => {
+    const selling = side === 'sell';
     const { global } = vault.settings;
-    const wallets = buyWallets(vault);
     const live = !global.dryRun;
     const injected = options.executor;
-    const rpcUrl = rpcUrlOf(vault);
-    const transport =
-      rpcUrl === null
-        ? null
-        : createResilientTransport({
-            primary: createTransport(rpcUrl),
-            fallback: createTransport(publicRpcUrl(network)),
-            ...(options.chain?.sleep ? { sleep: options.chain.sleep } : {}),
-          });
+    const transport = runTransport(vault);
     const landing: LandingChecker =
       injected?.landing ??
       (transport === null
         ? // DRY-RUN never calls /execute, so it never checks the chain.
           () => Promise.resolve({ status: 'pending' })
         : createLandingChecker(createLandingRpc(transport), { now }));
-    const tokens: TokenReader | null =
-      injected?.tokens ??
+    const tokens = tokenReader(transport, mint);
+    const sol: SolReader | undefined =
+      injected?.sol ??
       (transport === null
-        ? null
-        : async (owners) => {
-            const t = await fetchTokenBalances(createBalancesRpc(transport), mint, owners);
-            return { amounts: t.amounts, slot: t.slot };
-          });
+        ? undefined
+        : (owners) => fetchSolBalances(createBalancesRpc(transport), owners));
     const clock = injected?.clock ?? realClock;
     const runId = nextRunId++;
-    // After CONFIRMED: the token balance must have grown (BUNNDLY-25). Live mode only.
+    // After CONFIRMED: the token balance must have grown (BUNNDLY-25), or for a sell
+    // fallen, with more SOL in the wallet (BUNNDLY-60). Live mode only.
     const verifier =
       live && tokens !== null
-        ? createVerifier({ read: tokens, clock, emit }, { runId, wallets })
+        ? createVerifier(
+            { read: tokens, clock, emit, ...(selling && sol !== undefined ? { sol } : {}) },
+            { runId, wallets, ...(selling ? { side } : {}) },
+          )
         : null;
     const runEmit = (event: ExecutorEvent): void => {
       emit(event);
       if (verifier !== null && event.kind === 'wallet' && event.state === 'CONFIRMED') {
-        verifier.confirmed(
-          event.index,
-          event.result?.slot ?? null,
-          event.result?.totalOutputAmount ?? null,
-        );
+        // What moved the token balance: the output of a buy, the input of a sell.
+        const moved = selling ? event.result?.totalInputAmount : event.result?.totalOutputAmount;
+        verifier.confirmed(event.index, event.result?.slot ?? null, moved ?? null);
       }
     };
     const net = options.net ?? {};
@@ -705,6 +1075,8 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
     // Without a Jupiter key the API applies Keyless limits, not the plan in the settings.
     const effective = effectiveJupiterPlan(global, vault.apiKeys.jupiter !== undefined);
     const pair = limitersFor(effective.plan, effective.orderRpm);
+    const group = runOf(groupId);
+    group.runPlan = { side, mint, amounts: new Map(wallets.map((w) => [w.index, w.maxSpend])) };
     const run = startRun(
       {
         jupiter,
@@ -717,6 +1089,7 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
       },
       {
         runId,
+        ...(selling ? { side } : {}),
         mint,
         wallets,
         dryRun: global.dryRun,
@@ -731,13 +1104,23 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
     );
     const current = {
       run,
-      status: { runId, mint, dryRun: global.dryRun, wallets: wallets.length, accepting: true },
+      status: {
+        ...(selling ? { side } : {}),
+        runId,
+        mint,
+        dryRun: global.dryRun,
+        wallets: wallets.length,
+        accepting: true,
+      },
     };
-    buy = current;
+    group.buy = current;
     const finish = (): void => {
-      if (buy === current) buy = null;
+      if (group.buy === current) {
+        group.buy = null;
+        group.runPlan = null;
+      }
       touch(); // the user was busy with the buy: the auto-lock timer starts now
-      watch?.buyFinished(); // the next queued detection, if any
+      group.watch?.buyFinished(); // the group's next queued detection, if any
     };
     run.done.then(finish, finish);
     return { ...current.status };
@@ -748,10 +1131,11 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
    * balances are read first: a buy without them skips every wallet (BALANCE_UNKNOWN), and
    * a detection must not wait for the RPC.
    */
-  const arm = async (rawCreator: unknown): Promise<VaultStatus> => {
+  const arm = async (group: WalletGroupV1, rawCreator: unknown): Promise<VaultStatus> => {
     const vault = requireUnlocked();
-    if (buy !== null) throw new AppError('BUY_RUNNING');
-    if (watchActive()) throw new AppError('WATCH_ARMED');
+    const run = runOf(group.id);
+    if (run.buy !== null) throw new AppError('BUY_RUNNING');
+    if (watchActive(run)) throw new AppError('WATCH_ARMED');
     requireBuyRoute(vault);
     const network = networkOf(vault);
     const creator = str(rawCreator).trim();
@@ -767,7 +1151,7 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
     const wsUrl = wsUrlOf(vault);
     const rpcUrl = rpcUrlOf(vault);
     if (wsUrl === null || rpcUrl === null) throw new AppError('HELIUS_KEY_MISSING');
-    buyWallets(vault); // the same checks as a buy, now rather than at the detection
+    buyWallets(vault, group); // the same checks as a buy, now rather than at the detection
     await prepareRefresh(undefined)();
     const rpc = createWatchRpc(
       createResilientTransport({
@@ -778,7 +1162,7 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
     );
     const net = options.net ?? {};
     const armSession = session;
-    watch = startWatch(
+    run.watch = startWatch(
       {
         createWebSocket: net.createWebSocket ?? ((url) => new WebSocket(url)),
         signatures: signatureReader(rpc, creator),
@@ -788,8 +1172,9 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
         random: options.watch?.random ?? Math.random,
         refreshBalances: () =>
           session === armSession ? prepareRefresh(undefined)() : Promise.resolve(),
-        isBuying: () => buy !== null,
-        startBuy: (trigger) => startBuy(trigger.mint, trigger).runId,
+        isBuying: () => run.buy !== null,
+        // Only this group's wallets buy what its watcher detects.
+        startBuy: (trigger) => startBuy(group, trigger.mint, trigger).runId,
         emit,
       },
       {
@@ -819,19 +1204,12 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
     // Keys must stay while a buy signs or the watcher may start one: no lock and no other
     // fleet until it ends or is disarmed.
     if (request.type === 'create' || request.type === 'unlock' || request.type === 'lock') {
-      if (buy !== null) throw new AppError('BUY_RUNNING');
-      if (watchActive()) throw new AppError('WATCH_ARMED');
+      if (anyBuy()) throw new AppError('BUY_RUNNING');
+      if (anyWatch()) throw new AppError('WATCH_ARMED');
     }
-    // An armed watcher buys on its own with the settings confirmed at arming: they stay
-    // frozen (DRY-RUN or live, max spend, wallets) until it is disarmed (D-039).
-    if (
-      (request.type === 'saveSettings' ||
-        request.type === 'setNetwork' ||
-        request.type === 'addWallets') &&
-      watchActive()
-    ) {
-      throw new AppError('WATCH_ARMED');
-    }
+    // An armed watcher buys on its own with the settings confirmed at arming: the network
+    // stays until it is disarmed (D-039). What else stays is checked per request below.
+    if (request.type === 'setNetwork' && anyWatch()) throw new AppError('WATCH_ARMED');
 
     switch (request.type) {
       case 'create': {
@@ -872,16 +1250,22 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
       case 'saveSettings': {
         const vault = requireUnlocked();
         const indices = new Set(vault.wallets.map((w) => w.index));
-        const settings = parseSettings(request.settings, indices);
+        const settings = parseSettings(request.settings, indices, vault.settings);
+        const apiKeys = applyKeyChanges(vault.apiKeys, request.apiKeys);
         const switched = settings.global.network !== networkOf(vault);
-        // A running buy keeps its network to the end (an armed watcher is refused above).
-        if (switched && buy !== null) throw new AppError('BUY_RUNNING');
-        const result = await rebuild(
-          vault,
-          vault.wallets,
-          settings,
-          applyKeyChanges(vault.apiKeys, request.apiKeys),
-        );
+        // An armed watcher keeps the global settings and keys its buy depends on (D-039).
+        if (anyWatch() && changesArmedGlobals(vault.settings, settings, vault.apiKeys, apiKeys)) {
+          throw new AppError('WATCH_ARMED');
+        }
+        // A running buy keeps its network to the end.
+        if (switched && anyBuy()) throw new AppError('BUY_RUNNING');
+        if (changesBusyGroups(vault, settings.groups, [...indices])) {
+          throw new AppError('GROUP_RUNNING');
+        }
+        if (changesRunWallets(vault, vault.settings, settings)) {
+          throw new AppError('WALLET_IN_RUN');
+        }
+        const result = await rebuild(vault, vault.wallets, settings, apiKeys);
         if (switched) balances = new Map(); // they were read on the other network
         return result;
       }
@@ -889,7 +1273,7 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
         const vault = requireUnlocked();
         const raw: unknown = request.network;
         const network = NETWORKS.find((n) => n === raw) ?? badRequest();
-        if (buy !== null) throw new AppError('BUY_RUNNING');
+        if (anyBuy()) throw new AppError('BUY_RUNNING');
         const result = await rebuild(
           vault,
           vault.wallets,
@@ -906,28 +1290,54 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
         if (count < 1 || fromIndex + count > MAX_FLEET_SIZE) {
           throw new AppError('INVALID_DERIVATION_INDEX');
         }
+        const newIndices = Array.from({ length: count }, (_, i) => fromIndex + i);
+        const groups = withNewWallets(vault.settings.groups, newIndices);
+        const indices = [...vault.publicWallets.map((w) => w.index), ...newIndices];
+        // New wallets join the first group, which must not be busy.
+        if (changesBusyGroups(vault, groups, indices)) throw new AppError('GROUP_RUNNING');
         const derived = deriveWallets(new TextDecoder().decode(vault.mnemonic), fromIndex, count);
         const added = derived.map((d) => ({ index: d.index, secretKey: d.secretKey }));
         try {
-          return await rebuild(vault, [...vault.wallets, ...added], vault.settings, vault.apiKeys);
+          return await rebuild(
+            vault,
+            [...vault.wallets, ...added],
+            { ...vault.settings, groups },
+            vault.apiKeys,
+          );
         } catch (e) {
           for (const w of added) wipe(w.secretKey);
           throw e;
         }
       }
-      case 'startBuy':
-        return startBuy(request.mint);
-      case 'arm':
-        return await arm(request.creator);
-      case 'disarm':
-        watch?.disarm();
+      case 'startBuy': {
+        const vault = requireUnlocked();
+        return startBuy(groupFor(vault, request.group), request.mint);
+      }
+      case 'startSell': {
+        const vault = requireUnlocked();
+        const group = groupFor(vault, request.group);
+        return await startSell(group, request.mint, request.wallets, request.percent);
+      }
+      case 'arm': {
+        const vault = requireUnlocked();
+        return await arm(groupFor(vault, request.group), request.creator);
+      }
+      case 'disarm': {
+        // Locked: nothing is armed (lock is refused while armed).
+        const id = unlocked === null ? null : groupFor(unlocked, request.group).id;
+        if (id !== null) groupRuns.get(id)?.watch?.disarm();
         return status();
-      case 'stop':
-        if (buy !== null) {
-          buy.status = { ...buy.status, accepting: false };
-          buy.run.stop();
+      }
+      case 'stop': {
+        // STOP stops only the named group; the others go on.
+        const id = unlocked === null ? null : groupFor(unlocked, request.group).id;
+        const run = id === null ? undefined : groupRuns.get(id);
+        if (run?.buy) {
+          run.buy.status = { ...run.buy.status, accepting: false };
+          run.buy.run.stop();
         }
         return status();
+      }
       case 'exportPlain': {
         const vault = requireUnlocked();
         const password = str(request.password);
@@ -967,12 +1377,35 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
     if (wallet === undefined || secret === undefined) {
       return { ok: false, problem: 'UNKNOWN_WALLET' };
     }
-    const maxSpend = vault.settings.maxSpend.find((m) => m.index === walletIndex)?.lamports ?? 0n;
+    // The run of the wallet's group: a wallet is in one group, a group has one run at a
+    // time, and its members stay while it runs (BUNNDLY-68).
+    const groupId = groupOf(groupsOf(vault), walletIndex);
+    const runPlan = groupId === undefined ? null : (groupRuns.get(groupId)?.runPlan ?? null);
+    let limit: bigint;
+    if (request.inputMint === undefined) {
+      // A buy: up to what the running buy fixed for the wallet at its start; outside a run
+      // (nothing signs there today) the SOL amount of the settings.
+      limit =
+        runPlan?.side === 'buy'
+          ? (runPlan.amounts.get(walletIndex) ?? 0n)
+          : (vault.settings.maxSpend.find((m) => m.index === walletIndex)?.lamports ?? 0n);
+    } else {
+      // A sell: only the running one, only its mint for SOL, only up to the wallet's plan.
+      if (
+        runPlan?.side !== 'sell' ||
+        runPlan.mint !== request.inputMint ||
+        request.outputMint !== SOL_MINT
+      ) {
+        return { ok: false, problem: 'NO_SELL_PLAN' };
+      }
+      limit = runPlan.amounts.get(walletIndex) ?? 0n;
+    }
     const check = checkOrderTransaction(order, {
       taker: wallet.address,
+      ...(request.inputMint === undefined ? {} : { inputMint: request.inputMint }),
       outputMint: request.outputMint,
       amount: request.amount,
-      maxSpend,
+      maxSpend: limit,
     });
     if (!check.ok) return check;
     let signed: SignedOrder;
