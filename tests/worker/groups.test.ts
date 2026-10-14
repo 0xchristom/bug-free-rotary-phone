@@ -47,7 +47,13 @@ function bigints(value: unknown): unknown {
   return value;
 }
 
-async function setup(holdMs = HOLD_MS) {
+async function setup(
+  holdMs = HOLD_MS,
+  fleet: { readonly count: number; readonly groups: readonly WalletGroupV1[] } = {
+    count: 8,
+    groups: [A, B],
+  },
+) {
   const clock = new FakeClock();
   const answer = (method: string, params: unknown[]): unknown => {
     switch (method) {
@@ -115,14 +121,17 @@ async function setup(holdMs = HOLD_MS) {
   await h.handle({
     type: 'create',
     fleetName: 'Grupy',
-    walletCount: 8,
+    walletCount: fleet.count,
     password: PASSWORD,
     mnemonic: MNEMONIC_12,
   });
   const base = defaultFleetSettings();
   const settings = (groups: readonly WalletGroupV1[]): FleetSettingsV1 => ({
     ...base,
-    maxSpend: Array.from({ length: 8 }, (_, index) => ({ index, lamports: 10_000_000n })),
+    maxSpend: Array.from({ length: fleet.count }, (_, index) => ({
+      index,
+      lamports: 10_000_000n,
+    })),
     global: { ...base.global, mode: 'continuous' },
     groups,
   });
@@ -132,7 +141,7 @@ async function setup(holdMs = HOLD_MS) {
       settings: settings(groups),
       apiKeys: { helius: HELIUS_KEY },
     }) as Promise<VaultFileResult>;
-  const saved = await save([A, B]);
+  const saved = await save(fleet.groups);
   const status = async () => (await h.handle({ type: 'status' })) as VaultStatus;
   const addresses = ((await status()).info?.wallets ?? []).map((w) => w.address);
   for (const i of [0, 3]) probes.add(addresses[i] ?? '');
@@ -235,9 +244,12 @@ describe('a buy in one group', () => {
 
   it('a sell lists only wallets of its own group', async () => {
     const t = await setup();
-    const sell = (wallets: number[]) =>
-      codeOf(t.h.handle({ type: 'startSell', group: 'g1', mint: USDC, wallets }));
-    expect(await sell([2, 3])).toBe('INTERNAL_ERROR');
+    // Refused before any balance read; a read would take the RPC's 1 s and then fail.
+    const sell = codeOf(
+      t.h.handle({ type: 'startSell', group: 'g1', mint: USDC, wallets: [2, 3] }),
+    );
+    await t.clock.runUntil(t.clock.now() + RPC_DELAY_MS);
+    expect(await sell).toBe('INTERNAL_ERROR');
     expect(t.orders).toEqual([]);
   });
 });
@@ -277,6 +289,31 @@ describe('two groups at once', () => {
     expect(await codeOf(t.h.handle({ type: 'arm', group: 'g2', creator: CREATOR }))).toBe(
       'WATCH_ARMED',
     );
+  });
+});
+
+describe('one request limit for every group (SPEC 2.2)', () => {
+  it('two groups of 15 at once, Keyless: 27 /order in the first minute, the other 3 after it', async () => {
+    // 30 a minute without a Jupiter key, 90 % of it: 27 (worked out by hand)
+    const range = (from: number, to: number) =>
+      Array.from({ length: to - from }, (_, i) => from + i);
+    const t = await setup(100, {
+      count: 30,
+      groups: [
+        { id: 'g1', name: 'First', wallets: range(0, 15) },
+        { id: 'g2', name: 'Second', wallets: range(15, 30) },
+      ],
+    });
+    const started = t.clock.now();
+    await t.startBuy('g1');
+    await t.h.handle({ type: 'startBuy', group: 'g2', mint: MINT });
+    await t.clock.runUntil(started + 55_000);
+    expect(t.orders).toHaveLength(27);
+    expect(t.askedBy(USDC).length).toBeGreaterThan(0);
+    expect(t.askedBy(MINT).length).toBeGreaterThan(0);
+    await t.untilIdle();
+    expect(t.askedBy(USDC)).toEqual(range(0, 15));
+    expect(t.askedBy(MINT)).toEqual(range(15, 30));
   });
 });
 

@@ -351,8 +351,12 @@ describe('a fleet file from before the change (fixture written by the app before
       fileText: readFileSync('tests/fixtures/fleet-before-58.json', 'utf8'),
       password: 'fixture password 58',
     });
-    const info = ((await h.handle({ type: 'status' })) as VaultStatus).info;
+    const opened = (await h.handle({ type: 'status' })) as VaultStatus;
+    const info = opened.info;
     expect(info?.settings.trade).toEqual(DEFAULT_TRADE_SETTINGS);
+    // no groups saved: one group with both wallets, and requests may leave the group out
+    expect(info?.settings.groups).toEqual([]);
+    expect(opened.groups).toEqual([{ id: 'g1', armed: false, buy: null, watch: null }]);
     expect(info?.settings.maxSpend).toEqual([{ index: 0, lamports: 10_000_000n }]);
     // the Helius key goes in the way the settings screen sends it: no trade part
     await h.handle({

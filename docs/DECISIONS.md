@@ -967,3 +967,19 @@ Rejestr decyzji i rozbieżności z dokumentacją zewnętrzną. Nowe wpisy dopisu
 - Konsekwencje / alternatywy:
   - Odrzucone: kwota w SOL przeniesiona z `maxSpend` do `trade`. Wymagałoby to migracji, a pliki sprzed zmiany kupowałyby inaczej niż dotąd.
   - Etap 2 (pola w tabeli, „Set for selected”, ustawienia domyślne na ekranie) korzysta z tych pól bez zmiany formatu.
+
+## D-046: Grupy portfeli w silniku
+
+- Data: 2026-10-14
+- Zadanie: BUNNDLY-68
+- Decyzja:
+  - **Format:** w zaszyfrowanych ustawieniach floty dochodzi opcjonalne `groups`, lista `{ id, name, wallets }`. `id` nadaje aplikacja (`g1`, `g2`, …, bez ponownego użycia). Nazwa ma 1–32 znaki, nie ma spacji na końcach i nie powtarza się bez względu na wielkość liter. Każdy portfel jest w dokładnie jednej grupie. Grupa może być pusta. Grup jest najwyżej 64. Zasady siedzą w `src/core/groups.ts`, wspólnym dla formularza i sejfu (D-019).
+  - **Zgodność:** pusta lista oznacza jedną grupę `g1` „All wallets” ze wszystkimi portfelami i nie jest zapisywana, więc plik otwiera się też w wersji sprzed zmiany. Złamana zasada w pliku (portfel w dwóch grupach albo w żadnej, powtórzona nazwa) przywraca tę jedną grupę i zgłasza to w `resetGroups`. Kształt pozostaje ścisły. **Decyzja tymczasowa:** bez podbicia `KEYSTORE_VERSION`, jak w D-045.
+  - **Sejf:** przebieg kupna albo sprzedaży, jego plan podpisu i watcher należą do grupy. `startBuy`, `startSell`, `arm`, `disarm` i `stop` niosą `group`. Przy jednej grupie pole można pominąć; przy kilku jego brak albo nieznana grupa to `INTERNAL_ERROR`, bo to błąd interfejsu. Sprzedaż przyjmuje tylko portfele swojej grupy. Podpis bierze plan przebiegu grupy, do której należy portfel. Limitery Jupitera są wspólne dla całej aplikacji (SPEC 2.2). Automatyczna blokada, `lock`, `unlock` i `create` czekają, aż żadna grupa nie działa.
+  - **Skład grupy, która działa** (kupuje, sprzedaje albo ma uzbrojony watcher), się nie zmienia: `saveSettings` albo `addWallets`, które by go zmieniły, kończą się `GROUP_RUNNING`. Zmiana nazwy przechodzi. Nowe portfele trafiają do pierwszej grupy na liście.
+  - **Skład grup zmienia `saveSettings`** z opcjonalnym `groups` (bez pola skład zostaje). **Decyzja tymczasowa** zamiast osobnych żądań tworzenia, zmiany nazwy, usuwania i przenoszenia: jedna walidacja całości.
+  - **Status:** `groups` z `{ id, armed, buy, watch }` dla każdej grupy. Pola `buy` i `watch` sprzed zmiany pokazują pierwszy trwający przebieg i pierwsze uzbrojenie, dopóki interfejs (BUNNDLY-69) nie przejdzie na `groups`.
+  - **D-039 bez zmian (decyzja tymczasowa):** uzbrojony watcher którejkolwiek grupy dalej blokuje `saveSettings`, `setNetwork` i `addWallets`. Złagodzenie do ustawień dotyczących tylko działających grup czeka na decyzję Andy'ego.
+- Konsekwencje / alternatywy:
+  - Odrzucone: osobne limitery na grupę (dwie grupy razem przekroczyłyby limit planu) i grupy zapisane poza zaszyfrowanym plikiem (nazwy grup zdradzałyby układ floty).
+  - Nazwy i skład grup nie trafiają do zdarzeń ani do jawnej części pliku.
