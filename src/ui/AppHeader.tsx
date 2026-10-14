@@ -10,18 +10,18 @@ export interface AppHeaderProps {
 }
 
 const NAV: readonly { readonly screen: Screen; readonly label: string }[] = [
-  { screen: 'fleet', label: 'Flota' },
-  { screen: 'settings', label: 'Ustawienia' },
+  { screen: 'fleet', label: 'Fleet' },
+  { screen: 'settings', label: 'Settings' },
 ];
 
 export function AppHeader({ status, screen, autoLockMinutes, onNavigate, onLock }: AppHeaderProps) {
   if (status.locked || status.info === null) return null;
   return (
     <div className="unlocked-bar">
-      <span className="fleet-name" title="Nazwa floty">
+      <span className="fleet-name" title="Fleet name">
         {status.info.fleetName}
       </span>
-      <nav aria-label="Nawigacja">
+      <nav aria-label="Navigation">
         {NAV.map((item) => (
           <button
             key={item.screen}
@@ -37,11 +37,11 @@ export function AppHeader({ status, screen, autoLockMinutes, onNavigate, onLock 
       </nav>
       <span className="autolock" role="status">
         {status.armed
-          ? 'Uzbrojono: automatyczna blokada wstrzymana'
-          : `Automatyczna blokada po ${String(autoLockMinutes)} min bezczynności`}
+          ? 'Armed: auto-lock is paused'
+          : `Auto-lock after ${String(autoLockMinutes)} min of inactivity`}
       </span>
       <button type="button" className="danger" onClick={onLock}>
-        Zablokuj
+        Lock
       </button>
     </div>
   );

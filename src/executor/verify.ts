@@ -13,7 +13,7 @@
  * A sell (BUNNDLY-60) is checked the other way round: the token balance must have fallen
  * by `totalInputAmount` (what Jupiter says left the wallet) and the SOL balance must have
  * grown. Only "grown": the docs do not say how the proceeds reach the wallet, and fees and
- * rent move the exact number (D-042). The statuses are the same as for a buy.
+ * rent move the exact number (D-043). The statuses are the same as for a buy.
  */
 import type { Side } from './executor.ts';
 import type { LimiterClock } from './limiter.ts';
@@ -40,20 +40,20 @@ export type VerifyStatus =
   | 'UNVERIFIABLE';
 
 export const VERIFY_MESSAGES: Record<VerifyStatus, string> = {
-  MATCH: 'Potwierdzone w łańcuchu: saldo tokenu wzrosło o kupioną ilość.',
-  INCREASED: 'Saldo tokenu wzrosło (ilości z Jupitera brak, więc bez porównania).',
-  MISMATCH: 'Ostrzeżenie: saldo tokenu wzrosło o inną ilość, niż podał Jupiter.',
-  NO_INCREASE: 'Ostrzeżenie: saldo tokenu nie wzrosło po zakupie.',
-  UNVERIFIABLE: 'Nie udało się potwierdzić zakupu odczytem salda tokenu.',
+  MATCH: 'Confirmed on chain: the token balance grew by the bought amount.',
+  INCREASED: 'The token balance grew (Jupiter gave no amount, so there is no comparison).',
+  MISMATCH: 'Warning: the token balance grew by a different amount than Jupiter reported.',
+  NO_INCREASE: 'Warning: the token balance did not grow after the buy.',
+  UNVERIFIABLE: 'The buy could not be confirmed by reading the token balance.',
 };
 
 export const SELL_VERIFY_MESSAGES: Record<VerifyStatus, string> = {
-  MATCH: 'Potwierdzone w łańcuchu: saldo tokenu spadło o sprzedaną ilość, saldo SOL wzrosło.',
-  INCREASED: 'Saldo tokenu spadło (ilości z Jupitera brak, więc bez porównania).',
+  MATCH: 'Confirmed on chain: the token balance fell by the sold amount and the SOL balance grew.',
+  INCREASED: 'The token balance fell (Jupiter gave no amount, so there is no comparison).',
   MISMATCH:
-    'Ostrzeżenie: saldo tokenu spadło o inną ilość, niż podał Jupiter, albo saldo SOL nie wzrosło.',
-  NO_INCREASE: 'Ostrzeżenie: saldo tokenu nie spadło po sprzedaży.',
-  UNVERIFIABLE: 'Nie udało się potwierdzić sprzedaży odczytem sald.',
+    'Warning: the token balance fell by a different amount than Jupiter reported, or the SOL balance did not grow.',
+  NO_INCREASE: 'Warning: the token balance did not fall after the sell.',
+  UNVERIFIABLE: 'The sell could not be confirmed by reading the balances.',
 };
 
 export function verifyMessage(status: VerifyStatus, side: Side = 'buy'): string {

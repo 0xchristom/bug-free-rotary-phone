@@ -34,12 +34,12 @@ export function FleetBulk({ onAmount, onPercent, onAllActive, unknownBalances }:
     event.preventDefault();
     const bp = parsePercent(percent);
     if (bp === null) {
-      setMessage('Podaj procent salda od 0,01 do 100 (najwyżej 2 miejsca po przecinku).');
+      setMessage('Enter a percent of the balance from 0.01 to 100 (at most 2 decimal places).');
       return;
     }
     setMessage(
       unknownBalances > 0
-        ? `Pominięto portfele bez odczytanego salda: ${String(unknownBalances)}.`
+        ? `Skipped wallets with no balance read: ${String(unknownBalances)}.`
         : null,
     );
     onPercent(bp);
@@ -47,9 +47,9 @@ export function FleetBulk({ onAmount, onPercent, onAllActive, unknownBalances }:
 
   return (
     <fieldset className="bulk">
-      <legend>Akcje zbiorcze</legend>
+      <legend>Bulk actions</legend>
       <form className="inline" onSubmit={applyAmount}>
-        <label htmlFor={`${ids}-amount`}>Max spend dla wszystkich (SOL)</label>
+        <label htmlFor={`${ids}-amount`}>Max spend for all (SOL)</label>
         <input
           id={`${ids}-amount`}
           className="amount-input"
@@ -60,10 +60,10 @@ export function FleetBulk({ onAmount, onPercent, onAllActive, unknownBalances }:
             setAmount(e.target.value);
           }}
         />
-        <button type="submit">Ustaw kwotę</button>
+        <button type="submit">Set amount</button>
       </form>
       <form className="inline" onSubmit={applyPercent}>
-        <label htmlFor={`${ids}-percent`}>Max spend jako % salda</label>
+        <label htmlFor={`${ids}-percent`}>Max spend as % of balance</label>
         <input
           id={`${ids}-percent`}
           className="amount-input"
@@ -74,7 +74,7 @@ export function FleetBulk({ onAmount, onPercent, onAllActive, unknownBalances }:
             setPercent(e.target.value);
           }}
         />
-        <button type="submit">Ustaw procent</button>
+        <button type="submit">Set percent</button>
       </form>
       <div className="inline">
         <button
@@ -83,7 +83,7 @@ export function FleetBulk({ onAmount, onPercent, onAllActive, unknownBalances }:
             onAllActive(true);
           }}
         >
-          Zaznacz wszystkie
+          Select all
         </button>
         <button
           type="button"
@@ -91,7 +91,7 @@ export function FleetBulk({ onAmount, onPercent, onAllActive, unknownBalances }:
             onAllActive(false);
           }}
         >
-          Odznacz wszystkie
+          Deselect all
         </button>
       </div>
       {message && (
@@ -99,9 +99,7 @@ export function FleetBulk({ onAmount, onPercent, onAllActive, unknownBalances }:
           {message}
         </p>
       )}
-      <p className="hint">
-        Zmiany trafiają do tabeli; zapisujesz je przyciskiem „Zapisz zmiany w tabeli”.
-      </p>
+      <p className="hint">Changes go to the table; save them with “Save table changes”.</p>
     </fieldset>
   );
 }
@@ -116,23 +114,23 @@ export interface FleetSummaryBarProps {
 /** Totals over the fleet (SPEC 3.2). The average entry price comes with purchases. */
 export function FleetSummaryBar({ summary, walletCount, tokenDecimals }: FleetSummaryBarProps) {
   return (
-    <dl className="summary" aria-label="Podsumowanie floty">
+    <dl className="summary" aria-label="Fleet summary">
       <div>
-        <dt>Łącznie SOL</dt>
+        <dt>Total SOL</dt>
         <dd>{formatSol(summary.totalLamports)} SOL</dd>
       </div>
       <div>
-        <dt>Łącznie do wydania</dt>
+        <dt>Total to spend</dt>
         <dd>{formatSol(summary.toSpendLamports)} SOL</dd>
       </div>
       <div>
-        <dt>Gotowe portfele</dt>
+        <dt>Ready wallets</dt>
         <dd>
           {summary.readyCount} / {walletCount}
         </dd>
       </div>
       <div>
-        <dt>Łącznie tokenów</dt>
+        <dt>Total tokens</dt>
         <dd>
           {summary.totalToken === null || tokenDecimals === null
             ? '–'

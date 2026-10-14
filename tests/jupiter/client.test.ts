@@ -408,7 +408,7 @@ describe('POST /execute', () => {
   });
 });
 
-describe('Polish messages', () => {
+describe('English messages', () => {
   it('exist for every failure, build reason and execute outcome', () => {
     const failures: JupiterFailureCode[] = [
       'RATE_LIMITED',

@@ -65,12 +65,12 @@ describe('log entries', () => {
       signature:
         'k3sza8ZDSPaKeAfH7HTMJv7rMzL2dgDy5D8bWRxo5t7T27eoUqwSVjLdZvBshTFrbdo7tERD99hY7cnW1WzXf8aX',
       // 0.01 SOL for 0.002101 tokens
-      price: '4,759638267491',
+      price: '4.759638267491',
       orderMs: 180,
     });
   });
 
-  it('reasons carry their code, detail and Polish message', () => {
+  it('reasons carry their code, detail and English message', () => {
     const skipped: WalletEvent = {
       ...confirmed(),
       state: 'SKIPPED',
@@ -79,7 +79,7 @@ describe('log entries', () => {
     };
     expect(logEntry(skipped, context)).toMatchObject({
       reason: 'PRICE_CEILING',
-      message: 'Cena powyżej sufitu względem pierwszego zakupu floty.',
+      message: "The price is above the ceiling relative to the fleet's first buy.",
       spent: null,
       price: null,
     });
@@ -118,7 +118,7 @@ describe('log entries', () => {
       state: 'MISMATCH',
       expected: 2_101n,
       observed: 2_000n,
-      message: 'Ostrzeżenie: saldo tokenu wzrosło o inną ilość, niż podał Jupiter.',
+      message: 'Warning: the token balance grew by a different amount than Jupiter reported.',
     });
   });
 });
@@ -177,10 +177,10 @@ describe('network (BUNNDLY-44)', () => {
 });
 
 describe('effective price', () => {
-  it('SOL per whole token, rounded down, decimal comma, no trailing zeros', () => {
+  it('SOL per whole token, rounded down, decimal point, no trailing zeros', () => {
     expect(formatPrice(1_000_000_000n, 1_000_000n, 6)).toBe('1');
-    expect(formatPrice(10_000_000n, 1_180_000n, 6)).toBe('0,008474576271');
-    expect(formatPrice(5n, 3n, 0)).toBe('0,000000001666');
+    expect(formatPrice(10_000_000n, 1_180_000n, 6)).toBe('0.008474576271');
+    expect(formatPrice(5n, 3n, 0)).toBe('0.000000001666');
     expect(formatPrice(1n, 0n, 6)).toBeNull();
     // u64 amounts do not overflow
     expect(formatPrice(2n ** 64n - 1n, 2n ** 64n - 1n, 9)).toBe('1');
@@ -215,7 +215,7 @@ describe('CSV', () => {
     expect(end).toBe('');
     expect(row).toContain(",'=1+1,");
     expect(row).toContain(',18446744073709551615,');
-    expect(row?.split(',')).toHaveLength(LOG_COLUMNS.length + 1); // the price has a comma
+    expect(row?.split(',')).toHaveLength(LOG_COLUMNS.length);
   });
 });
 
@@ -282,9 +282,9 @@ describe('mode B entries (BUNNDLY-34)', () => {
       reason: null,
     });
     expect(entries[2]?.detail).toBe('mismatch');
-    expect(entries[2]?.message).toMatch(/nie tworzy mintu/u);
+    expect(entries[2]?.message).toMatch(/does not create the mint/u);
     expect(entries[3]).toMatchObject({ reason: 'DISARMED', reactionMs: null });
-    expect(entries[3]?.message).toMatch(/Rozbrojono/u);
+    expect(entries[3]?.message).toMatch(/was disarmed/u);
     const csv = toCsv(entries).split('\r\n');
     expect(csv[0]).toBe(LOG_COLUMNS.join(','));
     expect(csv[2]).toContain(',4'); // reactionMs is the last column
@@ -322,10 +322,10 @@ describe('side of the order (BUNNDLY-60)', () => {
     expect(logEntry(sold(), context)).toMatchObject({
       spent: 2_500_000n,
       received: 30_000_000n,
-      price: '0,012',
+      price: '0.012',
     });
     // the same numbers as a buy would be 2.5e6 lamports for 30 tokens: another price
-    expect(logEntry({ ...sold(), side: 'buy' }, context).price).toBe('0,000083333333');
+    expect(logEntry({ ...sold(), side: 'buy' }, context).price).toBe('0.000083333333');
   });
 
   it('the verification of a sell has its own messages and keeps solChange out of the columns', () => {
@@ -342,7 +342,7 @@ describe('side of the order (BUNNDLY-60)', () => {
     };
     const entry = logEntry(verify, context);
     expect(entry).toMatchObject({ side: 'sell', expected: 500n, observed: 400n });
-    expect(entry.message).toMatch(/saldo tokenu spadło o inną ilość/u);
+    expect(entry.message).toMatch(/token balance fell by a different amount/u);
   });
 
   it('CSV and JSON carry the side in its own column, before the network', () => {

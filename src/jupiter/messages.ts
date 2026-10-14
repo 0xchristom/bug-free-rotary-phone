@@ -1,5 +1,5 @@
 /**
- * Polish messages for Jupiter results (SPEC 5): failures of a call, reasons why `/order`
+ * English messages for Jupiter results (SPEC 5): failures of a call, reasons why `/order`
  * built no transaction and `/execute` outcomes. Fixed texts only; never Jupiter's own
  * free-text message, which may be parameterised (order-and-execute.md).
  */
@@ -7,45 +7,45 @@ import type { ExecuteOutcome, JupiterFailureCode, OrderBuildReason } from './cli
 
 const FAILURES: Record<JupiterFailureCode, string> = {
   RATE_LIMITED:
-    'Jupiter: przekroczony limit zapytań (HTTP 429). Zapytanie poczeka na wolne miejsce w oknie limitu.',
-  SERVER_ERROR: 'Jupiter: błąd po stronie usługi (HTTP 5xx).',
-  TIMEOUT: 'Jupiter nie odpowiedział w wyznaczonym czasie.',
-  NETWORK: 'Nie udało się połączyć z Jupiterem (sieć, CORS albo CSP).',
+    'Jupiter: rate limit exceeded (HTTP 429). The request will wait for a free slot in the limit window.',
+  SERVER_ERROR: 'Jupiter: service error (HTTP 5xx).',
+  TIMEOUT: 'Jupiter did not respond in time.',
+  NETWORK: 'Could not connect to Jupiter (network, CORS or CSP).',
   NO_ROUTE:
-    'Jupiter nie znalazł trasy dla tego tokenu i kwoty. Świeży token może jeszcze nie mieć płynności.',
-  BAD_REQUEST: 'Jupiter odrzucił zapytanie jako nieprawidłowe (np. zły adres mintu albo kwota).',
-  UNAUTHORIZED: 'Jupiter odrzucił klucz API (HTTP 401). Sprawdź klucz w ustawieniach.',
+    'Jupiter found no route for this token and amount. A fresh token may have no liquidity yet.',
+  BAD_REQUEST: 'Jupiter rejected the request as invalid (e.g. a wrong mint address or amount).',
+  UNAUTHORIZED: 'Jupiter rejected the API key (HTTP 401). Check the key in Settings.',
   FORBIDDEN:
-    'Jupiter: dostęp zabroniony (HTTP 403). Klucz nie ma dostępu do Swap API albo blokuje go firewall.',
-  HTTP_ERROR: 'Jupiter odpowiedział nieoczekiwanym kodem HTTP.',
-  INVALID_RESPONSE: 'Jupiter zwrócił odpowiedź w nieoczekiwanym formacie.',
+    'Jupiter: access forbidden (HTTP 403). The key has no access to the Swap API or a firewall blocks it.',
+  HTTP_ERROR: 'Jupiter responded with an unexpected HTTP code.',
+  INVALID_RESPONSE: 'Jupiter returned a response in an unexpected format.',
 };
 
 const BUILD_REASONS: Record<OrderBuildReason, string> = {
-  INSUFFICIENT_FUNDS: 'Za mało środków w portfelu na ten zakup.',
-  INSUFFICIENT_SOL_FOR_GAS: 'Za mało SOL na opłatę transakcyjną.',
-  BELOW_GASLESS_MINIMUM: 'Kwota poniżej minimum dla transakcji bez opłaty (gasless).',
-  MISSING_TOKEN_ACCOUNT: 'Brak konta tokenu (ATA) wymaganego przez market makera.',
-  QUOTE_NOT_BUILDABLE: 'Market maker podał cenę, ale nie dało się zbudować transakcji.',
-  OTHER: 'Jupiter podał cenę, ale nie zbudował transakcji.',
+  INSUFFICIENT_FUNDS: 'Not enough funds in the wallet for this buy.',
+  INSUFFICIENT_SOL_FOR_GAS: 'Not enough SOL for the transaction fee.',
+  BELOW_GASLESS_MINIMUM: 'The amount is below the minimum for a gasless transaction.',
+  MISSING_TOKEN_ACCOUNT: 'The token account (ATA) required by the market maker is missing.',
+  QUOTE_NOT_BUILDABLE: 'The market maker gave a price, but the transaction could not be built.',
+  OTHER: 'Jupiter gave a price but built no transaction.',
 };
 
 const EXECUTE_OUTCOMES: Record<ExecuteOutcome, string> = {
-  SUCCESS: 'Transakcja potwierdzona.',
-  ORDER_NOT_FOUND: 'Zlecenie wygasło albo nie istnieje (requestId).',
-  INVALID_SIGNED_TRANSACTION: 'Jupiter odrzucił podpisaną transakcję.',
-  INVALID_MESSAGE_BYTES: 'Jupiter odrzucił treść transakcji.',
-  AGGREGATOR_FAILED_TO_LAND: 'Transakcja nie trafiła do bloku.',
-  AGGREGATOR_UNKNOWN: 'Nieznany błąd wykonania transakcji.',
-  AGGREGATOR_INVALID_TRANSACTION: 'Nieprawidłowa transakcja.',
-  AGGREGATOR_NOT_FULLY_SIGNED: 'Transakcja nie ma wszystkich podpisów.',
-  AGGREGATOR_INVALID_BLOCK_HEIGHT: 'Transakcja wygasła (blockhash).',
-  RFQ_FAILED_TO_LAND: 'Transakcja RFQ nie trafiła do bloku.',
-  RFQ_UNKNOWN: 'Nieznany błąd wykonania transakcji RFQ.',
-  RFQ_INVALID_PAYLOAD: 'Jupiter odrzucił dane transakcji RFQ.',
-  RFQ_QUOTE_EXPIRED: 'Oferta market makera wygasła.',
-  RFQ_SWAP_REJECTED: 'Market maker odrzucił transakcję.',
-  UNDOCUMENTED: 'Jupiter zwrócił nieopisany w dokumentacji kod wyniku.',
+  SUCCESS: 'Transaction confirmed.',
+  ORDER_NOT_FOUND: 'The order expired or does not exist (requestId).',
+  INVALID_SIGNED_TRANSACTION: 'Jupiter rejected the signed transaction.',
+  INVALID_MESSAGE_BYTES: 'Jupiter rejected the transaction message.',
+  AGGREGATOR_FAILED_TO_LAND: 'The transaction did not land in a block.',
+  AGGREGATOR_UNKNOWN: 'Unknown transaction execution error.',
+  AGGREGATOR_INVALID_TRANSACTION: 'Invalid transaction.',
+  AGGREGATOR_NOT_FULLY_SIGNED: 'The transaction is not fully signed.',
+  AGGREGATOR_INVALID_BLOCK_HEIGHT: 'The transaction expired (blockhash).',
+  RFQ_FAILED_TO_LAND: 'The RFQ transaction did not land in a block.',
+  RFQ_UNKNOWN: 'Unknown RFQ transaction execution error.',
+  RFQ_INVALID_PAYLOAD: 'Jupiter rejected the RFQ transaction payload.',
+  RFQ_QUOTE_EXPIRED: "The market maker's quote expired.",
+  RFQ_SWAP_REJECTED: 'The market maker rejected the transaction.',
+  UNDOCUMENTED: 'Jupiter returned a result code that is not in its documentation.',
 };
 
 export const JUPITER_MESSAGES = {

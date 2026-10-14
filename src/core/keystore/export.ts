@@ -14,7 +14,7 @@ export interface PlainExport {
 }
 
 export const PLAIN_EXPORT_WARNING =
-  'UWAGA: ten plik zawiera mnemonik i klucze prywatne w czystym tekście. Każdy, kto go zobaczy, może zabrać wszystkie środki z floty. Przechowuj go offline i nikomu nie wysyłaj.';
+  'WARNING: this file contains the recovery phrase and private keys in plain text. Anyone who sees it can take all funds from the fleet. Keep it offline and never send it to anyone.';
 
 interface ExportWallet {
   readonly index: number;
@@ -46,7 +46,7 @@ export function buildPlainExport(
   exportedAt: Date,
 ): PlainExport {
   const wallets = walletsOf(file, secrets);
-  const base = `${file.fleetName}.EKSPORT-JAWNY`;
+  const base = `${file.fleetName}.PLAIN-EXPORT`;
   if (format === 'json') {
     const json = {
       warning: PLAIN_EXPORT_WARNING,
@@ -64,18 +64,18 @@ export function buildPlainExport(
   const lines = [
     PLAIN_EXPORT_WARNING,
     '',
-    `Flota: ${file.fleetName}`,
-    `Data eksportu: ${exportedAt.toISOString()}`,
+    `Fleet: ${file.fleetName}`,
+    `Exported at: ${exportedAt.toISOString()}`,
     '',
-    `Mnemonik (BIP39, ${String(secrets.mnemonic.split(' ').length)} słów):`,
+    `Recovery phrase (BIP39, ${String(secrets.mnemonic.split(' ').length)} words):`,
     secrets.mnemonic,
     '',
-    'Portfele (klucz prywatny: base58, 64 bajty, import w Phantom / Solflare):',
+    'Wallets (private key: base58, 64 bytes, import in Phantom / Solflare):',
     ...wallets.flatMap((w) => [
       '',
-      `${w.label} (indeks ${String(w.index)}, ścieżka ${w.derivationPath})`,
-      `  Adres: ${w.address}`,
-      `  Klucz prywatny: ${w.secretKey}`,
+      `${w.label} (index ${String(w.index)}, path ${w.derivationPath})`,
+      `  Address: ${w.address}`,
+      `  Private key: ${w.secretKey}`,
     ]),
     '',
   ];

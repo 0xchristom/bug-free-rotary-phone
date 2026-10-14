@@ -71,16 +71,16 @@ function setup(fileText = fixtureText) {
 }
 
 async function openPreview(user: UserEvent): Promise<void> {
-  await user.click(await screen.findByRole('button', { name: 'Otwórz plik floty' }));
-  await user.click(screen.getByRole('button', { name: 'Wybierz plik floty' }));
-  await screen.findByRole('heading', { name: 'Podgląd floty' });
+  await user.click(await screen.findByRole('button', { name: 'Open a fleet file' }));
+  await user.click(screen.getByRole('button', { name: 'Choose a fleet file' }));
+  await screen.findByRole('heading', { name: 'Fleet preview' });
 }
 
 /** scrypt in unlock takes about a second, longer under a loaded test run. */
 const SCRYPT_WAIT = { timeout: 20_000 };
 
 function findFleet(): Promise<HTMLElement> {
-  return screen.findByRole('heading', { name: 'Flota' }, SCRYPT_WAIT);
+  return screen.findByRole('heading', { name: 'Fleet' }, SCRYPT_WAIT);
 }
 
 function findAlert(): Promise<HTMLElement> {
@@ -88,12 +88,12 @@ function findAlert(): Promise<HTMLElement> {
 }
 
 function passwordField(): HTMLInputElement {
-  return screen.getByLabelText('Hasło');
+  return screen.getByLabelText('Password');
 }
 
 async function unlockWith(user: UserEvent, password: string): Promise<void> {
   await user.type(passwordField(), password);
-  await user.click(screen.getByRole('button', { name: 'Odblokuj' }));
+  await user.click(screen.getByRole('button', { name: 'Unlock' }));
 }
 
 function rows(): HTMLElement[] {
@@ -131,28 +131,28 @@ describe('preview without the password', () => {
       const cells = within(row);
       expect(cells.getByText(w.label)).toBeTruthy();
       expect(cells.getByText(w.address)).toBeTruthy();
-      expect(cells.getByText('niezweryfikowany')).toBeTruthy();
-      expect(cells.getByRole<HTMLButtonElement>('button', { name: 'Kopiuj' }).disabled).toBe(true);
+      expect(cells.getByText('unverified')).toBeTruthy();
+      expect(cells.getByRole<HTMLButtonElement>('button', { name: 'Copy' }).disabled).toBe(true);
       expect(cells.getByRole<HTMLButtonElement>('button', { name: 'QR' }).disabled).toBe(true);
     });
     expect(['Alfa', 'Beta', 'W03']).toEqual(fixture.public.wallets.map((w) => w.label));
-    expect(screen.queryByRole('img', { name: /Kod QR/u })).toBeNull();
+    expect(screen.queryByRole('img', { name: /QR code/u })).toBeNull();
     // the vault stays locked: preview needs no password
     expect(handler.inspect().unlocked).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Zablokuj' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Lock' })).toBeNull();
   });
 
-  it('a cancelled pick shows a Polish message and stays on the pick step', async () => {
+  it('a cancelled pick shows an English message and stays on the pick step', async () => {
     const { storage, user } = setup();
     storage.offerFile(null);
-    await user.click(await screen.findByRole('button', { name: 'Otwórz plik floty' }));
-    await user.click(screen.getByRole('button', { name: 'Wybierz plik floty' }));
+    await user.click(await screen.findByRole('button', { name: 'Open a fleet file' }));
+    await user.click(screen.getByRole('button', { name: 'Choose a fleet file' }));
     expect((await findAlert()).textContent).toBe(ERROR_MESSAGES.STORAGE_CANCELLED);
   });
 });
 
 describe('error messages (files built by core)', () => {
-  it('wrong password: Polish message, password cleared, still locked', async () => {
+  it('wrong password: English message, password cleared, still locked', async () => {
     const { handler, user } = setup();
     await openPreview(user);
     await unlockWith(user, `${PASSWORD}x`);
@@ -161,13 +161,13 @@ describe('error messages (files built by core)', () => {
     );
     expect(passwordField().value).toBe('');
     expect(handler.inspect().unlocked).toBeNull();
-    expect(screen.getByRole('heading', { name: 'Podgląd floty' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Fleet preview' })).toBeTruthy();
   });
 
   it('a file that is not a keystore is rejected at preview', async () => {
     const { user } = setup('{"hello": "world"}');
-    await user.click(await screen.findByRole('button', { name: 'Otwórz plik floty' }));
-    await user.click(screen.getByRole('button', { name: 'Wybierz plik floty' }));
+    await user.click(await screen.findByRole('button', { name: 'Open a fleet file' }));
+    await user.click(screen.getByRole('button', { name: 'Choose a fleet file' }));
     expect((await findAlert()).textContent).toBe(ERROR_MESSAGES.KEYSTORE_INVALID_FORMAT);
     expect(screen.queryByRole('table')).toBeNull();
   });
@@ -190,9 +190,9 @@ describe('error messages (files built by core)', () => {
     await openPreview(user);
     await unlockWith(user, PASSWORD);
     const alert = await findAlert();
-    expect(alert.textContent).toContain('plik floty mógł zostać podmieniony');
+    expect(alert.textContent).toContain('the fleet file may have been replaced');
     expect(alert.textContent).toContain(ERROR_MESSAGES.KEYSTORE_TAMPERED);
-    expect(alert.textContent).toContain('Nie wysyłaj środków');
+    expect(alert.textContent).toContain('Do not send funds');
     expect(handler.inspect().unlocked).toBeNull();
     expect(passwordField().value).toBe('');
   });
@@ -214,9 +214,9 @@ describe('settings out of the current range (D-019)', () => {
     await openPreview(user);
     await unlockWith(user, PASSWORD);
     await findFleet();
-    expect(screen.getByText(/przyjęły wartości domyślne: minimalna rezerwa/u)).toBeTruthy();
+    expect(screen.getByText(/default\s+values: minimum reserve/u)).toBeTruthy();
     expect(handler.inspect().unlocked?.settings.global.minReserveLamports).toBe(15_000_000n);
-    expect(screen.getByText(/minimum 0,015 SOL/u)).toBeTruthy();
+    expect(screen.getByText(/minimum 0\.015 SOL/u)).toBeTruthy();
   });
 });
 
@@ -227,21 +227,21 @@ describe('unlock', () => {
     await unlockWith(user, PASSWORD);
     expect(await findFleet()).toBeTruthy();
     expect(handler.inspect().unlocked).not.toBeNull();
-    expect(screen.getByText(/Portfele \(adresy zweryfikowane/u)).toBeTruthy();
-    expect(screen.queryByText('niezweryfikowany')).toBeNull();
+    expect(screen.getByText(/Wallets \(addresses verified/u)).toBeTruthy();
+    expect(screen.queryByText('unverified')).toBeNull();
 
     const first = fixture.public.wallets[0];
     if (!first) throw new Error('fixture');
-    await user.click(screen.getByRole('button', { name: 'Kopiuj adres Alfa' }));
+    await user.click(screen.getByRole('button', { name: 'Copy address Alfa' }));
     expect(await navigator.clipboard.readText()).toBe(first.address);
-    expect(screen.getByRole('button', { name: 'Kopiuj adres Alfa' }).textContent).toBe(
-      'Skopiowano',
-    );
+    expect(screen.getByRole('button', { name: 'Copy address Alfa' }).textContent).toBe('Copied');
 
-    await user.click(screen.getByRole('button', { name: 'Kod QR Alfa' }));
-    expect(screen.getByRole('img', { name: `Kod QR adresu ${first.address}` })).toBeTruthy();
-    await user.click(screen.getByRole('button', { name: 'Kod QR Alfa' }));
-    expect(screen.queryByRole('img', { name: /Kod QR adresu/u })).toBeNull();
+    await user.click(screen.getByRole('button', { name: 'QR code Alfa' }));
+    expect(
+      screen.getByRole('img', { name: `QR code of the address ${first.address}` }),
+    ).toBeTruthy();
+    await user.click(screen.getByRole('button', { name: 'QR code Alfa' }));
+    expect(screen.queryByRole('img', { name: /QR code of the address/u })).toBeNull();
   });
 
   it('the password never reaches storage, the URL or the console', async () => {
@@ -272,17 +272,17 @@ describe('add wallets', () => {
 
   it('keeps addresses, labels and settings; the saved file opens with the same password', async () => {
     const { storage, user } = await unlocked();
-    const count = screen.getByLabelText<HTMLInputElement>('Liczba nowych portfeli');
+    const count = screen.getByLabelText<HTMLInputElement>('Number of new wallets');
     await user.clear(count);
     await user.type(count, '2');
-    await user.click(screen.getByRole('button', { name: 'Dodaj portfele' }));
+    await user.click(screen.getByRole('button', { name: 'Add wallets' }));
 
     await waitFor(() => {
       expect(rows()).toHaveLength(5);
     });
-    expect(screen.getByText(/nie jest jeszcze zapisany/u)).toBeTruthy();
-    await user.click(screen.getByRole('button', { name: 'Zapisz zaktualizowany plik floty' }));
-    await screen.findByText(/z nowymi portfelami/u);
+    expect(screen.getByText(/is not saved yet/u)).toBeTruthy();
+    await user.click(screen.getByRole('button', { name: 'Save the updated fleet file' }));
+    await screen.findByText(/with the new wallets/u);
 
     const saved = storage.files.get(FILE_NAME);
     if (saved === undefined) throw new Error('file not saved');
@@ -298,29 +298,27 @@ describe('add wallets', () => {
 
   it('limits the count to 100 wallets in total', async () => {
     const { user } = await unlocked();
-    const count = screen.getByLabelText<HTMLInputElement>('Liczba nowych portfeli');
+    const count = screen.getByLabelText<HTMLInputElement>('Number of new wallets');
     await user.clear(count);
     await user.type(count, '98');
-    expect(
-      screen.getByText('Możesz dodać od 1 do 97 portfeli (łącznie najwyżej 100).'),
-    ).toBeTruthy();
-    expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Dodaj portfele' }).disabled).toBe(
+    expect(screen.getByText('You can add 1 to 97 wallets (at most 100 in total).')).toBeTruthy();
+    expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Add wallets' }).disabled).toBe(
       true,
     );
     await user.clear(count);
     await user.type(count, '97');
-    expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Dodaj portfele' }).disabled).toBe(
+    expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Add wallets' }).disabled).toBe(
       false,
     );
   });
 
   it('locking with unsaved new wallets asks first', async () => {
     const { handler, user } = await unlocked();
-    await user.click(screen.getByRole('button', { name: 'Dodaj portfele' }));
-    await screen.findByText(/nie jest jeszcze zapisany/u);
+    await user.click(screen.getByRole('button', { name: 'Add wallets' }));
+    await screen.findByText(/is not saved yet/u);
 
     const confirm = vi.spyOn(window, 'confirm').mockReturnValueOnce(false);
-    await user.click(screen.getByRole('button', { name: 'Zablokuj' }));
+    await user.click(screen.getByRole('button', { name: 'Lock' }));
     expect(confirm).toHaveBeenCalledTimes(1);
     expect(handler.inspect().unlocked).not.toBeNull();
 
@@ -329,8 +327,8 @@ describe('add wallets', () => {
     expect(event.defaultPrevented).toBe(true);
 
     confirm.mockReturnValueOnce(true);
-    await user.click(screen.getByRole('button', { name: 'Zablokuj' }));
-    expect(await screen.findByRole('heading', { name: 'Witaj w Bunndly' })).toBeTruthy();
+    await user.click(screen.getByRole('button', { name: 'Lock' }));
+    expect(await screen.findByRole('heading', { name: 'Welcome to Bunndly' })).toBeTruthy();
     expect(handler.inspect().unlocked).toBeNull();
     // nothing left to protect after the lock (the listener goes in a later effect)
     await waitFor(() => {

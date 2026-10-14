@@ -334,12 +334,12 @@ describe('amounts of a sell come from totalInputAmount and totalOutputAmount', (
     });
     if (!confirmed) throw new Error('not confirmed');
     const entry = logEntry(confirmed, { addressOf: () => null, decimals: 6 });
-    // 1 token (6 decimals) sold for 9 240 000 lamports = 0,00924 SOL per token
+    // 1 token (6 decimals) sold for 9 240 000 lamports = 0.00924 SOL per token
     expect(entry).toMatchObject({
       side: 'sell',
       spent: 1_000_000n,
       received: 9_240_000n,
-      price: '0,00924',
+      price: '0.00924',
     });
   });
 });

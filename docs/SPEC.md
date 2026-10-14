@@ -1,6 +1,6 @@
 # SPEC: Bunndly — Solana Multi-Wallet Buyer
 
-> Wspólna specyfikacja produktu dla obu agentów: **Andy** (architekt, review, Plane) i **Mark** (implementacja). Właściciel projektu: **Krystian**.
+> Wspólna specyfikacja produktu dla agentów: **Andy** (architekt, review, Plane) oraz **Mark** i **Kamil** (implementacja). Właściciel projektu: **Krystian**.
 > Ten plik leży w repozytorium jako `docs/SPEC.md` i jest źródłem prawdy o produkcie. Zmienia go tylko Andy, po uzgodnieniu z Krystianem.
 > Zasady współpracy i workflow na Plane opisuje `CLAUDE.md` w katalogu głównym repo. Role nadaje sesjom Krystian.
 
@@ -182,15 +182,15 @@ Moduły `core`, `executor` i `jupiter` piszemy tak, by dało się je testować w
 
 - TypeScript `strict`. ESLint i Prettier. Zero `any` w modułach `core`, `executor`, `jupiter`.
 - Wszystkie kwoty w lamportach / jednostkach bazowych jako `bigint`. Konwersja do wyświetlania tylko w UI, z uwzględnieniem `decimals` mintu.
-- Obsługa błędów z typowanymi kodami. Każdy błąd widoczny dla użytkownika ma zrozumiały komunikat po polsku.
-- UI po polsku. Działa na desktopie (Chrome/Edge jako docelowe). Wersji mobilnej nie ma: układów dla telefonu nie budujemy i nie testujemy (decyzja Krystiana, 12.10.2026).
+- Obsługa błędów z typowanymi kodami. Każdy błąd widoczny dla użytkownika ma zrozumiały komunikat po angielsku.
+- UI wyłącznie po angielsku, bez wyboru języka. Działa na desktopie (Chrome/Edge jako docelowe). Wersji mobilnej nie ma: układów dla telefonu nie budujemy i nie testujemy (decyzja Krystiana, 12.10.2026).
 - Wydajność: reakcja watcher → pierwsze `/order` poniżej 300 ms od otrzymania logu (pomiar w logu).
 
 ---
 
 ## 6. Bezpieczeństwo (wymagania twarde)
 
-1. Klucze prywatne i mnemonik istnieją w postaci jawnej **wyłącznie w pamięci Web Workera** po odblokowaniu. Nigdy w `localStorage`, `sessionStorage`, IndexedDB, URL, logach, konsoli ani komunikatach błędów.
+1. Klucze prywatne i mnemonik istnieją w postaci jawnej **wyłącznie w pamięci Web Workera** po odblokowaniu. Nigdy w `localStorage`, `sessionStorage`, IndexedDB, URL, logach, konsoli ani komunikatach błędów. Wyjątkiem są dwa pliki zapisywane na dysk na polecenie użytkownika: eksport jawny (3.1) i plik jawny w folderze kopii zapasowej (11.1). Ich treść powstaje w workerze i nie trafia do stanu aplikacji, do strony ani do magazynów przeglądarki.
 2. Podpisywanie wyłącznie lokalnie. Do Jupitera i RPC trafiają tylko podpisane transakcje i adresy publiczne.
 3. Keystore: scrypt (parametry jak w 3.1, możliwość podniesienia) + AES-GCM z losowym IV, uwierzytelnienie przez tag GCM. Błędne hasło daje czytelny komunikat, bez wycieku informacji.
 4. **Content-Security-Policy:** `default-src 'self'`; `connect-src` tylko do domen Helius, `api.jup.ag` i ewentualnie fallback RPC; brak `unsafe-eval`, brak zewnętrznych skryptów. Plus `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`, `Permissions-Policy` minimalne.
@@ -272,7 +272,7 @@ Po każdym etapie Andy raportuje Krystianowi: co działa, co przetestowano, otwa
 ### 11.1 Portfele
 
 - „Create wallets” pyta o liczbę i tworzy portfele jednym kliknięciem. Domyślne nazwy: `Wallet 0`, `Wallet 1`, … (numer to indeks derywacji).
-- Folder kopii zapasowej: użytkownik wskazuje go raz. Po każdej zmianie zbioru portfeli aplikacja sama zapisuje tam aktualny plik konta i sprawdza zapis odczytem. Portfel bez potwierdzonej kopii nie bierze udziału w komendach. Brak dostępu do folderu jest stanem alarmowym widocznym na każdym ekranie.
+- Folder kopii zapasowej: użytkownik wskazuje go raz. Po każdej zmianie zbioru portfeli aplikacja sama zapisuje tam dwa pliki: zaszyfrowany plik konta oraz plik z frazą odzyskiwania i kluczami prywatnymi jawnym tekstem (decyzja Krystiana z 13.10.2026, tymczasowa), i sprawdza oba zapisy odczytem. Plik jawny daje pełny dostęp do środków każdemu, kto ma dostęp do folderu; aplikacja mówi to przy włączaniu folderu i w pasku stanu. Portfel bez potwierdzonej kopii nie bierze udziału w komendach. Brak dostępu do folderu jest stanem alarmowym widocznym na każdym ekranie.
 
 ### 11.2 Tabela
 

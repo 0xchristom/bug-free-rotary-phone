@@ -556,7 +556,7 @@ button.arm:disabled {
   color: var(--danger);
 }
 
-/* Stays in view wherever the page is scrolled (e.g. down to ROZBRÓJ). */
+/* Stays in view wherever the page is scrolled (e.g. down to DISARM). */
 .notice.alarm {
   position: sticky;
   top: 0;

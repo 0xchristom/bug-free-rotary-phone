@@ -214,14 +214,12 @@ describe('money path: amount in /order', () => {
       await t.sell([0, 1], percent);
       await runToEnd(t.clock, t.events, n + 1);
       perRun.push(
-        t
-          .asked()
-          .filter(([, amount]) =>
-            t.jupiter
-              .orderRequests()
-              .slice(before)
-              .some((r) => r.amount === amount),
-          ),
+        t.asked().filter(([, amount]) =>
+          t.jupiter
+            .orderRequests()
+            .slice(before)
+            .some((r) => r.amount === amount),
+        ),
       );
     }
     // By hand: 1 234 567 891 / 4 = 308 641 972,75; / 2 = 617 283 945,5.
@@ -403,8 +401,8 @@ describe('startSell', () => {
     );
     expect(entries.map((e) => e.side)).toEqual(entries.map(() => 'sell'));
     const confirmed = entries.find((e) => e.state === 'CONFIRMED');
-    // 1 token (6 decimals) for 100 000 000 lamports: 0,1 SOL per token
-    expect(confirmed).toMatchObject({ spent: 1_000_000n, received: 100_000_000n, price: '0,1' });
+    // 1 token (6 decimals) for 100 000 000 lamports: 0.1 SOL per token
+    expect(confirmed).toMatchObject({ spent: 1_000_000n, received: 100_000_000n, price: '0.1' });
     expect(held.length).toBeGreaterThan(3);
     for (const text of [toCsv(entries), toJson(entries)]) {
       expect(text).toContain('CONFIRMED');

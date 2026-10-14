@@ -62,7 +62,7 @@ const BEEP_HZ = 880;
 
 /**
  * Alarm sound. Browsers let a page play sound only after a user gesture, so the
- * `AudioContext` is made in `prime()`, called from the click on UZBRÓJ.
+ * `AudioContext` is made in `prime()`, called from the click on ARM.
  */
 export class AlarmSound {
   private context: AudioContextLike | null = null;
@@ -100,7 +100,7 @@ export class AlarmSound {
   }
 }
 
-/** What the mode B UI shares: the alarm (primed on UZBRÓJ) and the Wake Lock state. */
+/** What the mode B UI shares: the alarm (primed on ARM) and the Wake Lock state. */
 export interface WatchRuntime {
   readonly alarm: AlarmSound;
   readonly wake: WakeState;

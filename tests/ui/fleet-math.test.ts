@@ -17,13 +17,13 @@ describe('parseSolAmount', () => {
   });
 
   it.each([
-    ['0,0000000001', 'Podaj najwyżej 9 miejsc po przecinku (1 lamport).'],
-    ['1.1234567891', 'Podaj najwyżej 9 miejsc po przecinku (1 lamport).'],
-    ['-0,5', 'Kwota nie może być ujemna.'],
-    ['-1', 'Kwota nie może być ujemna.'],
-    ['abc', 'Podaj kwotę w SOL, np. 0,25.'],
-    ['1,2,3', 'Podaj kwotę w SOL, np. 0,25.'],
-    ['', 'Podaj kwotę w SOL, np. 0,25.'],
+    ['0,0000000001', 'Use at most 9 decimal places (1 lamport).'],
+    ['1.1234567891', 'Use at most 9 decimal places (1 lamport).'],
+    ['-0,5', 'The amount cannot be negative.'],
+    ['-1', 'The amount cannot be negative.'],
+    ['abc', 'Enter an amount in SOL, e.g. 0.25.'],
+    ['1,2,3', 'Enter an amount in SOL, e.g. 0.25.'],
+    ['', 'Enter an amount in SOL, e.g. 0.25.'],
   ])('%j → %s', (text, message) => {
     expect(parseSolAmount(text)).toEqual({ ok: false, message });
   });
@@ -31,12 +31,12 @@ describe('parseSolAmount', () => {
 
 describe('formatUnits', () => {
   it.each([
-    [100n, 6, '0,0001'],
-    [393_571_704_253_643n, 6, '393571704,253643'],
+    [100n, 6, '0.0001'],
+    [393_571_704_253_643n, 6, '393571704.253643'],
     [1_000_000n, 6, '1'],
     [0n, 6, '0'],
     [12345n, 0, '12345'],
-    [2n ** 64n - 1n, 9, '18446744073,709551615'],
+    [2n ** 64n - 1n, 9, '18446744073.709551615'],
   ])('formatUnits(%s, %i) = %s', (amount, decimals, text) => {
     expect(formatUnits(amount, decimals)).toBe(text);
   });
