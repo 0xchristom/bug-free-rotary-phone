@@ -467,13 +467,23 @@ describe('wallet cell', () => {
     const names = within(row('Wallet 1'))
       .getAllByRole('button')
       .map((b) => b.getAttribute('aria-label'));
+    // As in mockup v2: the short address opens the QR code; Buy, Sell and Trade settings on the right
     expect(names).toEqual([
+      'QR code Wallet 1',
       'Copy address Wallet 1',
       'Unit of the buy amount Wallet 1: SOL. Switch',
       'Buy Wallet 1',
+      'Sell Wallet 1',
       'Trade settings Wallet 1',
-      'QR code Wallet 1',
     ]);
+  });
+
+  it('the QR opener is the short address itself', async () => {
+    setup({ wallets });
+    await ready();
+    const opener = screen.getByRole('button', { name: 'QR code Wallet 1' });
+    expect(opener.textContent).toBe(`${SECOND.slice(0, 4)}…${SECOND.slice(-4)}`);
+    expect(opener.getAttribute('title')).toBe(SECOND);
   });
 
   it('the QR code opens in a popover with the address of its wallet; Esc gives the focus back', async () => {

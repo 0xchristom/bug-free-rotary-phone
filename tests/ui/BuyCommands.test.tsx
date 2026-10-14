@@ -480,6 +480,35 @@ describe('command bar (BUNNDLY-59)', () => {
     ]);
   });
 
+  it('the row Sell sells with that one wallet, selected or not (BUNNDLY-73)', async () => {
+    const { user, requests } = setup();
+    await showMint(user);
+    await user.click(screen.getByRole('checkbox', { name: 'Select W02' }));
+    await user.click(screen.getByRole('button', { name: 'Sell W02' }));
+    expect(requests.filter((r) => r.type === 'startSell')).toEqual([
+      { type: 'startSell', mint: MINT, wallets: [1], group: 'g1' },
+    ]);
+    expect(requests.filter((r) => r.type === 'startBuy')).toEqual([]);
+  });
+
+  it('the row Sell needs a token and says so; live, it asks for one wallet', async () => {
+    const { user, requests } = setup({ global: { dryRun: false } });
+    await eventually(() => screen.getByText(/^Balances as of /u));
+    const sell = (): HTMLElement => screen.getByRole('button', { name: 'Sell W03' });
+    expect(sell()).toHaveProperty('disabled', true);
+    expect(sell().getAttribute('aria-description')).toBe('Paste the mint of the token to sell.');
+    await user.type(screen.getByLabelText(TARGET_LABEL), MINT);
+    await screen.findByText('Token · SPL', {}, TARGET_WAIT);
+    await user.click(sell());
+    const dialog = screen.getByRole('alertdialog', { name: 'Sell in live mode?' });
+    expect(within(dialog).getByText('Wallets').nextElementSibling?.textContent).toBe('1');
+    expect(requests.filter((r) => r.type === 'startSell')).toEqual([]);
+    await user.click(within(dialog).getByRole('button', { name: 'Yes, sell' }));
+    expect(requests.filter((r) => r.type === 'startSell')).toEqual([
+      { type: 'startSell', mint: MINT, wallets: [2], group: 'g1' },
+    ]);
+  });
+
   it('SELL sends the mint and the selected wallets; the rows are queued at once', async () => {
     const { user, requests } = setup({ start: 'hold' });
     await showMint(user);

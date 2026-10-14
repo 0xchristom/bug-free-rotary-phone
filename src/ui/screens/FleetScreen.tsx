@@ -582,10 +582,34 @@ export function FleetScreen({
   const onBuyWallet = useCallback((index: number) => {
     rowBuy.current(index);
   }, []);
+  // Row action: one wallet sells its set part in its own group (mockup v2, BUNNDLY-73).
+  const sellInGroup = (index: number): void => {
+    const group = groups.find((g) => g.id === groupOf(groups, index));
+    if (!group || buyMint === null) return;
+    if (global.dryRun) launchSell(buyMint, group.id, [index]);
+    else setConfirm({ kind: 'sell', mint: buyMint, group, wallets: [index] });
+  };
+  const rowSell = useRef(sellInGroup);
+  useEffect(() => {
+    rowSell.current = sellInGroup;
+  });
+  const onSellWallet = useCallback((index: number) => {
+    rowSell.current(index);
+  }, []);
   // The row buy needs a mint and no command in flight; a running group's rows say why not.
   const rowBlocked = commandBusy
     ? 'Sending the command…'
     : (buyBlocked ?? (buyMint === null ? 'Paste a token mint first.' : null));
+  // The row sell reads the token balance first, as SELL on the bar does.
+  const rowSellBlocked = commandBusy
+    ? 'Sending the command…'
+    : buyRouteOf(global.network) === null
+      ? NO_BUY_ROUTE_MESSAGE
+      : buyMint === null
+        ? 'Paste the mint of the token to sell.'
+        : !hasRpc
+          ? 'Selling reads the token balances first: it needs a Helius key (Settings).'
+          : null;
   const statusGroups = status?.groups;
   const frozen = useMemo(() => {
     const out = new Map<number, string>();
@@ -998,6 +1022,8 @@ export function FleetScreen({
         buy={tableBuy}
         onBuyWallet={onBuyWallet}
         rowBuyBlocked={rowBlocked}
+        onSellWallet={onSellWallet}
+        rowSellBlocked={rowSellBlocked}
         frozen={frozen}
         groupNames={tab === null ? groupNames : undefined}
         explorer={global.explorer}

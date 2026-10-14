@@ -580,6 +580,26 @@ table.wallets tr.unsel td:not(.c-check, .c-acts) {
   font-family: var(--font-mono);
 }
 
+/* The short address is the QR trigger: it reads as text, the cursor says it opens. */
+.addr-btn {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font-size: inherit;
+  cursor: pointer;
+  border-radius: var(--r-chip);
+}
+
+.addr-btn:hover {
+  color: var(--fg);
+}
+
+.addr-btn:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 1px;
+}
+
 .bal {
   display: inline-flex;
   align-items: center;
