@@ -176,6 +176,7 @@ function setup(o: Setup = {}) {
         };
         return Promise.resolve(status());
       case 'disarm':
+      case 'stop': // STOP disarms too (BUNNDLY-87)
         if (watch) watch = { ...watch, armed: false, connection: 'disconnected', queued: [] };
         return Promise.resolve(status());
       case 'saveSettings':
@@ -295,6 +296,29 @@ describe('creator address and arming conditions', () => {
 });
 
 describe('ARM / DISARM', () => {
+  it('armed with no buy: Stop and Esc are on and send stop for the group (BUNNDLY-87)', async () => {
+    const { user, requests } = setup();
+    await openTabB();
+    const stop = screen.getByRole('button', { name: 'Stop' });
+    expect(stop.getAttribute('aria-description')).toBe('Nothing is running.');
+    await typeCreator(user);
+    await user.click(armButton());
+    await screen.findByRole('button', { name: 'Disarm' });
+    expect(stop).toHaveProperty('disabled', false);
+    expect(stop.getAttribute('aria-description')).toBeNull();
+    await user.keyboard('{Escape}');
+    await waitFor(() => {
+      expect(requests.filter((r) => r.type === 'stop')).toEqual([{ type: 'stop', group: 'g1' }]);
+    });
+    // stopped: disarmed, so Stop is off again and Arm is back
+    await screen.findByRole('button', { name: 'Arm' });
+    expect(screen.getByRole('button', { name: 'Stop' }).getAttribute('aria-description')).toBe(
+      'Nothing is running.',
+    );
+    await user.click(screen.getByRole('button', { name: 'Stop' }));
+    expect(requests.filter((r) => r.type === 'stop')).toHaveLength(1);
+  });
+
   it('DRY-RUN: ARM sends arm at once, DISARM sends disarm', async () => {
     const { user, requests } = setup();
     await arm(user);

@@ -257,6 +257,35 @@ describe('two groups at once', () => {
     expect(t.askedBy(MINT)).toEqual([3, 4, 5, 6, 7]);
   });
 
+  it('STOP of an armed B disarms B: a token detected later buys nothing; A stays armed (BUNNDLY-87)', async () => {
+    const t = await setup();
+    const a = await t.arm('g1');
+    const b = await t.arm('g2');
+    await t.h.handle({ type: 'stop', group: 'g2' });
+    expect((await t.group('g2'))?.watch?.armed).toBe(false);
+    expect(b.closed).toBe(true);
+    expect((await t.group('g1'))?.watch?.armed).toBe(true);
+    expect(a.closed).toBe(false);
+    // the creator's token arrives after STOP: nothing is bought
+    b.message(N.message);
+    await t.clock.runUntil(t.clock.now() + SPREAD_MS);
+    expect(t.orders).toHaveLength(0);
+    expect((await t.group('g2'))?.buy).toBeNull();
+  });
+
+  it('STOP of a B that is armed and buying stops the buy and disarms (BUNNDLY-87)', async () => {
+    const t = await setup();
+    const socket = await t.arm('g2');
+    socket.message(N.message);
+    await t.clock.runUntil(t.clock.now() + SPREAD_MS);
+    expect(t.askedBy(MINT)).toEqual([3, 4, 5, 6, 7]);
+    await t.h.handle({ type: 'stop', group: 'g2' });
+    const b = await t.group('g2');
+    expect(b?.buy?.accepting ?? false).toBe(false);
+    expect(b?.watch?.armed).toBe(false);
+    expect(socket.closed).toBe(true);
+  });
+
   it('DISARM of one group leaves the watcher of the other armed', async () => {
     const t = await setup();
     const a = await t.arm('g1');
