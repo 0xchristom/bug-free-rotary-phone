@@ -1,4 +1,4 @@
-import { useEffect, useId, useState, type SyntheticEvent } from 'react';
+import { useId, useLayoutEffect, useState, type SyntheticEvent } from 'react';
 import { toUserMessage } from '../../core/errors.ts';
 import { EXPLORERS, NETWORK_LABELS, type Explorer, type Network } from '../../core/network.ts';
 import {
@@ -36,6 +36,7 @@ import {
 } from '../trade-edit.ts';
 import { WATCH_FROZEN } from '../watch-labels.ts';
 import { Button, Checkbox, Input, NumberInput } from '../kit/index.ts';
+import { DeviceSettings } from '../remember-ui.tsx';
 
 type KeyName = keyof ApiKeyFlags;
 
@@ -231,7 +232,9 @@ export function SettingsScreen({ info, storage, onUnsavedChange }: SettingsScree
   const [error, setError] = useState<string | null>(null);
 
   const unsaved = phase.kind === 'unsaved';
-  useEffect(() => {
+  // A layout effect, not a passive one: the guard reaches App in the same commit that shows
+  // "Save the updated fleet file", so a Lock clicked right then still asks (BUNNDLY-76).
+  useLayoutEffect(() => {
     onUnsavedChange(unsaved);
     return () => {
       onUnsavedChange(false);
@@ -643,6 +646,7 @@ export function SettingsScreen({ info, storage, onUnsavedChange }: SettingsScree
       </form>
 
       <ConnectionTest />
+      <DeviceSettings />
     </section>
   );
 }

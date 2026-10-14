@@ -1,5 +1,5 @@
 /**
- * Token reads after landed transactions (BUNNDLY-57, D-053): a burst of confirmations must
+ * Token reads after landed transactions (BUNNDLY-57, D-055): a burst of confirmations must
  * reach the RPC as one read, and reads start at least the gap apart, so 100 wallets landing
  * at once never break the 10 requests a second of the free plan.
  */

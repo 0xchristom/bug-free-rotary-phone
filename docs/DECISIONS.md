@@ -1034,6 +1034,22 @@ Rejestr decyzji i rozbieżności z dokumentacją zewnętrzną. Nowe wpisy dopisu
   - Kwoty max spend dalej pochodzą z zapisanych ustawień. Dopóki kwoty w tabeli nie są zapisane, zakup i uzbrojenie są wyłączone. Zmiana samego zaznaczenia ich nie blokuje.
   - Odrzucone: rozpoznanie rodzaju tylko w UI (worker przyjąłby żądanie wysłane z pominięciem paska) i zgadywanie po długości danych bez sprawdzenia właściciela.
 
+## D-049: Grupy portfeli w dashboardzie
+
+- Data: 2026-10-14
+- Zadanie: BUNNDLY-69
+- Kontekst: silnik (D-046) uruchamia, zatrzymuje i uzbraja każdą grupę osobno, a dashboard pokazywał jedną flotę. Pasek komend (D-048) wysyłał żądania bez grupy, więc przy więcej niż jednej grupie worker je odrzucał.
+- Decyzja:
+  - Nad tabelą jest zakładka na grupę: nazwa, liczba portfeli, suma znanych sald SOL i stan z `status.groups`: Idle, Armed, Buying, Selling albo Stopped (przebieg po STOP, którego wysłane transakcje jeszcze się kończą). Zakładka **All** pokazuje wszystkie portfele z kolumną Group.
+  - Pasek komend działa w wybranej zakładce. BUY, SELL i ARM wysyłają `group` i zaznaczone portfele tej grupy, a STOP i DISARM wysyłają tylko `group`. Okno potwierdzenia trybu na żywo podaje nazwę grupy. Każda zakładka pamięta własny tekst pola celu, a przełączenie zakładki nie wysyła żadnego żądania.
+  - W **All** przy kilku grupach ARM, BUY, SELL i STOP są wyłączone z powodem „Pick a group tab”. Przy jednej grupie działają na nią. Przycisk ▶ w wierszu zawsze kupuje w grupie swojego portfela.
+  - **Move to group** przenosi zaznaczone portfele widoczne w zakładce do istniejącej albo nowej grupy (nowa dostaje kolejny identyfikator). **Rename** zmienia nazwę pokazanej grupy. **Delete group** oddaje jej portfele pierwszej grupie, więc pierwszej grupy nie da się usunąć. Każda zmiana idzie przez `saveSettings.groups` i czeka na zapis pliku floty jak inne zmiany ustawień. Pusta grupa zostaje.
+  - Dla grupy, która kupuje, sprzedaje albo jest uzbrojona, te akcje są wyłączone i podają powód. Worker zabrania zmiany składu takiej grupy (`GROUP_RUNNING`). UI blokuje też zmianę jej nazwy. Przycisk ▶ jest wyłączony tylko w wierszach tej grupy. Pole kwoty blokuje się według D-050: portfele z przebiegu i cała grupa z uzbrojonym watcherem.
+- Konsekwencje / alternatywy:
+  - Postęp w tabeli dalej pokazuje najnowszy przebieg (D-032). Gdy dwie grupy kupują naraz, wiersze starszego przebiegu wracają do stanu spoczynku, a jego stan widać na zakładce grupy.
+  - Domyślna grupa floty sprzed grup nazywa się „All wallets” (D-046) i po pierwszym podziale zostaje pod tą nazwą, dopóki właściciel jej nie zmieni.
+  - Odrzucone: komendy w **All** dla wszystkich grup naraz (jedno kliknięcie uruchamiałoby kilka grup z jednym celem) i usuwanie grupy razem z jej portfelami (portfel musi należeć do grupy, D-046).
+
 ## D-050: Parametry handlu w tabeli (etap 2): zapis od razu, blokada w trakcie akcji, „Edit selected”
 
 - Data: 2026-10-14
@@ -1052,7 +1068,60 @@ Rejestr decyzji i rozbieżności z dokumentacją zewnętrzną. Nowe wpisy dopisu
   - Każda zmiana kwoty daje nowy tekst pliku do zapisania; „Create wallets” czeka na zapis pliku jak dotąd.
   - Odrzucone: zapis kwot przyciskiem „Save table changes” (zadanie wymaga zapisu po Enter) i blokada całej tabeli w trakcie przebiegu (portfele spoza przebiegu i spoza uzbrojonej grupy wolno zmieniać, D-046).
 
-## D-053: Salda na żywo: `accountSubscribe` na portfel, odpytywanie jako zapas
+## D-051: Zapamiętana flota i okno bez hasła: wszystko w workerze, klucz pliku jako nieeksportowalny CryptoKey
+
+- Data: 2026-10-14
+- Zadanie: BUNNDLY-52
+- Decyzja:
+  - **Co i gdzie:** IndexedDB strony (baza `bunndly`, magazyn `remember`) ma trzy rekordy: `account` (tekst zaszyfrowanego pliku floty, ten sam co na dysk, i `fileId` = nazwa floty i czas utworzenia), `session` (okno bez hasła) i `prefs` (czy pamiętać i jak długo okno). Czyta je i zapisuje **wyłącznie worker** (`src/worker/remember.ts`, `src/storage/remember-idb.ts`). Do interfejsu trafia tylko nazwa floty, liczba portfeli i ustawienia (`remembered`).
+  - **Wariant B okna:** rekord `session` trzyma klucz pliku floty z sesji (już dziś `extractable: false`, użycia `encrypt` i `decrypt`) jako `CryptoKey` oraz znacznik AES-GCM nad pustym tekstem z danymi uwierzytelnionymi `{v, fileId, expiresAt}`. Zmieniony czas wygaśnięcia albo rekord innego pliku nie przechodzi znacznika i rekord znika. Wznowienie otwiera plik tym kluczem bez hasła i bez scrypt (`openKeystoreWithKey`). Okno z limitem liczy się od ostatniej aktywności, tak jak automatyczna blokada (polecenie Andy'ego z 14.10.2026): aktywność przy otwartej flocie zapisuje rekord od nowa z `expiresAt` = teraz + okno, najwyżej raz na minutę, w kolejce workera po bieżącym żądaniu. Wariant A z zadania (klucz opakowujący i zaszyfrowane nim surowe bajty klucza ze scrypt) odrzucony po dowodzie w Chromium z 14.10.2026 (komentarz w BUNNDLY-52). Właściwości są takie same, ale A wymaga wydania surowych bajtów klucza z `crypto.ts`, a kopia profilu daje w A te bajty na zawsze; w B tylko możliwość użycia klucza w tej przeglądarce. Andy potwierdził B, a Krystian brzmienie SPEC 6.9 („Tak”, 14.10.2026).
+  - **Kto usuwa rekord okna:** Lock, „Forget this device”, wyłączenie pamiętania, otwarcie innego pliku, upływ okna (przy wznowieniu) i każdy błąd odszyfrowania. Automatyczna blokada usuwa okno ograniczone czasem. Okna bez limitu (polecenie Krystiana: „wyłączenie auto-lock w ustawieniach do ponownego włączenia”, wariant „Window without a limit”) automatyczna blokada nie usuwa: zeruje tylko klucze w pamięci workera. Potwierdził to Andy 14.10.2026, a Ustawienia pokazują wtedy ostrzeżenie (SPEC 6.9). Zmiany hasła aplikacja nie ma, więc ten przypadek z zadania nie występuje.
+  - **Okno:** 15 min, 1 h, 2 h albo bez limitu, w Ustawieniach („This device”). **Decyzja tymczasowa (14.10.2026):** domyślnie 15 min — do potwierdzenia przez Krystiana. Pamiętanie jest domyślnie włączone (Krystian, 12.10.2026); opcja jest przy tworzeniu floty, przy otwieraniu pliku i w Ustawieniach.
+  - **Spójność z plikiem na dysku:** każdy zapis, który daje nowy tekst pliku (ustawienia, sieć, nowe portfele), aktualizuje też kopię w IndexedDB, jeśli to ta sama flota. Ostrzeżenie o niezapisanym pliku na dysku działa jak dotąd.
+  - **Przeglądarka bez IndexedDB** (np. okno prywatne odrzuca bazę): pierwszy błąd wyłącza funkcję, opcja jest wyłączona z wyjaśnieniem, reszta działa jak dotąd (`REMEMBER_UNAVAILABLE`).
+  - Reguła ESLint `no-restricted-globals` dla `indexedDB` zostaje; jedyne dozwolone użycie ma wyłączenie w dwóch liniach `remember-idb.ts` z odsyłaczem do tej decyzji.
+- Konsekwencje / alternatywy:
+  - `prefs` zostaje w IndexedDB także przy wyłączonym pamiętaniu (`{remember: false, windowMs}`), żeby wybór przetrwał odświeżenie. Nie ma w nim danych floty.
+  - Kod uruchomiony na stronie w czasie okna może otworzyć flotę bez hasła (SPEC 6.9). Bez okna kopia profilu daje tylko szyfrogram, jak plik na dysku.
+  - Odrzucone: zapis czegokolwiek w `localStorage` albo `sessionStorage`, zapis z wątku interfejsu i trzymanie surowych bajtów klucza (wariant A).
+
+## D-052: Stairs w silniku i w workerze: kroki o stałych godzinach, pauza bez zmiany kroków już rozpoczętych
+
+- Data: 2026-10-14
+- Zadanie: BUNNDLY-61 (PR 1: harmonogram; ekran w PR 2)
+- Decyzja:
+  - **Krok:** stała liczba portfeli (`perStep`, co najmniej 1) w stałym odstępie (`intervalMs`, 1 s do 24 h, liczba całkowita ms); potwierdzone przez Krystiana („tak”, komentarz Andy'ego w BUNNDLY-61). Złe parametry worker odrzuca kodem `INVALID_STAIRS` przed jakimkolwiek zapytaniem; executor odrzuca je też sam (`RangeError`), bo `perStep` 0 budowałby kroki bez końca.
+  - **Godziny kroków są bezwzględne:** krok k zaczyna się w chwili startu przebiegu + k × odstęp. Długi krok (ponowienia, wolne `/execute`) nie przesuwa następnych. W trybie B start liczy się od wykrycia, tak jak dotąd (`triggeredAt`).
+  - **Kroki budowane z portfeli gotowych do zakupu:** portfel pominięty przed `/order` (brak salda, brak odczytu, brak tokenów) nie zajmuje miejsca w kroku.
+  - **Stan `SCHEDULED`** (między `IDLE` a `QUEUED`): portfel czeka na swój krok, zdarzenie niesie `scheduledAt`. Wznowienie po pauzie wysyła `SCHEDULED` jeszcze raz z nową godziną.
+  - **Pauza** (`pauseStairs`, `resumeStairs`, z grupą jak `stop`): wstrzymuje następne kroki i każde nowe `/order`, także portfeli już w kolejce. Transakcje wysłane kończą się normalnie. Wznowienie przesuwa wszystkie kroki jeszcze nierozpoczęte o czas pauzy. Pauza przebiegu Immediate albo po starcie ostatniego kroku nic nie zmienia. Nazwy różnią się od `resume` z BUNNDLY-52 (wznowienie zapamiętanej sesji).
+  - **STOP** pomija portfele z kroków jeszcze nierozpoczętych jako `SKIPPED:STOPPED`, bez zapytań.
+  - **Grupy:** harmonogram dotyczy jednej grupy (polecenie Andy'ego); pauza i STOP jednej grupy nie zmieniają kroków innej. Limiter `/order` jest nadal wspólny dla planu, więc krok większy niż budżet okna czeka na limiter jak przy Immediate.
+- Konsekwencje / alternatywy:
+  - Odrzucone: kroki liczone od końca poprzedniego kroku (jeden wolny portfel opóźniałby całą flotę) i kroki budowane ze wszystkich zaznaczonych portfeli (pominięte dawałyby puste kroki).
+  - Przełącznik Immediate / Stairs na pasku komend robi Mark w BUNNDLY-73; ekran postępu kroków, pauza i wznowienie w UI to PR 2 tego zadania.
+
+## D-053: Zakup bezpośredni przez Meteora DBC, etap 1: własny moduł na `@solana/kit`, matematyka przeniesiona z SDK (MIT)
+
+- Data: 2026-10-14
+- Zadanie: BUNNDLY-47 (etap 2: podpis w workerze i podłączenie do executora, BUNNDLY-48)
+- Decyzja:
+  - **Bez SDK Meteory** (bramka 1, decyzja Andy'ego): `@meteora-ag/dynamic-bonding-curve-sdk` stoi na `@solana/web3.js`, Anchorze i `bn.js`, czyli na drugim stosie Solany obok `@solana/kit`. Moduł `src/direct/meteora-dbc` nie dodaje żadnej paczki.
+  - **Źródło kodu:** matematyka kupna (`swapQuoteExactIn` dla quote → base, krzywa, opłaty: harmonogram liniowy i wykładniczy, rate limiter, opłata dynamiczna, limit 99%) przeniesiona na `bigint` z SDK 1.5.13 (licencja MIT, copyright Meteory w nagłówku `math.ts`). Commit źródła: `a07966db9067c86a15135fb8088b95fc95a2924a` w `MeteoraAg/dynamic-bonding-curve-sdk` (24.09.2026, ustawia wersję 1.5.13; paczka z npm nie ma `gitHead`, więc pliki z paczki porównane z tym commitem bajt w bajt: wszystkie przeniesione pliki `src/math/**` i IDL są identyczne). Z repozytorium programu (`MeteoraAg/dynamic-bonding-curve`, licencja niekomercyjna) nic nie jest przenoszone.
+  - **Układ kont, dyskryminatory, konta `swap2`:** IDL `dynamic_bonding_curve` 0.2.1 z tej samej paczki. W repo SDK 14.10.2026 pojawił się IDL 0.2.2: `swap`, `swap2`, `VirtualPool` i dyskryminatory bez zmian, a `PoolConfig` dostał pola opłaty transferowej Token-2022 (`transfer_fee_basis_points`, `transfer_fee_flag` i dwa inne) w miejscu dawnego `padding_0` (offsety 208–221), więc pola czytane przez moduł się nie przesuwają.
+  - **Kupno to `swap2` z trybem ExactIn** (`amount_0` = lamporty, `amount_1` = minimum, `swap_mode` 0), tak jak prawdziwe zakupy na mainnecie. Kolejność instrukcji: limit i cena jednostek obliczeń, idempotentne ATA dla wrapped SOL i tokenu, przelew SOL i `SyncNative`, `swap2`, zamknięcie konta wrapped SOL do płatnika. Konto polecającego jest puste (Anchor: adres programu).
+  - **Wydatek** = kwota wejściowa + opłata sieci + rent nowego ATA tokenu; rent konta wrapped SOL wraca przy zamknięciu. Rent bierze się z łańcucha, nie ze stałej: na devnecie 14.10.2026 ATA (165 B) kosztował 1 488 440 lamportów, nie 2 039 280. Istniejące konto wrapped SOL płatnika też zostanie zamknięte, a jego saldo wróci jako SOL.
+  - **Pierwsze kupno z minimalną opłatą** (`enable_first_swap_with_min_fee`) dotyczy tylko kupna w transakcji tworzącej pulę; moduł zawsze liczy pełną opłatę. Gdyby program dał niższą, kupujący dostanie więcej, nie mniej.
+  - **Jawne wyniki zamiast wyceny:** `no-pool`, `graduated` (pula po migracji albo rezerwa na progu migracji), `insufficient-liquidity` (kwota większa niż reszta krzywej), `not-active` (przed `activation_point`), `unsupported-quote` (pula kwotowana nie w SOL; decyzja tymczasowa z 12.10.2026 w zadaniu), `unsupported-token` (mint Token-2022 z opłatą transferową, hookiem, domyślnym zamrożeniem, nieprzenaszalny albo z pauzą; numery rozszerzeń z `solana-program/token-2022`, `interface/src/extension/mod.rs`).
+  - **Pula z mintu:** PDA puli wymaga adresu configu (seed `pool`, config, większy mint, mniejszy mint), więc moduł czyta `getProgramAccounts` programu DBC z filtrami `dataSize` 424 i `memcmp` na `base_mint` (offset 136), a każde znalezione konto sprawdza z PDA. Helius obsługuje te filtry na mainnecie. Koszt według cennika Heliusa (docs „Credits”, odczyt 14.10.2026): `getProgramAccounts` 10 kredytów za wywołanie, zwykłe wywołanie RPC 1 kredyt, stronicowane `getProgramAccountsV2` 1 kredyt. W etapie 2 główną drogą będzie pula z wykrycia watchera, a `getProgramAccounts` zostanie zapasem (decyzja Andy'ego).
+  - **Punkt czasu dla opłat:** slot albo czas bloku, zależnie od `activation_type` w configu.
+  - **Bez podpisu i bez wysyłki w etapie 1:** `src/worker/**` nietknięte. Devnet sprawdzony `simulateTransaction` bez podpisów (`sigVerify: false`) z publicznym adresem portfela głównego devnet jako płatnikiem.
+- Konsekwencje / alternatywy:
+  - Fixtures (`tests/fixtures/meteora-dbc.mainnet.json`: 4 zakupy, opłata z tokenu; `meteora-dbc.devnet.json`: 2 zakupy, opłata z SOL, tryb PartialFill, który przy kwocie mieszczącej się na krzywej daje to samo co ExactIn): stan puli odczytany po jej najnowszej sygnaturze i pierwsza udana transakcja po tym odczycie. Oczekiwana liczba tokenów pochodzi z sald płatnika w meta transakcji. Przy zbieraniu każda wycena zgadzała się też z `output_amount` i `next_sqrt_price` ze zdarzenia `EvtSwap2`.
+  - Sprzedaż, pule po migracji (DAMM) i tokeny z hookiem transferowym są poza zakresem.
+  - Odrzucone: SDK jako zależność (drugi stos Solany, `bn.js`), `swap` v1 (prawdziwe zakupy używają `swap2`).
+
+## D-055: Salda na żywo: `accountSubscribe` na portfel, odpytywanie jako zapas
 
 - Data: 2026-10-14
 - Zadanie: BUNNDLY-57

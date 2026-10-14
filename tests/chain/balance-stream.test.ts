@@ -1,5 +1,5 @@
 /**
- * Live balances (BUNNDLY-57, D-053): one socket, one `accountSubscribe` per wallet, a
+ * Live balances (BUNNDLY-57, D-055): one socket, one `accountSubscribe` per wallet, a
  * notification changes only its wallet, polling until every wallet is subscribed, the
  * watcher's keep-alive and backoff, nothing from a closed socket. Fake WebSocket and
  * clock, no network.

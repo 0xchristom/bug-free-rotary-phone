@@ -1,5 +1,5 @@
 /**
- * Live balances in the vault worker (BUNNDLY-57, D-053): the feed opens one socket with a
+ * Live balances in the vault worker (BUNNDLY-57, D-055): the feed opens one socket with a
  * subscription per wallet, a notification becomes a `balance` event of its wallet only,
  * locking closes the socket, new wallets get exactly their subscriptions, a switched
  * network drops the old socket, and a landed transaction reads the wallet's token balance

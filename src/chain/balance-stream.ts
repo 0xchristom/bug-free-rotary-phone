@@ -1,5 +1,5 @@
 /**
- * Live SOL balances of the fleet (BUNNDLY-57, D-053): one Helius WebSocket with an
+ * Live SOL balances of the fleet (BUNNDLY-57, D-055): one Helius WebSocket with an
  * `accountSubscribe` per wallet at `confirmed`. A notification changes the balance of its
  * wallet only. The feed is `live` once every wallet of the socket is subscribed and
  * `polling` otherwise: the caller then keeps reading with `getMultipleAccounts`.

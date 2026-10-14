@@ -7,8 +7,11 @@
  */
 import type { FeedState } from '../chain/balance-stream.ts';
 import type { TargetKind } from '../chain/target.ts';
-import type { ExecutorEvent, Side } from '../executor/executor.ts';
+import type { ExecutorEvent, Side, StairsOptions } from '../executor/executor.ts';
 import type { WatchEvent, WatchStatus } from '../watcher/watch.ts';
+import type { RememberedView } from './remember.ts';
+
+export type { RememberedView, RememberPrefs } from './remember.ts';
 import type {
   ApiKeyName,
   ConnectionReport,
@@ -39,10 +42,36 @@ export type VaultRequest =
       readonly password: string;
       /** Import an existing mnemonic; omit to generate a new 24-word one. */
       readonly mnemonic?: string;
+      /** Remember the fleet on this device (BUNNDLY-52); omitted leaves the device as it is. */
+      readonly remember?: boolean;
     }
   /** Validates a keystore file and returns its public part; needs no password. */
   | { readonly type: 'preview'; readonly fileText: string }
-  | { readonly type: 'unlock'; readonly fileText: string; readonly password: string }
+  | {
+      readonly type: 'unlock';
+      readonly fileText: string;
+      readonly password: string;
+      /** As in `create`. */
+      readonly remember?: boolean;
+    }
+  /** The fleet remembered on this device and the device settings (public data only). */
+  | { readonly type: 'remembered' }
+  /**
+   * Opens the remembered fleet without the password while its window lasts (BUNNDLY-52)
+   * and starts the window again from now. Otherwise, or on any problem, removes the
+   * session record and answers the locked status.
+   */
+  | { readonly type: 'resume' }
+  /** Unlocks the remembered fleet with the password. */
+  | { readonly type: 'unlockRemembered'; readonly password: string }
+  /** Device settings: remember the fleet, and the window length (null: no time limit). */
+  | {
+      readonly type: 'setRemember';
+      readonly remember: boolean;
+      readonly windowMs: number | null;
+    }
+  /** "Forget this device": removes the remembered fleet and the session record. */
+  | { readonly type: 'forget' }
   /** SOL balances of the fleet via Helius (fallback: public RPC). Not user activity. */
   | {
       readonly type: 'refreshBalances';
@@ -106,6 +135,8 @@ export type VaultRequest =
       /** Wallet indices; each at most once, all in the group. */
       readonly wallets?: readonly number[];
       readonly group?: string;
+      /** Stairs mode (BUNNDLY-61); absent: Immediate. */
+      readonly stairs?: StairsOptions;
     }
   /**
    * Sell `mint` for SOL with the listed wallets (SPEC 11.4, BUNNDLY-60). The token balances
@@ -122,9 +153,18 @@ export type VaultRequest =
       readonly percent?: number;
       /** The wallets must all be in this group. */
       readonly group?: string;
+      /** Stairs mode (BUNNDLY-61); absent: Immediate. */
+      readonly stairs?: StairsOptions;
     }
   /** STOP: no new `/order`; transactions already sent are followed to the end. */
   | { readonly type: 'stop'; readonly group?: string }
+  /**
+   * Stairs (BUNNDLY-61): no new step and no new `/order` until `resumeStairs`; sent transactions
+   * finish. Without a Stairs run, or once every step has started, nothing changes.
+   */
+  | { readonly type: 'pauseStairs'; readonly group?: string }
+  /** Stairs: the steps left start later by the time paused. */
+  | { readonly type: 'resumeStairs'; readonly group?: string }
   /**
    * Mode B (SPEC 3.4 B, BUNNDLY-34): watch `creator` and buy every token it creates, by
    * the `mode` setting. `wallets` as in startBuy, fixed until disarmed (BUNNDLY-59); the
@@ -136,13 +176,15 @@ export type VaultRequest =
       readonly creator: string;
       readonly wallets?: readonly number[];
       readonly group?: string;
+      /** Stairs mode for every buy of this arming (BUNNDLY-61); steps count from the detection. */
+      readonly stairs?: StairsOptions;
     }
   /** Closes the socket and empties the detection queue; a running buy goes on. */
   | { readonly type: 'disarm'; readonly group?: string }
   /** User activity in the UI; resets the auto-lock timer. */
   | { readonly type: 'activity' }
   /**
-   * Live balances (BUNNDLY-57, D-053): `on` opens one Helius WebSocket with a subscription
+   * Live balances (BUNNDLY-57, D-055): `on` opens one Helius WebSocket with a subscription
    * per wallet, `off` closes it. Changes arrive as `balance` events. Locking closes it too.
    * Not user activity. Without a Helius key the feed stays `polling`.
    */
@@ -206,7 +248,7 @@ export interface BalanceFeedStatus {
 }
 
 /**
- * Live balance changes (BUNNDLY-57, D-053), each with the network it was read on: the UI
+ * Live balance changes (BUNNDLY-57, D-055), each with the network it was read on: the UI
  * drops one that belongs to a network no longer shown.
  */
 export type BalanceEvent = { readonly kind: 'balance'; readonly network: Network } & (
@@ -232,6 +274,10 @@ export interface BuyStatus {
   readonly wallets: number;
   /** False after STOP, while sent transactions finish. */
   readonly accepting: boolean;
+  /** Present for a Stairs run only (BUNNDLY-61). */
+  readonly stairs?: StairsOptions;
+  /** Stairs: paused with `pauseStairs`. */
+  readonly paused?: boolean;
 }
 
 /** One wallet group's state (BUNNDLY-68). */
@@ -273,6 +319,11 @@ export interface VaultResultMap {
   readonly classifyTarget: TargetKind;
   readonly exportPlain: PlainExport;
   readonly unlock: VaultStatus;
+  readonly remembered: RememberedView;
+  readonly resume: VaultStatus;
+  readonly unlockRemembered: VaultStatus;
+  readonly setRemember: RememberedView;
+  readonly forget: RememberedView;
   readonly lock: VaultStatus;
   readonly status: VaultStatus;
   readonly saveSettings: VaultFileResult;
@@ -281,6 +332,8 @@ export interface VaultResultMap {
   readonly startBuy: BuyStatus;
   readonly startSell: BuyStatus;
   readonly stop: VaultStatus;
+  readonly pauseStairs: VaultStatus;
+  readonly resumeStairs: VaultStatus;
   readonly arm: VaultStatus;
   readonly disarm: VaultStatus;
   readonly activity: VaultStatus;

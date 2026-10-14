@@ -64,7 +64,7 @@ export function isBuyRunning(view: BuyView, vaultBuy: BuyStatus | null): boolean
 /** Still working on it: in the pipeline, or UNKNOWN while the chain is checked. */
 export function inProgress(row: BuyRow): boolean {
   if (row.state === 'UNKNOWN') return row.reason?.code === 'EXECUTE_NO_ANSWER';
-  return ['IDLE', 'QUEUED', 'QUOTING', 'SIGNING', 'SUBMITTED'].includes(row.state);
+  return ['IDLE', 'SCHEDULED', 'QUEUED', 'QUOTING', 'SIGNING', 'SUBMITTED'].includes(row.state);
 }
 
 function count(rows: ReadonlyMap<number, BuyRow>): BuyCounts {

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /** Settings screen (BUNNDLY-15) against the real vault handler. */
-import { cleanup, render, screen, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import type { UserEvent } from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_GLOBAL_SETTINGS, openKeystore, parseKeystoreFile } from '../../src/core/index.ts';
@@ -343,6 +343,31 @@ describe('saving', () => {
     const confirm = vi.spyOn(window, 'confirm').mockReturnValueOnce(false);
     await user.click(screen.getByRole('button', { name: 'Lock' }));
     expect(confirm).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('heading', { name: 'Settings' })).toBeTruthy();
+  });
+
+  it('Lock clicked the moment the file button shows still asks first (BUNNDLY-76)', async () => {
+    const { handler, user } = await setup();
+    await retype(user, 'Max attempts per wallet', '4');
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    // Clicks Lock in the same turn React shows "Save the updated fleet file", before any
+    // later task: the unsaved guard must already hold, not one effect later.
+    let clicked = false;
+    const observer = new MutationObserver(() => {
+      if (clicked || !screen.queryByRole('button', { name: 'Save the updated fleet file' })) {
+        return;
+      }
+      clicked = true;
+      fireEvent.click(screen.getByRole('button', { name: 'Lock' }));
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
+    await user.click(saveButton());
+    await waitFor(() => {
+      expect(clicked).toBe(true);
+    });
+    observer.disconnect();
+    expect(confirm).toHaveBeenCalledTimes(1);
+    expect(handler.inspect().unlocked).not.toBeNull();
     expect(screen.getByRole('heading', { name: 'Settings' })).toBeTruthy();
   });
 });

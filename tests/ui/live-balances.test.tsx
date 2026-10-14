@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * Live balances on screen (BUNNDLY-57, D-053): a `balance` event for wallet k changes only
+ * Live balances on screen (BUNNDLY-57, D-055): a `balance` event for wallet k changes only
  * row k, to the lamports of the event, and flashes only that cell; the rail and the column
  * say "Polling" until the worker says "Live"; going live reads everything once more, and
  * polling reads again every interval; an event of a network not on screen is dropped.

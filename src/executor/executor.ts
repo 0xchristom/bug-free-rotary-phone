@@ -22,6 +22,11 @@
  *   wallet puts in its planned token amount and gets SOL. It differs in two places only:
  *   a wallet with nothing planned is skipped before any request, and there is no price
  *   ceiling (and no floor). Queue, limiter, retries and the chain check are shared.
+ * - Stairs (BUNNDLY-61, `stairs`): the wallets that pass the pre-checks enter the queue in
+ *   steps, `perStep` at a time in table order, step k at `start + k × intervalMs` plus the
+ *   time spent paused (absolute times, not a chain of delays). Until its step a wallet is
+ *   SCHEDULED and sends nothing. A pause starts no step and no `/order`; attempts in
+ *   flight finish. Retries go through the queue as always and move no step.
  *
  * Pure logic with injected Jupiter client, signer, limiters and clock; no DOM, no keys.
  * Events carry no keys and no signed transactions.
@@ -122,6 +127,8 @@ export interface WalletTimes {
 
 export interface WalletEvent {
   readonly kind: 'wallet';
+  /** Stairs: when the wallet's step starts; present on SCHEDULED only (BUNNDLY-61). */
+  readonly scheduledAt?: number;
   /** Present for a sell only; the events of a buy are as they were before BUNNDLY-60. */
   readonly side?: Side;
   readonly runId: number;
@@ -137,7 +144,34 @@ export interface WalletEvent {
   readonly times: WalletTimes;
 }
 
-export type RunPhase = 'started' | 'stopping' | 'finished';
+/**
+ * `step`, `paused` and `resumed` come from a Stairs run only (BUNNDLY-61): a step let its
+ * wallets into the queue, a pause began, a pause ended.
+ */
+export type RunPhase = 'started' | 'step' | 'paused' | 'resumed' | 'stopping' | 'finished';
+
+/** Stairs parameters (BUNNDLY-61). */
+export interface StairsOptions {
+  /** Between the starts of two steps: 1 s to 24 h. */
+  readonly intervalMs: number;
+  /** Wallets let in per step, at least 1. */
+  readonly perStep: number;
+}
+
+/** Where a Stairs run is (BUNNDLY-61). */
+export interface StairsProgress {
+  readonly intervalMs: number;
+  readonly perStep: number;
+  /** Steps started so far, 0 to `steps`. */
+  readonly step: number;
+  readonly steps: number;
+  readonly paused: boolean;
+  /** When the next step starts; null when paused or when no step is left. */
+  readonly nextStepAt: number | null;
+}
+
+export const STAIRS_INTERVAL_MIN_MS = 1_000;
+export const STAIRS_INTERVAL_MAX_MS = 24 * 60 * 60 * 1_000;
 
 export interface RunEvent {
   readonly kind: 'run';
@@ -150,6 +184,8 @@ export interface RunEvent {
   readonly dryRun: boolean;
   readonly wallets: number;
   readonly counts: Readonly<Record<WalletState, number>>;
+  /** Present for a Stairs run only. */
+  readonly stairs?: StairsProgress;
 }
 
 export type ExecutorEvent = WalletEvent | RunEvent | VerifyEvent;
@@ -185,6 +221,11 @@ export interface RunOptions {
    * instead of from the start of the run (SPEC 3.6).
    */
   readonly triggeredAt?: number;
+  /**
+   * Stairs mode (BUNNDLY-61); absent: Immediate. Steps count from the start of the run, or
+   * from the detection in mode B.
+   */
+  readonly stairs?: StairsOptions;
   /** Defaults: `LANDING_POLL_MS`, `LANDING_TIMEOUT_MS`. */
   readonly landingPollMs?: number;
   readonly landingTimeoutMs?: number;
@@ -208,6 +249,13 @@ export interface ExecutorRun {
   readonly done: Promise<RunSummary>;
   /** STOP: empties the queue, starts no new `/order`; sent transactions finish. */
   stop(): void;
+  /**
+   * Stairs only: no new step and no new `/order` until `resume`; attempts in flight finish.
+   * False when there is nothing to pause (Immediate, already paused, stopped, finished).
+   */
+  pause(): boolean;
+  /** Stairs only: the steps left move later by the time paused. False when not paused. */
+  resume(): boolean;
   snapshot(): RunSummary;
 }
 
@@ -307,6 +355,44 @@ export function startRun(deps: ExecutorDeps, options: RunOptions): ExecutorRun {
   const isStopped = (): boolean => stopped;
   let inFlight = 0;
   let fatal: unknown = null;
+  let finished = false;
+  /** Stairs (BUNNDLY-61): the wallets of each step; the run's first step is index 0. */
+  const stairs = options.stairs ?? null;
+  // The vault refuses these with INVALID_STAIRS; here perStep 0 would build steps forever.
+  if (
+    stairs !== null &&
+    !(
+      Number.isInteger(stairs.intervalMs) &&
+      stairs.intervalMs >= STAIRS_INTERVAL_MIN_MS &&
+      stairs.intervalMs <= STAIRS_INTERVAL_MAX_MS &&
+      Number.isInteger(stairs.perStep) &&
+      stairs.perStep >= 1
+    )
+  ) {
+    throw new RangeError('stairs out of range');
+  }
+  const steps: (readonly number[])[] = [];
+  /** The next step to start; `steps.length` when every step has started. */
+  let nextStep = 0;
+  let paused = false;
+  /** Read through a function: a pause may come while the dispatcher awaits the limiter. */
+  const isPaused = (): boolean => paused;
+  let pausedAt = 0;
+  /** Time spent paused so far: every step not yet started moves later by it. */
+  let pausedMs = 0;
+  let onResume: (() => void) | null = null;
+  const stepAt = (k: number): number => startedAt + k * (stairs?.intervalMs ?? 0) + pausedMs;
+  const progress = (): StairsProgress | null =>
+    stairs === null
+      ? null
+      : {
+          intervalMs: stairs.intervalMs,
+          perStep: stairs.perStep,
+          step: nextStep,
+          steps: steps.length,
+          paused,
+          nextStepAt: paused || nextStep >= steps.length ? null : stepAt(nextStep),
+        };
   let wake: (() => void) | null = null;
   const nudge = (): void => {
     const w = wake;
@@ -342,6 +428,7 @@ export function startRun(deps: ExecutorDeps, options: RunOptions): ExecutorRun {
   });
 
   const emitRun = (phase: RunPhase): void => {
+    const stairsNow = progress();
     deps.emit({
       kind: 'run',
       ...sideField,
@@ -352,16 +439,23 @@ export function startRun(deps: ExecutorDeps, options: RunOptions): ExecutorRun {
       dryRun: options.dryRun,
       wallets: slots.size,
       counts: counts(),
+      ...(stairsNow === null ? {} : { stairs: stairsNow }),
     });
   };
 
-  const move = (index: number, to: WalletState, reason: WalletReason | null = null): void => {
+  const move = (
+    index: number,
+    to: WalletState,
+    reason: WalletReason | null = null,
+    scheduledAt: number | null = null,
+  ): void => {
     const slot = slotOf(index);
     assertTransition(slot.state, to);
     slot.state = to;
     if (reason !== null || FINAL_STATES.has(to)) slot.reason = reason;
     deps.emit({
       kind: 'wallet',
+      ...(scheduledAt === null ? {} : { scheduledAt }),
       ...sideField,
       runId: options.runId,
       at: clock.now(),
@@ -697,44 +791,103 @@ export function startRun(deps: ExecutorDeps, options: RunOptions): ExecutorRun {
     } else apply(index, decision);
   };
 
-  const dispatch = async (): Promise<RunSummary> => {
-    emitRun('started');
-    // Before /order: balances from the last refresh only, no requests on the hot path.
-    for (const slot of slots.values()) {
-      const { wallet } = slot;
-      if (selling) {
-        // Nothing to sell: no request. The fee is Jupiter's call (it may sponsor the gas),
-        // so a wallet short of SOL is skipped by the `/order` answer, not guessed here.
-        if (wallet.maxSpend <= 0n) {
-          skip(wallet.index, 'NO_TOKENS');
-        } else {
-          move(wallet.index, 'QUEUED');
-          queue.push(wallet.index);
-        }
-      } else if (wallet.balance === null) {
-        skip(wallet.index, 'BALANCE_UNKNOWN');
-      } else if (
-        // 0: a percent of a balance that does not exceed the reserve (BUNNDLY-58)
-        wallet.maxSpend <= 0n ||
-        wallet.balance < wallet.maxSpend + options.minReserveLamports
-      ) {
-        skip(wallet.index, 'INSUFFICIENT_SOL');
-      } else {
-        move(wallet.index, 'QUEUED');
-        queue.push(wallet.index);
+  /** Before /order: balances from the last refresh only, no requests on the hot path. */
+  const precheck = (wallet: ExecutorWallet): SkipReason | null => {
+    if (selling) {
+      // Nothing to sell: no request. The fee is Jupiter's call (it may sponsor the gas),
+      // so a wallet short of SOL is skipped by the `/order` answer, not guessed here.
+      return wallet.maxSpend <= 0n ? 'NO_TOKENS' : null;
+    }
+    if (wallet.balance === null) return 'BALANCE_UNKNOWN';
+    // 0: a percent of a balance that does not exceed the reserve (BUNNDLY-58)
+    if (wallet.maxSpend <= 0n || wallet.balance < wallet.maxSpend + options.minReserveLamports) {
+      return 'INSUFFICIENT_SOL';
+    }
+    return null;
+  };
+
+  /** Stairs: the next step's wallets enter the queue. */
+  const startStep = (): void => {
+    const group = steps[nextStep];
+    if (group === undefined) return;
+    nextStep += 1;
+    for (const index of group) {
+      move(index, 'QUEUED');
+      queue.push(index);
+    }
+    emitRun('step');
+    nudge();
+  };
+
+  /** Stairs: starts each step at its time; a pause holds it, a resume moves it later. */
+  const runSteps = async (): Promise<void> => {
+    while (nextStep < steps.length && !stopped) {
+      if (paused) {
+        await new Promise<void>((resolve) => {
+          onResume = resolve;
+        });
+        continue;
       }
+      const wait = stepAt(nextStep) - clock.now();
+      if (wait > 0) {
+        await clock.sleep(wait);
+        continue;
+      }
+      startStep();
+    }
+  };
+
+  const dispatch = async (): Promise<RunSummary> => {
+    if (stairs !== null) {
+      const ready = [...slots.values()]
+        .filter((slot) => precheck(slot.wallet) === null)
+        .map((slot) => slot.wallet.index);
+      for (let i = 0; i < ready.length; i += stairs.perStep) {
+        steps.push(ready.slice(i, i + stairs.perStep));
+      }
+    }
+    emitRun('started');
+    for (const slot of slots.values()) {
+      const { index } = slot.wallet;
+      const reason = precheck(slot.wallet);
+      if (reason !== null) {
+        skip(index, reason);
+      } else if (stairs === null) {
+        move(index, 'QUEUED');
+        queue.push(index);
+      }
+    }
+    if (stairs !== null) {
+      steps.forEach((group, k) => {
+        if (k === 0) return; // the first step starts now
+        for (const index of group) move(index, 'SCHEDULED', null, stepAt(k));
+      });
+      startStep();
+      void runSteps().catch((e: unknown) => {
+        fatal ??= e;
+        nudge();
+      });
     }
 
     /** Closed gate with its probe busy (in flight or in backoff): everyone else waits. */
     const gateBusy = (): boolean => gate.closed && (gate.probing || probeWaiting !== null);
+    /** Stairs steps not started yet keep the run going while nothing else is left. */
+    const stepsLeft = (): boolean => nextStep < steps.length;
     while (fatal === null && !stopped) {
+      if (paused) {
+        await idle(); // no /order while paused; resume or STOP wakes the loop
+        continue;
+      }
       if (queue.length === 0 || gateBusy()) {
-        if (queue.length === 0 && inFlight === 0 && probeWaiting === null) break;
+        if (queue.length === 0 && inFlight === 0 && probeWaiting === null && !stepsLeft()) {
+          break;
+        }
         await idle();
         continue;
       }
       if (!(await deps.orderLimiter.acquire(stopSignal.signal))) break;
       if (isStopped()) break;
+      if (isPaused()) continue; // paused while waiting for the limiter
       // The gate may have closed while waiting for the limiter.
       if (gateBusy()) continue;
       const index = queue.shift();
@@ -762,8 +915,17 @@ export function startRun(deps: ExecutorDeps, options: RunOptions): ExecutorRun {
       probeWaiting = null;
       skip(probe, 'STOPPED');
     }
+    // Stairs: the steps not started yet end with the queue.
+    for (const group of steps.slice(nextStep)) {
+      for (const index of group) skip(index, 'STOPPED');
+    }
+    nextStep = steps.length;
+    const wake = onResume;
+    onResume = null;
+    wake?.();
     while (inFlight > 0) await idle();
     if (fatal !== null) throw fatal instanceof Error ? fatal : new Error('executor failure');
+    finished = true;
     emitRun('finished');
     return summary();
   };
@@ -777,6 +939,30 @@ export function startRun(deps: ExecutorDeps, options: RunOptions): ExecutorRun {
       stopSignal.abort();
       emitRun('stopping');
       nudge();
+    },
+    pause() {
+      if (stairs === null || paused || stopped || finished || nextStep >= steps.length) {
+        return false;
+      }
+      paused = true;
+      pausedAt = clock.now();
+      emitRun('paused');
+      return true;
+    },
+    resume() {
+      if (!paused || stopped) return false;
+      pausedMs += clock.now() - pausedAt;
+      paused = false;
+      // The steps left start later by the pause: their wallets get the new times.
+      for (let k = nextStep; k < steps.length; k++) {
+        for (const index of steps[k] ?? []) move(index, 'SCHEDULED', null, stepAt(k));
+      }
+      emitRun('resumed');
+      const wake = onResume;
+      onResume = null;
+      wake?.();
+      nudge();
+      return true;
     },
     snapshot: summary,
   };

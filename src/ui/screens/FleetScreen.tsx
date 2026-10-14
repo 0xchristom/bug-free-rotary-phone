@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { isAppError, toUserMessage } from '../../core/errors.ts';
+import { effectiveGroups, groupOf, type WalletGroupV1 } from '../../core/groups.ts';
 import type { FleetSettingsV1 } from '../../core/keystore/format.ts';
 import { NETWORK_LABELS, NO_BUY_ROUTE_MESSAGE, buyRouteOf } from '../../core/network.ts';
 import { effectiveJupiterPlan } from '../../core/settings.ts';
@@ -10,7 +11,7 @@ import {
   type SaveResult,
   type StorageEnv,
 } from '../../storage/keystore-file.ts';
-import type { VaultInfo } from '../../worker/protocol.ts';
+import type { GroupStatus, VaultInfo } from '../../worker/protocol.ts';
 import { BuyPanel } from '../BuyPanel.tsx';
 import { CommandBar, type CommandReasons, type Target } from '../CommandBar.tsx';
 import { CreateWallets } from '../CreateWallets.tsx';
@@ -18,13 +19,22 @@ import { ExportDialog } from '../ExportDialog.tsx';
 import { FleetSummaryBar } from '../FleetSummaryBar.tsx';
 import { summarize } from '../fleet-math.ts';
 import { FleetTable } from '../FleetTable.tsx';
+import {
+  deleteGroup,
+  groupLamports,
+  groupState,
+  moveWallets,
+  renameGroup,
+  type MoveTarget,
+} from '../group-view.ts';
+import { GroupTabs } from '../GroupTabs.tsx';
 import type { OperationsLog } from '../operations-log.ts';
 import { OperationsLogPanel } from '../OperationsLogPanel.tsx';
 import { SettingsResetNotice } from '../SettingsResetNotice.tsx';
 import { formatSol } from '../sol.ts';
 import { LOCKED_HINT, applyWalletPatch, plannedSpend, type WalletPatch } from '../trade-edit.ts';
 import { useBalances } from '../use-balances.ts';
-import { EMPTY_BUY, isBuyRunning, type BuyRow, type BuyView } from '../use-buy.ts';
+import { EMPTY_BUY, type BuyRow, type BuyView } from '../use-buy.ts';
 import { useVault } from '../vault-state.ts';
 import { WATCH_FROZEN } from '../watch-labels.ts';
 import { useWatchRuntime } from '../watch-runtime.ts';
@@ -79,6 +89,10 @@ const QUEUED_ROW: BuyRow = {
 };
 
 const NO_READY = 'No ready wallets: select wallets that have a buy amount.';
+const PICK_GROUP = 'Pick a group tab: the commands act on one group at a time.';
+/** Why a running group keeps its wallets, its amounts and its name (BUNNDLY-68). */
+const runningText = (name: string): string =>
+  `${name} is running: wait for it to end or press STOP.`;
 
 const CONFIRM_TITLES = {
   buy: 'Buy in live mode?',
@@ -88,10 +102,11 @@ const CONFIRM_TITLES = {
 const CONFIRM_YES = { buy: 'Yes, buy', sell: 'Yes, sell', arm: 'Yes, arm' } as const;
 
 /** A command waiting for the live-mode confirmation. */
-type Confirm =
-  | { readonly kind: 'buy'; readonly mint: string; readonly wallets: readonly number[] }
-  | { readonly kind: 'sell'; readonly mint: string; readonly wallets: readonly number[] }
-  | { readonly kind: 'arm'; readonly creator: string; readonly wallets: readonly number[] };
+type Confirm = { readonly group: WalletGroupV1; readonly wallets: readonly number[] } & (
+  | { readonly kind: 'buy'; readonly mint: string }
+  | { readonly kind: 'sell'; readonly mint: string }
+  | { readonly kind: 'arm'; readonly creator: string }
+);
 
 type ActiveDrafts = Readonly<Record<number, boolean>>;
 
@@ -145,6 +160,42 @@ export function FleetScreen({
   const toast = useToast();
   const [phase, setPhase] = useState<AddPhase>({ kind: 'idle' });
   const [error, setError] = useState<string | null>(null);
+  // --- Wallet groups (BUNNDLY-69): the tabs, and the group the commands act on. ---
+  const groups = useMemo(
+    () =>
+      effectiveGroups(
+        info.settings.groups,
+        info.wallets.map((w) => w.index),
+      ),
+    [info],
+  );
+  const [tabChoice, setTabChoice] = useState<string | null>(() => groups[0]?.id ?? null);
+  // A deleted group's tab falls back to the first group.
+  const tab =
+    tabChoice === null || groups.some((g) => g.id === tabChoice)
+      ? tabChoice
+      : (groups[0]?.id ?? null);
+  const shownGroup = groups.find((g) => g.id === tab) ?? null;
+  // "All" with one group acts on that group; with more, a tab must be picked.
+  const commandGroup =
+    tab === null ? (groups.length === 1 ? (groups[0] ?? null) : null) : shownGroup;
+  const groupStatus = (id: string): GroupStatus | undefined =>
+    status?.groups.find((g) => g.id === id);
+  const busyBlock = (id: string): string | null => {
+    if (groupStatus(id)?.armed !== true) return null;
+    return runningText(groups.find((g) => g.id === id)?.name ?? id);
+  };
+  const commandStatus = commandGroup ? groupStatus(commandGroup.id) : undefined;
+  const groupArmed = commandStatus?.watch?.armed ?? false;
+  /** The target field's text per tab: each group keeps its own target. */
+  const [targetTexts, setTargetTexts] = useState<Readonly<Record<string, string>>>({});
+  const barKey = tab ?? '';
+  const onTargetText = useCallback(
+    (text: string) => {
+      setTargetTexts((t) => ({ ...t, [barKey]: text }));
+    },
+    [barKey],
+  );
 
   // Trade parameters are saved in the vault as soon as they are entered (BUNNDLY-71); only
   // the selection waits for "Save table changes".
@@ -170,7 +221,8 @@ export function FleetScreen({
   };
 
   const unsaved = phase.kind === 'unsaved' || tableDirty;
-  useEffect(() => {
+  // Layout effect: the guard holds from the commit that shows the change (BUNNDLY-76).
+  useLayoutEffect(() => {
     onUnsavedChange(unsaved);
     return () => {
       onUnsavedChange(false); // unmounted (e.g. after a lock): nothing left to protect
@@ -252,12 +304,16 @@ export function FleetScreen({
     [toast],
   );
 
-  // A buy or an arming uses exactly these wallets, saved in the file or not (BUNNDLY-59).
+  // A buy or an arming uses exactly these wallets, saved in the file or not (BUNNDLY-59),
+  // of the group it runs in (BUNNDLY-69).
   const selectedIndexes = useMemo(
     () => info.wallets.filter((w) => active[w.index] ?? true).map((w) => w.index),
     [info.wallets, active],
   );
   const selectedCount = selectedIndexes.length;
+  const groupSelected = commandGroup
+    ? selectedIndexes.filter((i) => commandGroup.wallets.includes(i))
+    : [];
   const summary = summarize(
     info.wallets.map((w) => ({
       balance: balances.lamports?.get(w.index) ?? null,
@@ -385,19 +441,34 @@ export function FleetScreen({
   // The worker's events of the new buy replace the queued rows.
   const queued = pending !== null && pending.since === runId ? pending.wallets : null;
 
-  const running = isBuyRunning(buyView, status?.buy ?? null);
-  const stopping = buyView.run?.phase === 'stopping' || status?.buy?.accepting === false;
+  // The newest run in the table belongs to the group whose status names it; one that no
+  // status shows yet (just started) counts as running everywhere until the next status.
+  const viewRun = buyView.run;
+  const viewRunClaimed =
+    viewRun !== null && (status?.groups ?? []).some((g) => g.buy?.runId === viewRun.runId);
+  const unclaimedRun = viewRun !== null && !viewRunClaimed && viewRun.phase !== 'finished';
+  const groupRunning = (gs: GroupStatus | undefined): boolean => {
+    if (unclaimedRun) return true;
+    const buy = gs?.buy ?? null;
+    if (buy === null) return false;
+    return !(viewRun?.runId === buy.runId && viewRun.phase === 'finished');
+  };
+  const running = groupRunning(commandStatus);
+  const stopping =
+    commandStatus?.buy?.accepting === false ||
+    (viewRun?.phase === 'stopping' && viewRun.runId === commandStatus?.buy?.runId);
+  const groupDetections = commandStatus?.watch?.detections;
   const detected = useMemo(
-    () => status?.watch?.detections.filter((d) => d.problem === null).at(-1) ?? null,
-    [status?.watch?.detections],
+    () => groupDetections?.filter((d) => d.problem === null).at(-1) ?? null,
+    [groupDetections],
   );
   const buyMint = target?.kind.kind === 'mint' ? target.address : (detected?.mint ?? null);
   // A buy spends the saved amounts: the selected wallets that have one.
-  const readyIndexes = selectedIndexes.filter(hasAmount);
+  const readyIndexes = groupSelected.filter(hasAmount);
   const hasWatcherKeys =
     (info.apiKeys.helius || info.apiKeys.heliusWsUrl) &&
     (info.apiKeys.helius || info.apiKeys.heliusRpcUrl);
-  const reasons: CommandReasons = {
+  const groupReasons: CommandReasons = {
     buy: running
       ? 'A buy is running. Wait for it to end or press STOP.'
       : commandBusy
@@ -431,17 +502,21 @@ export function FleetScreen({
         ? 'Sending the command…'
         : buyRouteOf(global.network) === null
           ? NO_BUY_ROUTE_MESSAGE
-          : watchArmed
+          : groupArmed
             ? 'DISARM first: the armed watcher may buy this token at any moment.'
             : buyMint === null
               ? 'Paste the mint of the token to sell.'
               : !hasRpc
                 ? 'Selling reads the token balances first: it needs a Helius key (Settings).'
-                : selectedIndexes.length === 0
+                : groupSelected.length === 0
                   ? 'Select the wallets that sell.'
                   : null,
     stop: !running ? 'Nothing is running.' : stopping ? 'Stopping…' : null,
   };
+  const reasons: CommandReasons =
+    commandGroup === null
+      ? { buy: PICK_GROUP, arm: PICK_GROUP, sell: PICK_GROUP, stop: PICK_GROUP }
+      : groupReasons;
 
   const command = async (task: () => Promise<unknown>): Promise<boolean> => {
     setCommandError(null);
@@ -456,7 +531,7 @@ export function FleetScreen({
       setCommandBusy(false);
     }
   };
-  const launchBuy = (buyFor: string, wallets: readonly number[]): void => {
+  const launchBuy = (buyFor: string, group: string, wallets: readonly number[]): void => {
     // The rows change in this click, before the worker answers.
     setPending({
       wallets: new Set(wallets.filter(hasAmount)),
@@ -464,7 +539,7 @@ export function FleetScreen({
     });
     void command(async () => {
       try {
-        await client.request({ type: 'startBuy', mint: buyFor, wallets });
+        await client.request({ type: 'startBuy', mint: buyFor, wallets, group });
       } catch (e) {
         setPending(null); // refused: the rows go back to what they were
         throw e;
@@ -472,17 +547,17 @@ export function FleetScreen({
       await refresh();
     });
   };
-  const requestBuy = (wallets: readonly number[]): void => {
+  const requestBuy = (group: WalletGroupV1, wallets: readonly number[]): void => {
     if (buyMint === null) return;
-    if (global.dryRun) launchBuy(buyMint, wallets);
-    else setConfirm({ kind: 'buy', mint: buyMint, wallets });
+    if (global.dryRun) launchBuy(buyMint, group.id, wallets);
+    else setConfirm({ kind: 'buy', mint: buyMint, group, wallets });
   };
   // SELL (BUNNDLY-60): each selected wallet sells its set part of its token balance.
-  const launchSell = (mint: string, wallets: readonly number[]): void => {
+  const launchSell = (mint: string, group: string, wallets: readonly number[]): void => {
     setPending({ wallets: new Set(wallets), since: runId });
     void command(async () => {
       try {
-        await client.request({ type: 'startSell', mint, wallets });
+        await client.request({ type: 'startSell', mint, wallets, group });
       } catch (e) {
         setPending(null);
         throw e;
@@ -491,46 +566,78 @@ export function FleetScreen({
     });
   };
   const onSell = (): void => {
-    if (reasons.sell !== null || buyMint === null) return;
-    if (global.dryRun) launchSell(buyMint, selectedIndexes);
-    else setConfirm({ kind: 'sell', mint: buyMint, wallets: selectedIndexes });
+    if (reasons.sell !== null || buyMint === null || commandGroup === null) return;
+    if (global.dryRun) launchSell(buyMint, commandGroup.id, groupSelected);
+    else setConfirm({ kind: 'sell', mint: buyMint, group: commandGroup, wallets: groupSelected });
   };
-  const launchArm = (creator: string, wallets: readonly number[]): void => {
+  const launchArm = (creator: string, group: string, wallets: readonly number[]): void => {
     alarm.prime(); // the click allows the alarm sound later (autoplay policy)
     void command(async () => {
-      await client.request({ type: 'arm', creator, wallets });
+      await client.request({ type: 'arm', creator, wallets, group });
       await refresh();
     });
   };
   const onBuy = (): void => {
-    if (reasons.buy === null) requestBuy(selectedIndexes);
+    if (reasons.buy === null && commandGroup !== null) requestBuy(commandGroup, groupSelected);
   };
   const onArm = (): void => {
-    if (reasons.arm !== null || target === null) return;
-    if (global.dryRun) launchArm(target.address, selectedIndexes);
-    else setConfirm({ kind: 'arm', creator: target.address, wallets: selectedIndexes });
+    if (reasons.arm !== null || target === null || commandGroup === null) return;
+    if (global.dryRun) launchArm(target.address, commandGroup.id, groupSelected);
+    else {
+      setConfirm({
+        kind: 'arm',
+        creator: target.address,
+        group: commandGroup,
+        wallets: groupSelected,
+      });
+    }
   };
   const onDisarm = (): void => {
+    if (commandGroup === null) return;
+    const group = commandGroup.id;
     void command(async () => {
-      await client.request({ type: 'disarm' });
+      await client.request({ type: 'disarm', group });
       await refresh();
     });
   };
   const onStop = (): void => {
-    if (reasons.stop !== null) return;
+    if (reasons.stop !== null || commandGroup === null) return;
+    const group = commandGroup.id;
     void command(async () => {
-      await client.request({ type: 'stop' });
+      await client.request({ type: 'stop', group });
       await refresh();
     });
   };
-  // Row action: the same request with one wallet. Stable for the memoized rows.
-  const rowBuy = useRef(requestBuy);
+  // Row action: one wallet buys in its own group, whatever tab is shown. Stable for the
+  // memoized rows.
+  const buyInGroup = (index: number): void => {
+    const group = groups.find((g) => g.id === groupOf(groups, index));
+    if (group) requestBuy(group, [index]);
+  };
+  const rowBuy = useRef(buyInGroup);
   useEffect(() => {
-    rowBuy.current = requestBuy;
+    rowBuy.current = buyInGroup;
   });
   const onBuyWallet = useCallback((index: number) => {
-    rowBuy.current([index]);
+    rowBuy.current(index);
   }, []);
+  // The row buy needs a mint and no command in flight; a running group's rows say why not.
+  const rowBlocked = commandBusy
+    ? 'Sending the command…'
+    : (buyBlocked ?? (buyMint === null ? 'Paste a token mint first.' : null));
+  const statusGroups = status?.groups;
+  const frozen = useMemo(() => {
+    const out = new Map<number, string>();
+    for (const g of groups) {
+      if (statusGroups?.find((s) => s.id === g.id)?.armed !== true) continue;
+      for (const i of g.wallets) out.set(i, runningText(g.name));
+    }
+    return out;
+  }, [groups, statusGroups]);
+  const groupNames = useMemo(
+    () => new Map(groups.flatMap((g) => g.wallets.map((i) => [i, g.name] as const))),
+    [groups],
+  );
   const confirmSpend = (wallets: readonly number[]): bigint =>
     wallets.reduce((sum, i) => sum + (spendOf(i) ?? 0n), 0n);
   /** The part each wallet sells (BUNNDLY-58 sets it per wallet): one value or a range. */
@@ -552,23 +659,119 @@ export function FleetScreen({
 
   // Wallets whose trade settings stay until their group's action ends: every wallet of an
   // armed watcher's group, and the wallets of a running buy or sell (D-045, D-046).
-  const groupsStatus = status?.groups;
   const runRows = buyView.rows;
   const locked = useMemo(() => {
     const out = new Set<number>();
-    if (!groupsStatus) return out;
-    const groups =
-      info.settings.groups.length > 0
-        ? info.settings.groups
-        : [{ id: 'g1', wallets: info.wallets.map((w) => w.index) }];
-    for (const g of groupsStatus) {
+    for (const g of statusGroups ?? []) {
       const members = groups.find((x) => x.id === g.id)?.wallets ?? [];
       for (const index of members) {
         if (g.watch?.armed === true || (g.buy !== null && runRows.has(index))) out.add(index);
       }
     }
     return out;
-  }, [groupsStatus, runRows, info.settings.groups, info.wallets]);
+  }, [statusGroups, runRows, groups]);
+
+  // --- Group changes (BUNNDLY-69): saved in the vault, then the file waits to be saved. ---
+  const tableWallets = useMemo(
+    () =>
+      shownGroup === null
+        ? info.wallets
+        : info.wallets.filter((w) => shownGroup.wallets.includes(w.index)),
+    [info.wallets, shownGroup],
+  );
+  const groupTabs = groups.map((g) => ({
+    id: g.id,
+    name: g.name,
+    wallets: g.wallets,
+    state: groupState(groupStatus(g.id)),
+    lamports: groupLamports(g.wallets, balances.lamports),
+  }));
+  /** The selected wallets the tab shows: the ones "Move to group" moves. */
+  const viewSelected = tableWallets.filter((w) => active[w.index] ?? true).map((w) => w.index);
+  const changing = commandBusy || phase.kind === 'adding' || phase.kind === 'savingTable';
+  const sourceBusy = [...new Set(viewSelected.map((i) => groupOf(groups, i)))].flatMap((id) => {
+    const why = id === undefined ? null : busyBlock(id);
+    return why === null ? [] : [why];
+  });
+  const moveBlocked = changing
+    ? 'Wait for the current change to finish.'
+    : viewSelected.length === 0
+      ? 'Select the wallets to move.'
+      : (sourceBusy[0] ?? null);
+  const targetBlocked = new Map(
+    groups.flatMap((g) => {
+      const why =
+        busyBlock(g.id) ??
+        (viewSelected.every((i) => g.wallets.includes(i))
+          ? 'The selected wallets are in this group already.'
+          : null);
+      return why === null ? [] : [[g.id, why] as const];
+    }),
+  );
+  const firstGroup = groups[0];
+  const deleteBlocked =
+    shownGroup === null
+      ? null
+      : shownGroup.id === firstGroup?.id
+        ? 'The first group takes the wallets of deleted groups: it cannot be deleted.'
+        : (busyBlock(shownGroup.id) ?? (firstGroup ? busyBlock(firstGroup.id) : null));
+  // In the trade saves' queue, so a group change and an amount entered just before it both stay.
+  const saveGroups = (next: readonly WalletGroupV1[], note: string): Promise<boolean> => {
+    setError(null);
+    const run = async (): Promise<boolean> => {
+      const current = latest.current;
+      try {
+        const result = await client.request({
+          type: 'saveSettings',
+          settings: {
+            maxSpend: current.maxSpend,
+            active: current.active,
+            global: current.global,
+            groups: next,
+          },
+        });
+        latest.current = result.info.settings;
+        setPhase({
+          kind: 'unsaved',
+          fileText: result.fileText,
+          fleetName: result.info.fleetName,
+          note,
+          savedNote: 'with the new wallet groups',
+          saving: false,
+        });
+        await refresh();
+        return true;
+      } catch (e) {
+        setError(toUserMessage(e));
+        return false;
+      }
+    };
+    const result = queue.current.then(run, run);
+    queue.current = result;
+    return result;
+  };
+  const onMove = async (to: MoveTarget): Promise<boolean> => {
+    if (moveBlocked !== null) return false;
+    const name = 'name' in to ? to.name : (groups.find((g) => g.id === to.id)?.name ?? to.id);
+    return saveGroups(
+      moveWallets(groups, viewSelected, to),
+      `${String(viewSelected.length)} wallets moved to ${name}; the groups are saved in the vault.`,
+    );
+  };
+  const onRename = async (name: string): Promise<boolean> => {
+    if (shownGroup === null || busyBlock(shownGroup.id) !== null) return false;
+    return saveGroups(
+      renameGroup(groups, shownGroup.id, name),
+      `${shownGroup.name} is now ${name}; the groups are saved in the vault.`,
+    );
+  };
+  const onDelete = async (): Promise<boolean> => {
+    if (shownGroup === null || deleteBlocked !== null) return false;
+    return saveGroups(
+      deleteGroup(groups, shownGroup.id),
+      `${shownGroup.name} is deleted and its wallets are in ${firstGroup?.name ?? 'the first group'}; the groups are saved in the vault.`,
+    );
+  };
 
   // Why "Create wallets" is off right now, in words next to the button.
   const createBlocked = watchArmed
@@ -666,9 +869,29 @@ export function FleetScreen({
         )}
       </BuyPanel>
 
+      <GroupTabs
+        groups={groupTabs}
+        tab={tab}
+        onTab={setTabChoice}
+        allCount={info.wallets.length}
+        allLamports={groupLamports(
+          info.wallets.map((w) => w.index),
+          balances.lamports,
+        )}
+        moveCount={viewSelected.length}
+        moveBlocked={moveBlocked}
+        targetBlocked={targetBlocked}
+        onMove={onMove}
+        renameBlocked={shownGroup ? busyBlock(shownGroup.id) : null}
+        deleteBlocked={deleteBlocked}
+        onRename={onRename}
+        onDelete={onDelete}
+      />
       <CommandBar
+        text={targetTexts[barKey] ?? ''}
+        onText={onTargetText}
         dryRun={global.dryRun}
-        armed={watchArmed}
+        armed={groupArmed}
         busy={commandBusy}
         reasons={reasons}
         blocked={buyBlocked}
@@ -713,9 +936,10 @@ export function FleetScreen({
                 variant="danger"
                 onClick={() => {
                   setConfirm(null);
-                  if (confirm.kind === 'buy') launchBuy(confirm.mint, confirm.wallets);
-                  else if (confirm.kind === 'sell') launchSell(confirm.mint, confirm.wallets);
-                  else launchArm(confirm.creator, confirm.wallets);
+                  const { group, wallets } = confirm;
+                  if (confirm.kind === 'buy') launchBuy(confirm.mint, group.id, wallets);
+                  else if (confirm.kind === 'sell') launchSell(confirm.mint, group.id, wallets);
+                  else launchArm(confirm.creator, group.id, wallets);
                 }}
               >
                 {CONFIRM_YES[confirm.kind]}
@@ -724,6 +948,10 @@ export function FleetScreen({
           }
         >
           <dl className="summary" aria-label="What the command does">
+            <div>
+              <dt>Group</dt>
+              <dd>{confirm.group.name}</dd>
+            </div>
             <div>
               <dt>Wallets</dt>
               <dd>
@@ -761,7 +989,7 @@ export function FleetScreen({
       )}
 
       <FleetTable
-        wallets={info.wallets}
+        wallets={tableWallets}
         lamports={balances.lamports}
         feed={balances.feed}
         token={balances.token}
@@ -777,7 +1005,9 @@ export function FleetScreen({
         probe={rowProbe}
         buy={tableBuy}
         onBuyWallet={onBuyWallet}
-        rowBuyBlocked={reasons.buy === NO_READY ? null : reasons.buy}
+        rowBuyBlocked={rowBlocked}
+        frozen={frozen}
+        groupNames={tab === null ? groupNames : undefined}
         explorer={global.explorer}
         network={global.network}
         tools={
