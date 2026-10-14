@@ -1211,3 +1211,16 @@ Rejestr decyzji i rozbieżności z dokumentacją zewnętrzną. Nowe wpisy dopisu
   - Stop i Esc są aktywne, gdy grupa kupuje, sprzedaje albo jest uzbrojona.
   - Disarm działa jak dotąd.
 - Konsekwencje: zmienia D-038 w części STOP („watcher zostaje uzbrojony, a kolejka rusza po jego końcu”). Kto chce przerwać zakup i dalej obserwować twórcę, uzbraja grupę od nowa.
+
+## D-060: Decyzje z makiety v2 potwierdzone przez Krystiana
+
+- Data: 2026-10-14
+- Zadanie: BUNNDLY-77 (inwentarz makiety v2); zadania niżej
+- Kontekst: zmiany z inwentarza makiety v2 weszły z decyzjami tymczasowymi zapisanymi w zadaniach. Krystian potwierdził je 14.10.2026 („potwierdzam decyzje tymczasowe”).
+- Decyzja (potwierdzona, szczegóły w zadaniach):
+  - Uzbrojona grupa odrzuca ręczny Buy w UI i w workerze (BUNNDLY-86).
+  - Komunikat po komendzie to linia w pasku stanu widoczna 4,2 s (BUNNDLY-90).
+  - Slot ostatniego odczytu jest w znaczniku sald w pasku stanu, bez osobnego elementu (BUNNDLY-91).
+  - Domyślny tryb wykonania to Stairs, a w trakcie przebiegu przełącznik trybu jest zablokowany (BUNNDLY-93).
+  - Napisy z makiety wchodzą tylko tam, gdzie znaczą to samo co stan aplikacji; „Filled” dopiero po zgodnym odczycie z łańcucha (BUNNDLY-94).
+- Konsekwencje: te decyzje przestają być tymczasowe; zmiana któregoś z tych zachowań wymaga nowego wpisu.
