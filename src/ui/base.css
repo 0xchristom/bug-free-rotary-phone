@@ -547,16 +547,18 @@ table.wallets .c-acts {
   width: 96px;
 }
 
-/* Status (BUNNDLY-56, mockup column 94 px): a set width, so the longest state or message no
-   longer widens the table past 1280 px. A long state wraps inside its chip; the message
-   under it keeps one line with an ellipsis (its full text is the title) and adds nothing
-   to the column's minimum width. */
+/* Status (BUNNDLY-56, mockup column 94 px): 112 px with the padding (border-box), so the
+   longest state or message no longer widens the table past 1280 px. A long state wraps
+   inside its chip (the chip is nowrap in the kit; its words decide its min-content here);
+   the message under it keeps one line with an ellipsis (its full text is the title) and
+   adds nothing to the column's minimum width. */
 table.wallets td.c-status {
-  width: 120px;
+  width: 112px;
   white-space: normal;
 }
 
 table.wallets td.c-status .k-chip {
+  white-space: normal;
   height: auto;
   min-height: var(--h-chip);
   padding-block: 2px;
@@ -917,7 +919,7 @@ code.address {
 
 .amt .unit-toggle {
   min-width: 0;
-  padding: 0 var(--s-1);
+  padding: 0 var(--s-0);
   background: transparent;
   border-color: transparent;
   color: var(--fg-3);
