@@ -325,7 +325,9 @@ describe('passwordless window', () => {
     const store = memoryRememberStore();
     const h = vault(store);
     await create(h, true);
+    t += 5 * MINUTE; // Lock is activity too: the window rewrite it queues must not run
     await call(h, { type: 'lock' });
+    await call(h, { type: 'remembered' }); // queued after anything Lock queued
     expect(await session(store)).toBeUndefined();
     const resumed = await call<VaultStatus>(vault(store), { type: 'resume' });
     expect(resumed.locked).toBe(true);

@@ -318,6 +318,8 @@ function walletListOf(value: unknown, group: WalletGroupV1): readonly number[] |
   return [...seen];
 }
 
+/** Activity rewrites a timed passwordless window at most this often (BUNNDLY-52). */
+const WINDOW_REFRESH_MS = 60_000;
 const SLIPPAGE_KEYS = ['buySlippageBps', 'sellSlippageBps'] as const;
 const FEE_KEYS = ['buyPriorityFeeLamports', 'sellPriorityFeeLamports'] as const;
 
@@ -570,6 +572,7 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
 
   const touch = (): void => {
     lastActivity = now();
+    refreshWindow();
   };
 
   const lock = (): void => {
@@ -688,7 +691,10 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
       ? prefs
       : DEFAULT_PREFS;
   };
+  /** The timed window this worker last wrote; null: none, or one without a limit. */
+  let windowMark: { fileId: string; windowMs: number; writtenAt: number } | null = null;
   const dropSession = async (): Promise<void> => {
+    windowMark = null;
     await stored((s) => s.delete('session'));
   };
   const forgetDevice = async (): Promise<void> => {
@@ -701,8 +707,31 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
     fileId: string,
     windowMs: number | null,
   ): Promise<void> => {
-    const record = await sealSession(key, fileId, windowMs === null ? null : now() + windowMs);
+    const writtenAt = now();
+    const record = await sealSession(key, fileId, windowMs === null ? null : writtenAt + windowMs);
     await stored((s) => s.put('session', record));
+    windowMark = windowMs === null ? null : { fileId, windowMs, writtenAt };
+  };
+  /**
+   * Activity on the open fleet moves a timed window on, like the auto-lock: the record is
+   * written again from now, at most once a minute, after the request in progress.
+   */
+  const refreshWindow = (): void => {
+    const mark = windowMark;
+    const vault = unlocked;
+    if (vault === null || mark === null || mark.fileId !== vault.fileId) return;
+    if (now() - mark.writtenAt <= WINDOW_REFRESH_MS) return;
+    mark.writtenAt = now(); // one rewrite in the queue at a time
+    const key = vault.session.key;
+    const run = tail.then(async () => {
+      // Lock, auto-lock, Forget or another file in the meantime dropped or replaced the record.
+      if (windowMark !== mark) return;
+      await writeSession(key, mark.fileId, mark.windowMs);
+    });
+    tail = run.then(
+      () => undefined,
+      () => undefined,
+    );
   };
   /** After a fleet opens: remember it (file and window) or forget the device. */
   const rememberOpened = async (
@@ -782,7 +811,7 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
     // The window starts again from now.
     await writeSession(session.key, account.fileId, prefs.windowMs);
   };
-  /** Auto-lock ends a timed window; a window without a limit stays (temporary decision). */
+  /** Auto-lock ends a timed window; a window without a limit stays (SPEC 6.9). */
   const dropSessionOnAutoLock = async (): Promise<void> => {
     const session = await read('session');
     if (session !== undefined && session.expiresAt !== null) await dropSession();
