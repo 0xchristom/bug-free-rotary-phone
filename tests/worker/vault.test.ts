@@ -3,6 +3,7 @@ import { beforeAll, describe, expect, it, vi } from 'vitest';
 import {
   AppError,
   DEFAULT_GLOBAL_SETTINGS,
+  DEFAULT_TRADE_SETTINGS,
   MAX_FLEET_SIZE,
   buildKeystore,
   defaultFleetSettings,
@@ -429,7 +430,9 @@ describe('settings and write-only API keys (BUNNDLY-15)', () => {
       ],
     };
     const res = await call<VaultFileResult>(h, { type: 'saveSettings', settings });
-    expect(res.info.settings).toEqual(settings);
+    // Without trade parameters in the request the saved ones stay: the defaults here.
+    const saved = { ...settings, trade: DEFAULT_TRADE_SETTINGS };
+    expect(res.info.settings).toEqual(saved);
 
     const other = createVaultHandler();
     const status = await call<VaultStatus>(other, {
@@ -437,7 +440,7 @@ describe('settings and write-only API keys (BUNNDLY-15)', () => {
       fileText: res.fileText,
       password: PASSWORD,
     });
-    expect(status.info?.settings).toEqual(settings);
+    expect(status.info?.settings).toEqual(saved);
   });
 
   it('a file without the new fields (older core) opens with the defaults', async () => {
@@ -464,6 +467,7 @@ describe('settings and write-only API keys (BUNNDLY-15)', () => {
       maxSpend: [],
       active: [],
       global: DEFAULT_GLOBAL_SETTINGS,
+      trade: DEFAULT_TRADE_SETTINGS,
     });
   });
 
