@@ -13,8 +13,9 @@ export default defineConfig({
     // into jsdom per file with `// @vitest-environment jsdom`.
     environment: 'node',
     include: ['tests/**/*.test.{ts,tsx}'],
-    // Mocks only: fetch and WebSocket throw in every test.
-    setupFiles: ['tests/helpers/no-network.ts'],
+    // Mocks only: fetch and WebSocket throw in every test. UI files skip React's owner
+    // stacks (BUNNDLY-75).
+    setupFiles: ['tests/helpers/no-network.ts', 'tests/helpers/react-owner-stacks.ts'],
     unstubGlobals: true,
   },
 });

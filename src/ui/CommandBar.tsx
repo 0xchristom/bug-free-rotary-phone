@@ -177,17 +177,23 @@ export function CommandBar({
   }, [checkKey]);
 
   const armed = watch?.armed ?? false;
+  const armedAtText = watch?.armedAt;
   const [now, setNow] = useState(() => Date.now());
-  // "Last message N s ago" and the time since arming move while the watcher is armed.
+  // "Last message N s ago" and the time since arming move while the watcher is armed. They
+  // count from the current time at once, not from the last tick (or from when the bar opened):
+  // a new arming time is shown right, without a second of a stale value (BUNNDLY-75).
   useEffect(() => {
     if (!armed) return;
-    const timer = setInterval(() => {
+    const tick = (): void => {
       setNow(Date.now());
-    }, 1_000);
+    };
+    const first = setTimeout(tick, 0);
+    const timer = setInterval(tick, 1_000);
     return () => {
+      clearTimeout(first);
       clearInterval(timer);
     };
-  }, [armed]);
+  }, [armed, armedAtText]);
   const secondsAgo =
     watch?.lastMessageAt == null
       ? null

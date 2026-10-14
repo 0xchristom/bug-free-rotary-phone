@@ -16,3 +16,16 @@ import userEvent, { type UserEvent } from '@testing-library/user-event';
 export function setupUser(): UserEvent {
   return userEvent.setup({ delay: null });
 }
+
+/**
+ * Pastes a whole value (an address, a key, a password) into a field, as a user does.
+ *
+ * Typing it key by key renders the whole screen after every key: a 44-character address
+ * cost about 13 ms of processor time per key, and a test typing four of them ran out of
+ * the 5 s limit on a busy machine (BUNNDLY-75). Tests of what happens while typing keep
+ * `user.type`.
+ */
+export async function enter(user: UserEvent, field: HTMLElement, value: string): Promise<void> {
+  await user.click(field);
+  await user.paste(value);
+}
