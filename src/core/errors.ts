@@ -62,6 +62,9 @@ export const ERROR_MESSAGES = {
   STORAGE_WRITE_FAILED: 'The fleet file could not be saved. Try again or choose another folder.',
   STORAGE_READ_FAILED: 'The file could not be read. Try again.',
   STORAGE_FILE_TOO_LARGE: 'The file is too large (over 1 MB). This is not a Bunndly fleet file.',
+  REMEMBER_UNAVAILABLE:
+    'This browser does not let the page keep data (for example in a private window). The fleet cannot be remembered on this device.',
+  NO_REMEMBERED_FLEET: 'No fleet is remembered on this device. Open the fleet file.',
 } as const satisfies Record<string, string>;
 
 export type ErrorCode = keyof typeof ERROR_MESSAGES;

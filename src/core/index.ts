@@ -80,6 +80,7 @@ export {
   createKeystore,
   defaultWalletLabel,
   openKeystore,
+  openKeystoreWithKey,
 } from './keystore/keystore.ts';
 export type { CreateKeystoreParams, KeystoreMeta, OpenedKeystore } from './keystore/keystore.ts';
 export { PLAIN_EXPORT_WARNING, buildPlainExport } from './keystore/export.ts';
