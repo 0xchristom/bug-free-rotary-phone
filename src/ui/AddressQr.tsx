@@ -36,8 +36,8 @@ export function AddressQr({ address, size = 192 }: AddressQrProps) {
       viewBox={`0 0 ${String(dimension)} ${String(dimension)}`}
       shapeRendering="crispEdges"
     >
-      <rect width={dimension} height={dimension} fill="#fff" />
-      <path d={path} fill="#000" />
+      <rect className="qr-paper" width={dimension} height={dimension} />
+      <path className="qr-ink" d={path} />
     </svg>
   );
 }

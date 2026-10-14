@@ -903,3 +903,23 @@ Rejestr decyzji i rozbieżności z dokumentacją zewnętrzną. Nowe wpisy dopisu
   - Arkusz albo skrypt, który czytał `price` z przecinkiem, trzeba dostosować. Odrzucone: osobny formater ceny dla eksportu (dwa formaty tej samej liczby w jednej aplikacji).
   - Test „kreator nie pokazuje mnemonika” sprawdza teraz, że na stronie nie ma żadnych trzech kolejnych słów mnemonika. Poprzednia wersja sprawdzała pojedyncze słowa, a angielski interfejs zawiera słowa z listy BIP39 (np. „cloud”, „wallet”), więc dawała fałszywy alarm.
   - Dokumenty w `docs/`, `PROGRESS.md` i komentarze w Plane zostają po polsku (`CLAUDE.md`).
+
+## D-043: System wizualny: tokeny, Geist z własnej domeny, własne komponenty i ikony
+
+- Data: 2026-10-13
+- Zadanie: BUNNDLY-54
+- Kontekst: Interfejs miał jeden arkusz `app.css` z kolorami wpisanymi w regułach i surowe `<button>` / `<input>` na ekranach. Makieta v2 (`fleet-dashboard.html`, poza repo) wymaga spójnego systemu, a CSP (`style-src 'self'`, brak `font-src`, czyli `default-src 'self'`) nie pozwala na zewnętrzne arkusze ani czcionki.
+- Decyzja:
+  - **Tokeny:** `src/ui/tokens.css` jest jedynym plikiem w `src/ui` z literałami kolorów. Pilnuje tego test (`tests/ui/tokens.test.ts`), który liczy też kontrast WCAG 2.x każdej pary tekst / tło z wartości tokenów (własny wzór w teście, próg 4,5:1; obrys fokusu 3:1). Kod QR ma osobne tokeny `--qr-paper` / `--qr-ink`, bo czyta go aparat: zawsze czarny na białym.
+  - **Czcionka:** Geist (zmienna, 100–900, podzbiór latin), licencja SIL OFL 1.1. Plik `src/ui/fonts/geist-latin-wght.woff2` (29 400 B) pochodzi z paczki npm `@fontsource-variable/geist@5.3.0` i leży w repo razem z `OFL.txt`; paczka **nie** jest zależnością projektu, więc lockfile się nie zmienia. Jeden krój wszędzie, także dla adresów i liczb (`tabular-nums`); kroju mono nie ma. Podzbiór latin wystarcza, bo interfejs jest po angielsku (D-042); znak spoza podzbioru bierze czcionkę systemową z listy zapasowej.
+  - **Komponenty:** własny zestaw w `src/ui/kit/` (Button, IconButton, Chip, Input, NumberInput, Segmented, Checkbox, Popover, Modal, Toast, Tooltip, ProgressBar, Skeleton, Avatar) bez biblioteki UI. `IconButton` wymaga `label` w typie, więc przycisk z samą ikoną bez nazwy nie przechodzi `typecheck`. Avatar portfela jest liczony z adresu (siatka 5×5 odbita lustrzanie), bez sieci.
+  - **Ikony:** własne SVG w `src/ui/kit/icons.tsx` (siatka 16 px, kreska 1,6 px, `currentColor`), bez paczki ikon.
+  - **Powłoka:** górny pasek, przewijana treść i dolny pasek stanu w jednej ramce. Trzy potwierdzenia (tryb na żywo, tryb ciągły, uzbrojenie na żywo) są prawdziwymi oknami modalnymi (`role="alertdialog"`, pułapka Tab, Esc, powrót fokusu do przycisku, który je otworzył). Eksport jawny zostaje dialogiem w treści strony, tak jak dotąd, ale dostaje fokus po otwarciu. Escape zamyka każdy z tych dialogów i kod QR w tabeli, a fokus wraca do przycisku, który je otworzył; Escape działa jak „Cancel”, więc nie zamyka eksportu w trakcie sprawdzania hasła.
+  - **Pasek stanu mówi tylko to, co zmierzono:** źródło i czas ostatniego odczytu sald. Czas liczy UI od wysłania żądania do workera do odpowiedzi (worker nie mierzy czasu RPC; bez zmian w protokole). Odpowiedź z publicznego RPC jest nazwana „Fallback RPC (public)”, nigdy „Helius”. Odczyt z innej sieci albo sprzed zablokowania floty nie jest pokazywany.
+  - **Wersja:** `__APP_VERSION__` z `package.json` wstawiane przy buildzie (`vite.config.ts`, `define`); dziś `0.0.0`.
+  - **Ruch:** przy `prefers-reduced-motion: reduce` wszystkie animacje i przejścia są wyłączone jedną regułą w `kit.css`.
+- Konsekwencje / alternatywy:
+  - Rozmiar `dist` (gzip -9, względem stanu przed zadaniem): JS 104 491 → 107 117 B, CSS 2 002 → 4 933 B, czcionka 29 400 B (limit z zadania: 150 kB). Worker bez zmian.
+  - Odrzucone: `@fontsource-variable/geist` jako zależność (nowa paczka w lockfile dla jednego pliku), Google Fonts (zewnętrzny host, wbrew CSP i SPEC 6.4), biblioteka komponentów albo ikon (rozmiar, style wstrzykiwane w czasie działania kłócą się z `style-src 'self'`).
+  - Układ ekranu floty z makiety v2 (pasek celu, zakładki filtrów, pasek poleceń, kolumny tabeli) to BUNNDLY-55; tu ekrany dostały tylko nowe komponenty i tokeny.
+  - Nagłówek tabeli portfeli nie jest jeszcze przyklejony przy przewijaniu strony (tabela przewija się w poziomie we własnym kontenerze); do rozwiązania razem z układem w BUNNDLY-55.

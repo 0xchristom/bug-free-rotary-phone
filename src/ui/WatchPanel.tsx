@@ -15,6 +15,7 @@ import {
   problemLabel,
 } from './watch-labels.ts';
 import { useWatchRuntime } from './watch-runtime.ts';
+import { Button, Input, Modal } from './kit/index.ts';
 
 export interface WatchPanelProps {
   readonly readyCount: number;
@@ -164,9 +165,8 @@ export function WatchPanel({
       ) : (
         <div className="field">
           <label htmlFor={`${ids}-creator`}>Creator address</label>
-          <input
+          <Input
             id={`${ids}-creator`}
-            type="text"
             value={creatorText}
             spellCheck={false}
             autoComplete="off"
@@ -213,39 +213,40 @@ export function WatchPanel({
         <p className="hint">{MODE_HELP[mode]}</p>
       </fieldset>
       {confirmContinuous && (
-        <div
-          className="notice warning"
+        <Modal
+          open
           role="alertdialog"
-          aria-labelledby={`${ids}-cont-title`}
-          aria-describedby={`${ids}-cont-text`}
+          tone="danger"
+          title="Turn on continuous mode?"
+          onClose={() => {
+            setConfirmContinuous(false);
+          }}
+          footer={
+            <>
+              <Button
+                variant="ghost"
+                onClick={() => {
+                  setConfirmContinuous(false);
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="danger"
+                onClick={() => {
+                  chooseMode('continuous');
+                }}
+              >
+                Yes, continuous mode
+              </Button>
+            </>
+          }
         >
-          <p id={`${ids}-cont-title`}>
-            <strong>Turn on continuous mode?</strong>
-          </p>
-          <p id={`${ids}-cont-text`}>
+          <p>
             The watcher will not disarm after the first token: each new token from the creator
             starts another buy by the whole fleet.
           </p>
-          <div className="actions">
-            <button
-              type="button"
-              className="danger"
-              onClick={() => {
-                chooseMode('continuous');
-              }}
-            >
-              Yes, continuous mode
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setConfirmContinuous(false);
-              }}
-            >
-              Cancel
-            </button>
-          </div>
-        </div>
+        </Modal>
       )}
 
       {watch && (
@@ -257,52 +258,49 @@ export function WatchPanel({
       )}
 
       {confirmArm && !armed && (
-        <div
-          className="notice warning"
+        <Modal
+          open
           role="alertdialog"
-          aria-labelledby={`${ids}-arm-title`}
-          aria-describedby={`${ids}-arm-text`}
+          tone="danger"
+          title="Arm the watcher in live mode?"
+          onClose={() => {
+            setConfirmArm(false);
+          }}
+          footer={
+            <>
+              <Button
+                variant="ghost"
+                onClick={() => {
+                  setConfirmArm(false);
+                }}
+              >
+                Cancel
+              </Button>
+              <Button variant="danger" onClick={arm}>
+                Yes, arm
+              </Button>
+            </>
+          }
         >
-          <p id={`${ids}-arm-title`}>
-            <strong>Arm the watcher in live mode?</strong>
-          </p>
-          <p id={`${ids}-arm-text`}>
+          <p>
             Network: {NETWORK_LABELS[status?.network ?? DEFAULT_NETWORK]}. After a token is detected
             the fleet buys automatically: up to {formatSol(toSpend)} SOL from {readyCount}{' '}
             {readyCount === 1 ? 'wallet' : 'wallets'}
             {mode === 'continuous' ? ' for every token' : ''}. On-chain transactions cannot be
             undone.
           </p>
-          <div className="actions">
-            <button type="button" className="danger" onClick={arm}>
-              Yes, arm
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setConfirmArm(false);
-              }}
-            >
-              Cancel
-            </button>
-          </div>
-        </div>
+        </Modal>
       )}
 
       <div className="actions">
         {armed ? (
-          <button type="button" className="arm armed" disabled={busy} onClick={disarm}>
+          <Button variant="warn" disabled={busy} onClick={disarm}>
             DISARM
-          </button>
+          </Button>
         ) : (
-          <button
-            type="button"
-            className="arm"
-            disabled={busy || confirmArm || missing !== null}
-            onClick={onArmClick}
-          >
+          <Button variant="watch" disabled={busy || missing !== null} onClick={onArmClick}>
             {busy ? 'Arming…' : 'ARM'}
-          </button>
+          </Button>
         )}
         {!armed && missing && <span className="muted">{missing}</span>}
       </div>
@@ -342,13 +340,9 @@ export function WatchPanel({
                   <td>{new Date(d.detectedAt).toLocaleTimeString('en-GB')}</td>
                   <td>
                     <code title={d.mint}>{shortAddress(d.mint)}</code>{' '}
-                    <button
-                      type="button"
-                      aria-label={`Copy mint ${d.mint}`}
-                      onClick={() => void copy(d.mint)}
-                    >
+                    <Button aria-label={`Copy mint ${d.mint}`} onClick={() => void copy(d.mint)}>
                       {copied === d.mint ? 'Copied' : 'Copy'}
-                    </button>
+                    </Button>
                   </td>
                   <td>{SOURCE_LABELS[d.source]}</td>
                   <td>{PATH_LABELS[d.path]}</td>
