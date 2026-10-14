@@ -48,7 +48,7 @@ export function DeviceSettings() {
   const windowIndex = WINDOW_OPTIONS.findIndex((o) => o.ms === windowMs);
 
   return (
-    <section className="device-settings" aria-labelledby={`${ids}-title`}>
+    <section className="form device-settings" aria-labelledby={`${ids}-title`}>
       <h3 id={`${ids}-title`}>This device</h3>
       {unavailable && <p className="hint">{UNAVAILABLE_HINT}</p>}
       <label className="checkbox">
