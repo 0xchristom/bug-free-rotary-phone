@@ -35,7 +35,8 @@ import {
   type ExecutorWallet,
   type Side,
 } from '../executor/executor.ts';
-import { DEFAULT_SELL_PERCENT, isSellPercent, sellAmount } from '../executor/sell-plan.ts';
+import { isSellPercent, sellAmount } from '../executor/sell-plan.ts';
+import { percentBuyAmount } from '../executor/buy-plan.ts';
 import { startWatch, type BuyTrigger, type Watch } from '../watcher/watch.ts';
 import type { LandingChecker } from '../executor/landing.ts';
 import { createVerifier, type SolReader, type TokenReader } from '../executor/verify.ts';
@@ -74,6 +75,7 @@ import {
   effectiveJupiterPlan,
   validateGlobalSettings,
   validateTradeSettings,
+  walletTrade,
   wipe,
   type ApiKeyName,
   type BuyAmount,
@@ -457,11 +459,15 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
   let balances = new Map<number, bigint>();
   let buy: { readonly run: ExecutorRun; status: BuyStatus } | null = null;
   /**
-   * The running sell: the mint and what each wallet may put in, from the balance read at
-   * its start. The signer checks every sell order against it (BUNNDLY-60).
+   * The running buy or sell: its mint and what each wallet may put in, fixed at its start
+   * (a sell: from the balance read then, BUNNDLY-60; a buy: the SOL amount or the percent
+   * of the balance, BUNNDLY-58). The signer checks every order against it.
    */
-  let sellPlan: { readonly mint: string; readonly amounts: ReadonlyMap<number, bigint> } | null =
-    null;
+  let runPlan: {
+    readonly side: Side;
+    readonly mint: string;
+    readonly amounts: ReadonlyMap<number, bigint>;
+  } | null = null;
   let nextRunId = 1;
   const listeners = new Set<(event: WorkerEvent) => void>();
   /** Limiters live across runs, so a new buy respects the window of the last one. */
@@ -694,17 +700,41 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
   };
 
   /** Active wallets with a max spend, with their last read balance. */
-  const buyWallets = (vault: UnlockedVault) => {
-    const inactive = new Set(vault.settings.active.filter((a) => !a.active).map((a) => a.index));
-    const spend = new Map(vault.settings.maxSpend.map((m) => [m.index, m.lamports]));
-    const wallets = vault.publicWallets
-      .filter((w) => !inactive.has(w.index) && (spend.get(w.index) ?? 0n) > 0n)
-      .map((w) => ({
-        index: w.index,
-        address: w.address,
-        maxSpend: spend.get(w.index) ?? 0n,
-        balance: balances.get(w.index) ?? null,
-      }));
+  /**
+   * Active wallets with a buy amount: their own (SOL or a percent) or the fleet default
+   * (BUNNDLY-58). A percent becomes lamports from the last balance read, never into the
+   * reserve; an unread balance is skipped by the executor before the amount matters.
+   */
+  const buyWallets = (vault: UnlockedVault): ExecutorWallet[] => {
+    const { settings } = vault;
+    const inactive = new Set(settings.active.filter((a) => !a.active).map((a) => a.index));
+    const spend = new Map(settings.maxSpend.map((m) => [m.index, m.lamports]));
+    const wallets = vault.publicWallets.flatMap((w): ExecutorWallet[] => {
+      if (inactive.has(w.index)) return [];
+      const sol = spend.get(w.index);
+      const t = walletTrade(
+        settings.trade,
+        w.index,
+        sol !== undefined && sol > 0n ? sol : undefined,
+      );
+      if (t.buyAmount === null) return [];
+      const balance = balances.get(w.index) ?? null;
+      const maxSpend =
+        t.buyAmount.kind === 'lamports'
+          ? t.buyAmount.lamports
+          : balance === null
+            ? 0n
+            : percentBuyAmount(balance, t.buyAmount.percent, settings.global.minReserveLamports);
+      return [
+        {
+          index: w.index,
+          address: w.address,
+          maxSpend,
+          balance,
+          ...(t.buySlippageBps === null ? {} : { slippageBps: t.buySlippageBps }),
+        },
+      ];
+    });
     if (wallets.length === 0) throw new AppError('NO_WALLETS_TO_BUY');
     // Live mode never retries without the chain check, which needs the RPC.
     if (
@@ -773,8 +803,9 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
     if (buy !== null) throw new AppError('BUY_RUNNING');
     requireBuyRoute(vault);
     const mint = mintOf(rawMint);
-    const percent = rawPercent === undefined ? DEFAULT_SELL_PERCENT : rawPercent;
-    if (!isSellPercent(percent) || !Array.isArray(rawWallets)) return badRequest();
+    // Without a percent in the request each wallet sells its own part (BUNNDLY-58).
+    if (rawPercent !== undefined && !isSellPercent(rawPercent)) return badRequest();
+    if (!Array.isArray(rawWallets)) return badRequest();
     const known = new Map(vault.publicWallets.map((w) => [w.index, w]));
     const indices: unknown[] = rawWallets;
     const picked = indices.map((i) => known.get(int(i)) ?? badRequest());
@@ -802,12 +833,17 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
     // Auto-lock runs outside the request queue and may lock the vault while it reads. A buy
     // cannot start meanwhile: requests are queued and a watcher armed before is refused.
     if (session !== readSession || unlocked === null) throw new AppError('VAULT_LOCKED');
-    const wallets = picked.map((w, i) => ({
-      index: w.index,
-      address: w.address,
-      maxSpend: sellAmount(amounts[i] ?? 0n, percent),
-      balance: balances.get(w.index) ?? null,
-    }));
+    const { trade } = unlocked.settings;
+    const wallets = picked.map((w, i): ExecutorWallet => {
+      const t = walletTrade(trade, w.index, undefined);
+      return {
+        index: w.index,
+        address: w.address,
+        maxSpend: sellAmount(amounts[i] ?? 0n, rawPercent ?? t.sellPercent),
+        balance: balances.get(w.index) ?? null,
+        ...(t.sellSlippageBps === null ? {} : { slippageBps: t.sellSlippageBps }),
+      };
+    });
     return launch(unlocked, 'sell', mint, wallets, null);
   };
 
@@ -876,9 +912,7 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
     // Without a Jupiter key the API applies Keyless limits, not the plan in the settings.
     const effective = effectiveJupiterPlan(global, vault.apiKeys.jupiter !== undefined);
     const pair = limitersFor(effective.plan, effective.orderRpm);
-    sellPlan = selling
-      ? { mint, amounts: new Map(wallets.map((w) => [w.index, w.maxSpend])) }
-      : null;
+    runPlan = { side, mint, amounts: new Map(wallets.map((w) => [w.index, w.maxSpend])) };
     const run = startRun(
       {
         jupiter,
@@ -919,7 +953,7 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
     const finish = (): void => {
       if (buy === current) {
         buy = null;
-        sellPlan = null;
+        runPlan = null;
       }
       touch(); // the user was busy with the buy: the auto-lock timer starts now
       watch?.buyFinished(); // the next queued detection, if any
@@ -1158,17 +1192,22 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
     }
     let limit: bigint;
     if (request.inputMint === undefined) {
-      limit = vault.settings.maxSpend.find((m) => m.index === walletIndex)?.lamports ?? 0n;
+      // A buy: up to what the running buy fixed for the wallet at its start; outside a run
+      // (nothing signs there today) the SOL amount of the settings.
+      limit =
+        runPlan?.side === 'buy'
+          ? (runPlan.amounts.get(walletIndex) ?? 0n)
+          : (vault.settings.maxSpend.find((m) => m.index === walletIndex)?.lamports ?? 0n);
     } else {
       // A sell: only the running one, only its mint for SOL, only up to the wallet's plan.
       if (
-        sellPlan === null ||
-        sellPlan.mint !== request.inputMint ||
+        runPlan?.side !== 'sell' ||
+        runPlan.mint !== request.inputMint ||
         request.outputMint !== SOL_MINT
       ) {
         return { ok: false, problem: 'NO_SELL_PLAN' };
       }
-      limit = sellPlan.amounts.get(walletIndex) ?? 0n;
+      limit = runPlan.amounts.get(walletIndex) ?? 0n;
     }
     const check = checkOrderTransaction(order, {
       taker: wallet.address,
