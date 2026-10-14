@@ -12,6 +12,8 @@ import { ExportDialog } from '../ExportDialog.tsx';
 import { passwordStrength } from '../password-strength.ts';
 import { useVault } from '../vault-state.ts';
 import { Button, Checkbox, Input, ProgressBar } from '../kit/index.ts';
+import { RememberOption } from '../remember-ui.tsx';
+import { rememberChoice, useRememberedView } from '../remember-view.ts';
 
 export const DEFAULT_WALLET_COUNT = 30;
 const MAX_WALLETS = 100;
@@ -80,6 +82,9 @@ export function WizardScreen({ storage, onBack, onDone, onUnsavedChange }: Wizar
   const [exportOpen, setExportOpen] = useState(false);
   const [touched, setTouched] = useState<ReadonlySet<Field>>(new Set());
   const [submitted, setSubmitted] = useState(false);
+  const { view: remembered } = useRememberedView();
+  const [rememberTicked, setRememberTicked] = useState<boolean | null>(null);
+  const remember = rememberChoice(remembered, rememberTicked);
 
   const unsaved = phase.kind === 'created';
   useEffect(() => {
@@ -180,6 +185,7 @@ export function WizardScreen({ storage, onBack, onDone, onUnsavedChange }: Wizar
           walletCount: count,
           password: secret.password,
           ...(secret.mnemonic === undefined ? {} : { mnemonic: secret.mnemonic }),
+          remember,
         },
         {
           onProgress: (progress) => {
@@ -441,6 +447,8 @@ export function WizardScreen({ storage, onBack, onDone, onUnsavedChange }: Wizar
             {fieldError('mn')}
           </>
         )}
+
+        <RememberOption view={remembered} checked={remember} onChange={setRememberTicked} />
 
         <div className="actions">
           <Button type="submit" variant="primary">

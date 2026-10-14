@@ -36,6 +36,7 @@ import {
 } from '../trade-edit.ts';
 import { WATCH_FROZEN } from '../watch-labels.ts';
 import { Button, Checkbox, Input, NumberInput } from '../kit/index.ts';
+import { DeviceSettings } from '../remember-ui.tsx';
 
 type KeyName = keyof ApiKeyFlags;
 
@@ -643,6 +644,7 @@ export function SettingsScreen({ info, storage, onUnsavedChange }: SettingsScree
       </form>
 
       <ConnectionTest />
+      <DeviceSettings />
     </section>
   );
 }

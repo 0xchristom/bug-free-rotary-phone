@@ -67,7 +67,14 @@ export function mockVault(initial: VaultStatus, onCreate?: CreateHandler) {
       switch (req.type) {
         case 'status':
         case 'activity':
+        case 'resume': // nothing remembered on this device
           return Promise.resolve(status);
+        case 'remembered':
+          return Promise.resolve({
+            available: false,
+            account: null,
+            prefs: { remember: false, windowMs: null },
+          });
         case 'lock':
           status = LOCKED;
           return Promise.resolve(status);
