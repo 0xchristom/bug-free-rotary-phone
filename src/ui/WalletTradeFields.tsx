@@ -17,6 +17,7 @@ import {
   NumberInput,
   Popover,
   SlidersIcon,
+  SolIcon,
 } from './kit/index.ts';
 
 function sameAmount(
@@ -94,7 +95,8 @@ export function AmountField({
   const message = locked ? LOCKED_HINT : (error ?? problem);
   return (
     <div className="amount-field">
-      <span className="amount-row">
+      <span className="amount-row amt">
+        <SolIcon />
         <NumberInput
           unit=""
           className="amount-input"
