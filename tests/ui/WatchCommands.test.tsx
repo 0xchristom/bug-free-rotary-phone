@@ -227,6 +227,8 @@ async function openTabB(): Promise<void> {
 
 /** Types a creator into the command bar and waits until the worker named it a wallet. */
 async function typeCreator(user: UserEvent, creator = CREATOR): Promise<void> {
+  // these tests send to every wallet at once; Stairs is the default since BUNNDLY-93
+  await user.click(screen.getByRole('button', { name: 'Immediate' }));
   await user.type(screen.getByLabelText(TARGET_LABEL), creator);
   await screen.findByText('Creator wallet', {}, TARGET_WAIT);
 }
@@ -580,8 +582,10 @@ describe('detections and progress', () => {
     act(() => {
       vault.emit(started);
     });
+    // the run is shown once its times count from the detection; "0 of 3 filled" is there
+    // before any run too (BUNNDLY-93), so it does not say the run arrived
+    expect(await screen.findByTitle('Counted from the detection')).toBeTruthy();
     // fleetFill (BUNNDLY-56): no wallet event yet, the 3 selected wallets wait
-    expect(await screen.findByText(/^Fleet fill · 0 of 3 filled$/u)).toBeTruthy();
-    expect(screen.getByTitle('Counted from the detection')).toBeTruthy();
+    expect(screen.getByText(/^Fleet fill · 0 of 3 filled$/u)).toBeTruthy();
   });
 });

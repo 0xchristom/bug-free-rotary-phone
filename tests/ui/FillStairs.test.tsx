@@ -301,6 +301,18 @@ describe('Fill column and fleet fill (BUNNDLY-56)', () => {
     expect(segmentTones()).toEqual(['sim', 'sim', 'sim']);
   });
 
+  // BUNNDLY-93: the fleet fill is there before the first run, every segment grey
+  it('before any run: "0 of 3 filled" over 3 grey segments', async () => {
+    const { user } = setup();
+    await showMint(user);
+    expect(screen.getByText(/^Fleet fill · 0 of 3 filled$/u)).toBeTruthy();
+    expect(segmentTones()).toEqual(['idle', 'idle', 'idle']);
+    expect(screen.queryByText(/no buy or sell yet/u)).toBeNull();
+    await user.click(screen.getByRole('checkbox', { name: 'Select W03' }));
+    expect(screen.getByText(/^Fleet fill · 0 of 2 filled$/u)).toBeTruthy();
+    expect(segmentTones()).toEqual(['idle', 'idle']);
+  });
+
   it('the segments follow the selection: one per selected wallet', async () => {
     const { vault, user } = setup();
     await showMint(user);
@@ -387,12 +399,17 @@ describe('state chip: Sold, Stopped, Retrying (BUNNDLY-89)', () => {
 });
 
 describe('Stairs in the toolbar (BUNNDLY-61 part 2)', () => {
-  it('Immediate sends no steps; Stairs shows the fields and the plan, BUY sends them', async () => {
+  // BUNNDLY-93: Stairs is the default, every 6 s, 1 wallet per step (Andy's interim decision)
+  it('Stairs by default, every 6 s and 1 per step, with the plan; BUY sends the steps', async () => {
     const { requests, user } = setup();
     await showMint(user);
     const bar = within(toolbar());
-    expect(bar.queryByLabelText('Seconds between steps')).toBeNull();
-    await user.click(bar.getByRole('button', { name: 'Stairs' }));
+    expect(bar.getByRole('button', { name: 'Stairs' }).getAttribute('aria-pressed')).toBe('true');
+    expect(bar.getByRole('button', { name: 'Immediate' }).getAttribute('aria-pressed')).toBe(
+      'false',
+    );
+    expect(bar.getByLabelText<HTMLInputElement>('Seconds between steps').value).toBe('6');
+    expect(bar.getByLabelText<HTMLInputElement>('Wallets per step').value).toBe('1');
     // 3 selected, every 6 s, 1 per step: 3 steps, the last one 2 × 6 s = 12 s after the first
     expect(screen.getByTestId('stairs-plan').textContent).toBe('→ 3 steps, last one at +12.0 s');
     await user.clear(bar.getByLabelText('Wallets per step'));
@@ -411,12 +428,46 @@ describe('Stairs in the toolbar (BUNNDLY-61 part 2)', () => {
     ]);
   });
 
-  it('Immediate: startBuy without stairs', async () => {
+  it('Immediate: no step fields, startBuy without stairs', async () => {
     const { requests, user } = setup();
     await showMint(user);
-    await user.click(within(toolbar()).getByRole('button', { name: 'Buy' }));
+    const bar = within(toolbar());
+    await user.click(bar.getByRole('button', { name: 'Immediate' }));
+    expect(bar.queryByLabelText('Seconds between steps')).toBeNull();
+    await user.click(bar.getByRole('button', { name: 'Buy' }));
     const [start] = requests.filter((r) => r.type === 'startBuy');
     expect(start).toEqual({ type: 'startBuy', mint: MINT, wallets: [0, 1, 2], group: 'g1' });
+  });
+
+  // BUNNDLY-93: a run keeps its mode; the switch says why and opens again at the end
+  it('while the group runs, Immediate / Stairs is off with the reason; it opens at the end', async () => {
+    const { vault, user } = setup();
+    await showMint(user);
+    const bar = within(toolbar());
+    const group = bar.getByRole('group', { name: 'Execution mode' });
+    const buttons = () => within(group).getAllByRole('button');
+    expect(buttons().map((b) => b.hasAttribute('disabled'))).toEqual([false, false]);
+    expect(group.getAttribute('title')).toBeNull();
+    act(() => {
+      vault.emit(runEvent('started', true));
+    });
+    await eventually(() => {
+      expect(buttons().map((b) => b.hasAttribute('disabled'))).toEqual([true, true]);
+    });
+    expect(group.getAttribute('title')).toBe('The mode can change once the current run ends.');
+    await user.click(bar.getByRole('button', { name: 'Immediate' }));
+    expect(bar.getByRole('button', { name: 'Stairs' }).getAttribute('aria-pressed')).toBe('true');
+    act(() => {
+      vault.emit(runEvent('finished', true));
+    });
+    await eventually(() => {
+      expect(buttons().map((b) => b.hasAttribute('disabled'))).toEqual([false, false]);
+    });
+    expect(group.getAttribute('title')).toBeNull();
+    await user.click(bar.getByRole('button', { name: 'Immediate' }));
+    expect(bar.getByRole('button', { name: 'Immediate' }).getAttribute('aria-pressed')).toBe(
+      'true',
+    );
   });
 
   it('a step out of 1 s – 24 h stops BUY, SELL and ARM with the reason', async () => {
