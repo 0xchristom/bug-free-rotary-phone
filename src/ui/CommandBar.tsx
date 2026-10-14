@@ -53,8 +53,8 @@ export interface CommandBarProps {
   readonly setup?: string | null;
   /** The newest token the watcher found (mode B), shown as a chip; Buy can buy it. */
   readonly detected: WatchDetection | null;
-  /** Called with the checked target, or null while the field is empty, wrong or checking. */
-  readonly onTarget: (target: Target | null) => void;
+  /** Called with the state of the target field: empty, checking, refused or checked. */
+  readonly onCheck: (check: TargetCheck) => void;
   readonly onArm: () => void;
   readonly onDisarm: () => void;
   /** Short messages about the target and the last command, under the strip. */
@@ -64,11 +64,16 @@ export interface CommandBarProps {
 /** Waits this long after the last keystroke before asking the worker. */
 const CHECK_DELAY_MS = 250;
 
-type Check =
+/** The target field as the screen sees it (BUNNDLY-79: the reasons tell these apart). */
+export type TargetCheck =
   | { readonly kind: 'empty' }
   | { readonly kind: 'checking'; readonly address: string }
   | { readonly kind: 'done'; readonly target: Target }
-  | { readonly kind: 'error'; readonly message: string };
+  /**
+   * The text is no address (`format`), or the worker could not read it (`read`); `message`
+   * is shown at the field.
+   */
+  | { readonly kind: 'error'; readonly cause: 'format' | 'read'; readonly message: string };
 
 function kindLabel(kind: TargetKind): string {
   if (kind.kind === 'wallet') return 'Creator wallet';
@@ -101,7 +106,7 @@ export function CommandBar({
   blocked,
   setup = null,
   detected,
-  onTarget,
+  onCheck,
   onArm,
   onDisarm,
   children,
@@ -117,19 +122,20 @@ export function CommandBar({
 
   const address = text.trim();
   const wellFormed = isCreatorAddress(address);
-  const check: Check =
+  const check: TargetCheck =
     address === ''
       ? { kind: 'empty' }
       : !wellFormed
         ? {
             kind: 'error',
+            cause: 'format',
             message: 'Paste a full Solana address: a token mint or a creator wallet.',
           }
         : answer?.address !== address
           ? { kind: 'checking', address }
           : 'kind' in answer
             ? { kind: 'done', target: { address, kind: answer.kind } }
-            : { kind: 'error', message: answer.error };
+            : { kind: 'error', cause: 'read', message: answer.error };
 
   // Ask the worker what the address is; an answer for older text is dropped.
   useEffect(() => {
@@ -151,17 +157,22 @@ export function CommandBar({
     };
   }, [address, wellFormed, client]);
 
-  // The screen learns the checked target (or that there is none) once per change.
+  // The screen learns the field's state once per change.
   const target = check.kind === 'done' ? check.target : null;
-  // `target` is a new object on every render: its address and kind decide.
-  const targetKey = target === null ? null : `${target.kind.kind}:${target.address}`;
+  // `check` is a new object on every render: its kind and content decide.
+  const checkKey =
+    check.kind === 'done'
+      ? `done:${check.target.kind.kind}:${check.target.address}`
+      : check.kind === 'error'
+        ? `error:${check.cause}:${check.message}`
+        : check.kind;
   const report = useEffectEvent(() => {
-    onTarget(target);
+    onCheck(check);
   });
   // Before paint: the screen's reasons and the chip change in the same frame.
   useLayoutEffect(() => {
     report();
-  }, [targetKey]);
+  }, [checkKey]);
 
   const armed = watch?.armed ?? false;
   const [now, setNow] = useState(() => Date.now());
