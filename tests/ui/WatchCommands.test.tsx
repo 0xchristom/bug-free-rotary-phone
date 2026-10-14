@@ -530,7 +530,7 @@ describe('detections and progress', () => {
     const buy = screen.getByRole('button', { name: 'Buy' });
     expect(buy).toHaveProperty('disabled', true);
     expect(buy.getAttribute('aria-description')).toBe(ARMED_REASON);
-    const row = screen.getByRole('button', { name: 'Buy Wallet 1' });
+    const row = screen.getByRole('button', { name: 'Buy W02' });
     expect(row).toHaveProperty('disabled', true);
     expect(row.getAttribute('aria-description')).toBe(ARMED_REASON);
     await user.click(buy);
