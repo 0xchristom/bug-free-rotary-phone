@@ -1571,11 +1571,6 @@ button.top-chip {
   color: var(--fg);
   font: inherit;
   font-variant-numeric: tabular-nums;
-  outline: none;
-}
-
-.stairs input:focus-visible {
-  border-color: var(--line-2);
 }
 
 .stairs input[aria-invalid='true'] {
