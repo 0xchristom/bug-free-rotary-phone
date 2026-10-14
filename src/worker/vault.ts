@@ -699,7 +699,6 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
     return pair;
   };
 
-  /** Active wallets with a max spend, with their last read balance. */
   /**
    * Active wallets with a buy amount: their own (SOL or a percent) or the fleet default
    * (BUNNDLY-58). A percent becomes lamports from the last balance read, never into the
