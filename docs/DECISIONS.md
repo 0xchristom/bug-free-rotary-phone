@@ -1052,7 +1052,7 @@ Rejestr decyzji i rozbieżności z dokumentacją zewnętrzną. Nowe wpisy dopisu
   - Każda zmiana kwoty daje nowy tekst pliku do zapisania; „Create wallets” czeka na zapis pliku jak dotąd.
   - Odrzucone: zapis kwot przyciskiem „Save table changes” (zadanie wymaga zapisu po Enter) i blokada całej tabeli w trakcie przebiegu (portfele spoza przebiegu i spoza uzbrojonej grupy wolno zmieniać, D-046).
 
-## D-051: Salda na żywo: `accountSubscribe` na portfel, odpytywanie jako zapas
+## D-053: Salda na żywo: `accountSubscribe` na portfel, odpytywanie jako zapas
 
 - Data: 2026-10-14
 - Zadanie: BUNNDLY-57

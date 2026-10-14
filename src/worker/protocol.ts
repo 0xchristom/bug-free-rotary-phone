@@ -142,7 +142,7 @@ export type VaultRequest =
   /** User activity in the UI; resets the auto-lock timer. */
   | { readonly type: 'activity' }
   /**
-   * Live balances (BUNNDLY-57, D-051): `on` opens one Helius WebSocket with a subscription
+   * Live balances (BUNNDLY-57, D-053): `on` opens one Helius WebSocket with a subscription
    * per wallet, `off` closes it. Changes arrive as `balance` events. Locking closes it too.
    * Not user activity. Without a Helius key the feed stays `polling`.
    */
@@ -206,7 +206,7 @@ export interface BalanceFeedStatus {
 }
 
 /**
- * Live balance changes (BUNNDLY-57, D-051), each with the network it was read on: the UI
+ * Live balance changes (BUNNDLY-57, D-053), each with the network it was read on: the UI
  * drops one that belongs to a network no longer shown.
  */
 export type BalanceEvent = { readonly kind: 'balance'; readonly network: Network } & (

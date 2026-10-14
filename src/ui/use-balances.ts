@@ -43,7 +43,7 @@ function visible(): boolean {
 }
 
 /**
- * SOL balances through the vault worker. Live (BUNNDLY-57, D-051): the worker's account
+ * SOL balances through the vault worker. Live (BUNNDLY-57, D-053): the worker's account
  * subscriptions change one wallet at a time, and a full read reconciles every 30 s and once
  * each time the feed comes back. Polling (no socket, or not every wallet subscribed): a full
  * read every `intervalMs`. Runs only while the component is mounted (the fleet screen exists

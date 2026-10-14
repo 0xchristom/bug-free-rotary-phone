@@ -549,7 +549,7 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
   let lastActivity = now();
   let tail: Promise<unknown> = Promise.resolve();
   /**
-   * Live balances (BUNNDLY-57, D-051) while the UI asks for them: one socket for the open
+   * Live balances (BUNNDLY-57, D-053) while the UI asks for them: one socket for the open
    * fleet's network and key, replaced when either changes, closed by a lock.
    */
   let feedWanted = false;
