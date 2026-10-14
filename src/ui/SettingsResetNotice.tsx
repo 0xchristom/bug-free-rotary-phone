@@ -9,7 +9,7 @@ const FIELD_LABELS: Record<SettingsField, string> = {
   noRouteBackoffMaxMs: 'longest retry delay',
   mode: 'mode',
   explorer: 'explorer',
-  autoLockMinutes: 'auto-lock',
+  autoLockMinutes: 'auto-lock (now off)',
   dryRun: 'DRY-RUN mode',
   jupiterPlan: 'Jupiter plan',
   orderRpm: '/order limit',

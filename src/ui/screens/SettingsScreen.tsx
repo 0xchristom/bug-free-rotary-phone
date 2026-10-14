@@ -2,6 +2,8 @@ import { useId, useLayoutEffect, useState, type SyntheticEvent } from 'react';
 import { toUserMessage } from '../../core/errors.ts';
 import { EXPLORERS, NETWORK_LABELS, type Explorer, type Network } from '../../core/network.ts';
 import {
+  AUTO_LOCK_CHOICES,
+  AUTO_LOCK_LABELS,
   BUY_MODES,
   JUPITER_PLANS,
   JUPITER_PLAN_RPM,
@@ -10,6 +12,7 @@ import {
   endpointUrlProblem,
   orderRps,
   validateGlobalSettings,
+  type AutoLockMinutes,
   type BuyMode,
   type GlobalSettingsV1,
   type JupiterPlan,
@@ -67,6 +70,8 @@ const KEY_FIELDS: readonly { name: KeyName; label: string; placeholder: string }
   { name: 'jupiter', label: 'Jupiter API key', placeholder: 'Type a new key to change it' },
 ];
 
+const AUTO_LOCK_OFF = 'off';
+
 const CONTINUOUS_WARNING =
   'Continuous mode: the watcher will not disarm after the first buy and will buy each new detected token until you turn it off. Turn on continuous mode?';
 
@@ -84,6 +89,7 @@ interface Form {
   backoffMax: string;
   mode: BuyMode;
   explorer: Explorer;
+  /** `off` or the minutes of one of AUTO_LOCK_CHOICES (BUNNDLY-51). */
   autoLock: string;
   plan: JupiterPlan;
   customRpm: string;
@@ -160,7 +166,7 @@ function formOf(g: GlobalSettingsV1, t: FleetTradeV1): Form {
     backoffMax: String(g.noRouteBackoffMaxMs),
     mode: g.mode,
     explorer: g.explorer,
-    autoLock: String(g.autoLockMinutes),
+    autoLock: g.autoLockMinutes === null ? AUTO_LOCK_OFF : String(g.autoLockMinutes),
     plan: g.jupiterPlan,
     customRpm: String(g.orderRpm),
   };
@@ -185,7 +191,7 @@ function settingsOf(f: Form, network: Network): GlobalSettingsV1 {
     noRouteBackoffMaxMs: int(f.backoffMax),
     mode: f.mode,
     explorer: f.explorer,
-    autoLockMinutes: int(f.autoLock),
+    autoLockMinutes: f.autoLock === AUTO_LOCK_OFF ? null : (int(f.autoLock) as AutoLockMinutes),
     jupiterPlan: f.plan,
     orderRpm: f.plan === 'custom' ? int(f.customRpm) : JUPITER_PLAN_RPM[f.plan],
     dryRun: f.dryRun,
@@ -642,7 +648,26 @@ export function SettingsScreen({ info, storage, onUnsavedChange }: SettingsScree
               </option>
             ))}
           </select>
-          {numberField('autoLock', 'autoLockMinutes', 'Auto-lock after inactivity', 'min')}
+          <label htmlFor={`${ids}-autolock`}>Auto-lock after inactivity</label>
+          <select
+            className="k-input"
+            id={`${ids}-autolock`}
+            value={form.autoLock}
+            onChange={(e) => {
+              set('autoLock', e.target.value);
+            }}
+          >
+            <option value={AUTO_LOCK_OFF}>Off</option>
+            {AUTO_LOCK_CHOICES.map((m) => (
+              <option key={m} value={String(m)}>
+                {AUTO_LOCK_LABELS[m]}
+              </option>
+            ))}
+          </select>
+          <p className="hint">
+            Off: the vault stays open until you lock it or close the tab. While armed or
+            buying it never locks itself.
+          </p>
         </fieldset>
 
         <div className="actions">

@@ -61,9 +61,19 @@ describe('validateGlobalSettings', () => {
       noRouteBackoffMinMs: 500,
       noRouteBackoffMaxMs: 2_000,
       mode: 'one-shot',
-      autoLockMinutes: 15,
+      // Off by default (Krystian, 12.10.2026, BUNNDLY-51)
+      autoLockMinutes: null,
     });
     expect(validateGlobalSettings(DEFAULT_GLOBAL_SETTINGS)).toEqual([]);
+  });
+
+  it('auto-lock accepts exactly off, 15, 60 and 120 minutes', () => {
+    for (const ok of [null, 15, 60, 120]) expect(problems({ autoLockMinutes: ok })).toEqual([]);
+    for (const bad of [0, 1, 14, 16, 30, 59, 61, 119, 121, 240, 15.5, '15', undefined]) {
+      expect(problems({ autoLockMinutes: bad }), String(bad)).toEqual([
+        'autoLockMinutes: Choose the auto-lock from the list.',
+      ]);
+    }
   });
 
   it.each<[Partial<Record<keyof GlobalSettingsV1, unknown>>, string]>([
@@ -108,8 +118,6 @@ describe('validateGlobalSettings', () => {
     ],
     [{ mode: 'forever' }, 'mode: Choose the mode: one-shot or continuous.'],
     [{ explorer: 'etherscan' }, 'explorer: Choose an explorer from the list.'],
-    [{ autoLockMinutes: 0 }, 'autoLockMinutes: Auto-lock must be between 1 and 120 minutes.'],
-    [{ autoLockMinutes: 121 }, 'autoLockMinutes: Auto-lock must be between 1 and 120 minutes.'],
     [{ jupiterPlan: 'gold' }, 'jupiterPlan: Choose a Jupiter plan from the list.'],
     [
       { jupiterPlan: 'pro', orderRpm: 60 },
