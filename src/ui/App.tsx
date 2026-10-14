@@ -57,6 +57,9 @@ export interface AppProps {
 const DEFAULT_STATUS_POLL_MS = 5_000;
 const DEFAULT_ACTIVITY_THROTTLE_MS = 30_000;
 const ACTIVITY_EVENTS = ['pointerdown', 'keydown'] as const;
+const LOCKED_NOTICE = 'The fleet was locked.';
+const AUTO_LOCKED_NOTICE =
+  'The fleet was locked automatically. Open the fleet file again to continue.';
 const UNSAVED_CONFIRM =
   'The fleet file is not saved. Without it you cannot open the fleet in its current state. Continue without saving?';
 
@@ -136,16 +139,16 @@ export function App({
       if (wasUnlocked.current) {
         // The wizard keeps its encrypted, not yet saved file; other screens go to Start.
         setScreen((s) => (UNLOCKED_SCREENS.has(s) ? 'start' : s));
-        setNotice(
-          reason === 'user'
-            ? 'The fleet was locked.'
-            : 'The fleet was locked automatically. Open the fleet file again to continue.',
-        );
+        setNotice(reason === 'user' ? LOCKED_NOTICE : AUTO_LOCKED_NOTICE);
       }
       wasUnlocked.current = false;
     } else {
-      // Opening a fleet from Start shows it; the wizard stays until its file is saved.
-      if (!wasUnlocked.current) setScreen((s) => (s === 'start' ? 'fleet' : s));
+      if (!wasUnlocked.current) {
+        // Opening a fleet from Start shows it; the wizard stays until its file is saved.
+        setScreen((s) => (s === 'start' ? 'fleet' : s));
+        // The lock notice ends with the lock (BUNNDLY-83); any other notice stays.
+        setNotice((n) => (n === LOCKED_NOTICE || n === AUTO_LOCKED_NOTICE ? null : n));
+      }
       wasUnlocked.current = true;
     }
   }, []);

@@ -126,6 +126,26 @@ describe('the start screen of a remembered fleet', () => {
     expect(await store.get('session')).toBeDefined();
   });
 
+  // BUNNDLY-83: the lock notice belongs to the locked state, not to the fleet opened again.
+  it('the lock notice stays after a wrong password and goes after the right one', async () => {
+    const store = memoryRememberStore();
+    const { user } = load(store);
+    await openFile(user);
+    await user.click(screen.getByRole('button', { name: 'Lock' }));
+    await screen.findByRole('heading', { name: 'Welcome back' });
+    expect(screen.getByText('The fleet was locked.')).toBeTruthy();
+
+    await user.type(screen.getByLabelText('Password'), 'not the password at all');
+    await user.click(screen.getByRole('button', { name: 'Unlock' }));
+    await screen.findByText(/password is wrong/u);
+    expect(screen.getByText('The fleet was locked.')).toBeTruthy();
+
+    await user.type(screen.getByLabelText('Password'), PASSWORD);
+    await user.click(screen.getByRole('button', { name: 'Unlock' }));
+    await findFleet();
+    expect(screen.queryByText('The fleet was locked.')).toBeNull();
+  });
+
   it('Forget this device asks first, then the start screen is the plain one', async () => {
     const store = memoryRememberStore();
     const { user } = load(store);
