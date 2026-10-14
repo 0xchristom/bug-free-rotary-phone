@@ -2,7 +2,7 @@
 import type { DetectionPath } from '../watcher/detectors/detector.ts';
 import type { DetectionSource } from '../watcher/detectors/programs.ts';
 import type { StreamStatus } from '../watcher/stream.ts';
-import type { DetectionProblem } from '../watcher/watch.ts';
+import type { DetectionProblem, WatchDetection } from '../watcher/watch.ts';
 import { base58 } from '@scure/base';
 import { ERROR_MESSAGES } from '../core/errors.ts';
 import { SOL_MINT } from '../jupiter/client.ts';
@@ -39,6 +39,29 @@ export const PATH_LABELS: Readonly<Record<DetectionPath, string>> = {
   transaction: 'transaction',
   'catch-up': 'catch-up',
 };
+
+/** Time since arming as mm:ss (BUNNDLY-91); minutes go past 59, a negative span shows 00:00. */
+export function armedForLabel(ms: number): string {
+  const total = Math.max(0, Math.floor(ms / 1000));
+  const minutes = Math.floor(total / 60);
+  const seconds = total % 60;
+  return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+}
+
+/**
+ * The line after a detection (BUNNDLY-91), from the worker's data only: the slot of the
+ * log notification or transaction, and the worker's time from the log to the first
+ * `/order`. What the worker did not report is said, never filled in.
+ */
+export function detectionLine(d: Pick<WatchDetection, 'slot' | 'reactionMs'>): string {
+  const slot =
+    d.slot === null ? 'Token detected, slot unknown' : `Token detected in slot ${String(d.slot)}`;
+  const sent =
+    d.reactionMs === null
+      ? 'first buy not sent yet'
+      : `first buy sent +${String(Math.round(d.reactionMs))} ms`;
+  return `${slot} · ${sent}`;
+}
 
 /** Why settings cannot change now: the armed watcher buys with what was confirmed. */
 export const WATCH_FROZEN = 'Disarm the watcher to change the mode or the settings.';

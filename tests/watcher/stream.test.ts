@@ -111,6 +111,29 @@ describe('subscription', () => {
     const a = events.find((e) => e.kind === 'signature');
     expect(a).toMatchObject({ logs: ['Program log: x'], receivedAt: 1 });
   });
+
+  it('each signature carries its notification context.slot; a malformed slot is null', async () => {
+    const { clock, last, events } = setup();
+    await clock.settle();
+    const ws = last();
+    ws.connect();
+    // 452762723: a real slot from the mainnet fixture (tests/fixtures/detectors.mainnet.json).
+    ws.notify('A', null, undefined, { slot: 452_762_723 });
+    ws.notify('B', null, undefined, { slot: '452762723' });
+    ws.notify('C', null, undefined, { slot: -1 });
+    ws.notify('D', null, undefined, { slot: 1.5 });
+    ws.notify('E', null, undefined, null);
+    ws.notify('F', null, undefined, {});
+    const slots = events.flatMap((e) => (e.kind === 'signature' ? [[e.signature, e.slot]] : []));
+    expect(slots).toEqual([
+      ['A', 452_762_723],
+      ['B', null],
+      ['C', null],
+      ['D', null],
+      ['E', null],
+      ['F', null],
+    ]);
+  });
 });
 
 describe('reconnect', () => {
@@ -197,7 +220,7 @@ describe('keep-alive', () => {
 
 describe('gap catch-up', () => {
   it('signatures from the gap pass once, oldest first, as catch-up; also seen live → once', async () => {
-    const { clock, last, signatures, chain, calls } = setup({ chain: ['S0'] });
+    const { clock, last, signatures, chain, calls, events } = setup({ chain: ['S0'] });
     await clock.settle();
     last().connect();
     await clock.settle();
@@ -214,6 +237,9 @@ describe('gap catch-up', () => {
     last().notify('S4');
     expect(signatures()).toEqual(['S1/catch-up', 'S2/catch-up', 'S3/catch-up', 'S4/logs']);
     expect(calls.at(-1)).toEqual({ limit: CATCH_UP_PAGE, until: 'S0' });
+    // The catch-up list has no slot per signature: null, never one made up (BUNNDLY-91).
+    const slots = events.flatMap((e) => (e.kind === 'signature' ? [e.slot] : []));
+    expect(slots).toEqual([null, null, null, 1]);
   });
 
   it('a long gap is read page by page, every signature once, oldest first', async () => {

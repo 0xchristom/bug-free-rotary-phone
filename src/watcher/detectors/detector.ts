@@ -50,6 +50,8 @@ export interface SignatureInput {
   readonly source: 'logs' | 'catch-up';
   readonly logs: readonly string[] | null;
   readonly receivedAt: number;
+  /** The log notification's slot (BUNNDLY-91); null when not known (catch-up). */
+  readonly slot?: number | null;
 }
 
 export const TRANSACTION_POLL_MS = 200;
@@ -148,7 +150,7 @@ export function createDetector(
           source: f.source,
           path: 'log',
           signature: input.signature,
-          slot: null,
+          slot: input.slot === undefined || input.slot === null ? null : BigInt(input.slot),
           blockTime: null,
           receivedAt: input.receivedAt,
         });

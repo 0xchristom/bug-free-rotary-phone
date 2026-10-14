@@ -22,6 +22,7 @@ import {
   signatureReader,
   transactionReader,
   fetchSolBalances,
+  fetchSolBalancesAt,
   checkHeliusHttp,
   checkHeliusWs,
   fetchTokenBalances,
@@ -956,9 +957,10 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
       const rpc = createBalancesRpc(transport);
       const owners = wallets.map((w) => w.address);
       let lamports: bigint[];
+      let slot: bigint | null;
       let token: VaultBalances['token'];
       try {
-        lamports = await fetchSolBalances(rpc, owners);
+        ({ lamports, slot } = await fetchSolBalancesAt(rpc, owners));
         if (mint !== undefined) {
           const t = await fetchTokenBalances(rpc, mint, owners);
           token = {
@@ -983,6 +985,7 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
         network,
         balances: wallets.map((w, i) => ({ index: w.index, lamports: lamports[i] ?? 0n })),
         ...(token ? { token } : {}),
+        ...(slot === null ? {} : { slot: Number(slot) }),
         source,
         fetchedAt: new Date(now()).toISOString(),
       };

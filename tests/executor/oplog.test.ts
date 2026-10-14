@@ -250,6 +250,7 @@ describe('mode B entries (BUNNDLY-34)', () => {
     reactionMs: 4,
     verified: null,
     problem: null,
+    slot: null,
   } as const;
   const events: WatchEvent[] = [
     { kind: 'watch', at: T0, type: 'armed', creator: 'Creator1', mode: 'one-shot' },

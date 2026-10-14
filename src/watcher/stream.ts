@@ -49,6 +49,8 @@ export type StreamEvent =
       readonly logs: readonly string[] | null;
       /** `performance.now()` in the worker when it arrived (BUNNDLY-34: reaction time). */
       readonly receivedAt: number;
+      /** The notification's `context.slot` (BUNNDLY-91); null from the catch-up. */
+      readonly slot: number | null;
     };
 
 export interface SignatureInfo {
@@ -163,6 +165,7 @@ export function startStream(deps: StreamDeps, options: StreamOptions): Stream {
     signature: string,
     source: 'logs' | 'catch-up',
     logs: readonly string[] | null,
+    slot: number | null = null,
   ): void => {
     if (seen.has(signature)) return;
     seen.add(signature);
@@ -171,7 +174,14 @@ export function startStream(deps: StreamDeps, options: StreamOptions): Stream {
       const old = seenOrder.shift();
       if (old !== undefined) seen.delete(old);
     }
-    deps.emit({ kind: 'signature', signature, source, logs, receivedAt: deps.receivedAt() });
+    deps.emit({
+      kind: 'signature',
+      signature,
+      source,
+      logs,
+      receivedAt: deps.receivedAt(),
+      slot,
+    });
   };
 
   /** Newest signature at arming: the catch-up never reaches further back. */
@@ -249,7 +259,14 @@ export function startStream(deps: StreamDeps, options: StreamOptions): Stream {
     const logs = Array.isArray(value.logs)
       ? value.logs.filter((l): l is string => typeof l === 'string')
       : [];
-    pass(value.signature, 'logs', logs);
+    const context = isRecord(result) ? result.context : undefined;
+    const slot = isRecord(context) ? context.slot : undefined;
+    pass(
+      value.signature,
+      'logs',
+      logs,
+      typeof slot === 'number' && Number.isSafeInteger(slot) && slot >= 0 ? slot : null,
+    );
   };
 
   /** Every 30 s a request that any server answers; no answer in 10 s means dead. */

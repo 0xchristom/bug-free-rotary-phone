@@ -203,7 +203,7 @@ function walletEvent(
 }
 
 async function showMint(user: UserEvent): Promise<void> {
-  await eventually(() => screen.getByText(/^Balances as of /u));
+  await eventually(() => screen.getByText(/^Slot \S+ · /u));
   // these tests send to every wallet at once; Stairs is the default since BUNNDLY-93
   await user.click(screen.getByRole('button', { name: 'Immediate' }));
   await user.type(screen.getByLabelText(TARGET_LABEL), MINT);
@@ -248,7 +248,7 @@ const SIG_SHORT = '3333…AAAA';
 describe('mode A', () => {
   it('BUY only with a mint the worker checked and a ready wallet', async () => {
     const { user, requests } = setup();
-    await screen.findByText(/^Balances as of /u);
+    await screen.findByText(/^Slot \S+ · /u);
     const buy = screen.getByRole('button', { name: 'Buy' });
     expect(buy).toHaveProperty('disabled', true);
     await showMint(user);
@@ -265,7 +265,7 @@ describe('mode A', () => {
 
   it('BUY sends the wallets selected in the table, saved or not (BUNNDLY-59)', async () => {
     const { user, requests } = setup();
-    await screen.findByText(/^Balances as of /u);
+    await screen.findByText(/^Slot \S+ · /u);
     await showMint(user);
     await user.click(screen.getByRole('checkbox', { name: 'Select W02' }));
     await user.click(screen.getByRole('button', { name: 'Buy' }));
@@ -503,7 +503,7 @@ describe('command bar (BUNNDLY-59)', () => {
 
   it('the row Sell needs a token and says so; live, it asks for one wallet', async () => {
     const { user, requests } = setup({ global: { dryRun: false } });
-    await eventually(() => screen.getByText(/^Balances as of /u));
+    await eventually(() => screen.getByText(/^Slot \S+ · /u));
     const sell = (): HTMLElement => screen.getByRole('button', { name: 'Sell W03' });
     expect(sell()).toHaveProperty('disabled', true);
     expect(sell().getAttribute('aria-description')).toBe('Paste the mint of the token to sell.');
@@ -571,7 +571,7 @@ describe('command bar (BUNNDLY-59)', () => {
 
   it('SELL needs a token and selected wallets, and says so', async () => {
     const { user } = setup();
-    await eventually(() => screen.getByText(/^Balances as of /u));
+    await eventually(() => screen.getByText(/^Slot \S+ · /u));
     const sell = (): HTMLElement => screen.getByRole('button', { name: 'Sell' });
     expect(sell()).toHaveProperty('disabled', true);
     expect(sell().getAttribute('aria-description')).toBe('Paste the mint of the token to sell.');
@@ -584,7 +584,7 @@ describe('command bar (BUNNDLY-59)', () => {
 
   it('a creator wallet as the target: BUY waits for that creator’s token', async () => {
     const { user } = setup();
-    await screen.findByText(/^Balances as of /u);
+    await screen.findByText(/^Slot \S+ · /u);
     await user.type(screen.getByLabelText(TARGET_LABEL), CREATOR);
     await screen.findByText('Creator wallet', {}, TARGET_WAIT);
     const buy = screen.getByRole('button', { name: 'Buy' });
@@ -632,14 +632,14 @@ describe('decimals of the bought mint', () => {
 describe('Jupiter limits in Settings', () => {
   it('shows the plan that applies: Keyless without a key, the Settings plan with one', async () => {
     const first = setup();
-    await screen.findByText(/^Balances as of /u);
+    await screen.findByText(/^Slot \S+ · /u);
     await goTo(first.user, 'Settings');
     expect(screen.getByLabelText('Jupiter limit for buys').textContent).toBe(
       'Buys use now: No key (Keyless), 30 /order per minute (no Jupiter API key saved).',
     );
     cleanup();
     const second = setup({ jupiterKey: true });
-    await screen.findByText(/^Balances as of /u);
+    await screen.findByText(/^Slot \S+ · /u);
     await goTo(second.user, 'Settings');
     expect(screen.getByLabelText('Jupiter limit for buys').textContent).toBe(
       'Buys use now: Free, 60 /order per minute.',
@@ -660,7 +660,7 @@ describe('DRY-RUN and live mode', () => {
 
   it('live mode needs the confirmation with amount and wallet count; cancel changes nothing', async () => {
     const { user, requests } = setup();
-    await screen.findByText(/^Balances as of /u);
+    await screen.findByText(/^Slot \S+ · /u);
     await user.click(modeSwitch());
     const dialog = screen.getByRole('alertdialog');
     expect(dialog.textContent).toContain('up to 0.03 SOL from 3 wallets');
@@ -699,7 +699,7 @@ describe('transaction links follow the network (BUNNDLY-44)', () => {
     ['solana-explorer', `https://explorer.solana.com/tx/${SIG}?cluster=devnet`],
   ] as const)('devnet fleet, %s: the row links to the devnet page', async (explorer, href) => {
     const { vault } = setup({ global: { network: 'devnet', explorer } });
-    await screen.findByText(/^Balances as of /u);
+    await screen.findByText(/^Slot \S+ · /u);
     act(() => {
       vault.emit(runEvent('started'));
       vault.emit(
@@ -725,7 +725,7 @@ describe('100 wallets', () => {
     // by label, role and name run inside the command bar: over the whole page each one
     // works out the accessible name of every control of 100 rows. And the address is
     // pasted, because every typed character renders the screen again (BUNNDLY-65).
-    await eventually(() => screen.getByText(/^Balances as of /u));
+    await eventually(() => screen.getByText(/^Slot \S+ · /u));
     // every wallet at once; Stairs is the default since BUNNDLY-93
     await user.click(within(part('.table-bar')).getByRole('button', { name: 'Immediate' }));
     const bar = within(part('section.target'));

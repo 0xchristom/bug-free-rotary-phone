@@ -101,7 +101,7 @@ function tabCount(label: string): string {
 describe('rows of an armed group', () => {
   it('selected wallets are Armed and wait for the token; In flight counts them like Fleet fill; DISARM brings Ready back', async () => {
     const { user } = setup();
-    await screen.findByText(/^Balances as of /u);
+    await screen.findByText(/^Slot \S+ · /u);
     await waitFor(() => {
       expect(stateOf('W01')).toBe(`Armed${WAITING}`);
     });

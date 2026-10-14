@@ -25,6 +25,29 @@ export interface StatusBarProps {
 const SOCKET_TONE = { ok: 'ok', wait: 'warn', bad: 'danger' } as const;
 
 /**
+ * The slot and time of the last balance read (BUNNDLY-91), as the worker reported them:
+ * "—" when there is no read or the read carried no slot, never a slot from elsewhere.
+ */
+function BalanceSlot({ read }: { readonly read: RpcRead | null }) {
+  const slot = read?.slot == null ? '—' : String(read.slot);
+  const time = read === null ? null : new Date(read.at).toLocaleTimeString('en-GB');
+  return (
+    <span
+      className="rail-item rail-slot"
+      aria-live="polite"
+      title={
+        time === null
+          ? 'No balance read yet'
+          : `Balances read at slot ${read?.slot == null ? 'unknown' : slot}, ${time}`
+      }
+    >
+      Slot {slot}
+      {time !== null && ` · ${time}`}
+    </span>
+  );
+}
+
+/**
  * The rail at the bottom of the window: what the app runs on right now. It reports only
  * what was measured: no read yet is said as such, and a read answered by the public RPC
  * is called a fallback, never Helius.
@@ -86,11 +109,7 @@ export function StatusBar({
                 Fallback RPC (public) <b>{String(read.ms)} ms</b>
               </span>
             )}
-            {read !== null && (
-              <span className="rail-item" aria-live="polite">
-                Balances as of {new Date(read.at).toLocaleTimeString('en-GB')}
-              </span>
-            )}
+            <BalanceSlot read={read} />
             {feed !== null && (
               <>
                 <span className="rail-sep" aria-hidden="true" />

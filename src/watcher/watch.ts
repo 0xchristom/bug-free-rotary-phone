@@ -52,6 +52,11 @@ export interface WatchDetection {
   readonly source: DetectionSource;
   readonly path: DetectionPath;
   readonly signature: string;
+  /**
+   * Slot of the launch (BUNNDLY-91): of the log notification on the fast path, of the
+   * transaction otherwise; null when neither said it.
+   */
+  readonly slot: number | null;
   /** Unix ms (watch clock). */
   readonly detectedAt: number;
   /** The buy it started; null while queued or when none started. */
@@ -248,6 +253,7 @@ export function startWatch(deps: WatchDeps, options: WatchOptions): Watch {
         source: d.source,
         path: d.path,
         signature: d.signature,
+        slot: d.slot === null ? null : Number(d.slot),
         detectedAt: clock.now(),
         runId: null,
         reactionMs: null,

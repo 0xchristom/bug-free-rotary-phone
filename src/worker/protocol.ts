@@ -247,6 +247,11 @@ export interface VaultBalances {
   readonly token?: VaultTokenBalances;
   /** `fallback`: Helius failed and the public RPC answered (shown in the UI). */
   readonly source: 'helius' | 'fallback';
+  /**
+   * The lowest `context.slot` of the SOL balance batches (BUNNDLY-91); absent when no
+   * account was read. Never filled in from elsewhere.
+   */
+  readonly slot?: number;
   /** ISO-8601 time of the read. */
   readonly fetchedAt: string;
 }

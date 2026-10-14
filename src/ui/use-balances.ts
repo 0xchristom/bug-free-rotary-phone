@@ -116,6 +116,7 @@ export function useBalances(
             source: res.source,
             ms: Math.round(performance.now() - askedAt),
             at: res.fetchedAt,
+            slot: res.slot ?? null,
           });
           setState({
             lamports: new Map(res.balances.map((b) => [b.index, b.lamports])),
