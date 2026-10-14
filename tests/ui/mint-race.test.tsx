@@ -88,8 +88,8 @@ async function settle(): Promise<void> {
 function tokenCell(label: string): string | null {
   const tr = screen.getByRole('checkbox', { name: `Select ${label}` }).closest('tr');
   if (!tr) throw new Error('row');
-  // select, wallet, balance, token
-  return within(tr).getAllByRole('cell')[3]?.textContent ?? null;
+  // select, wallet, balance, buy amount, tokens
+  return within(tr).getAllByRole('cell')[4]?.textContent ?? null;
 }
 
 function alerts(): string {

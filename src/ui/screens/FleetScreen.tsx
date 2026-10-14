@@ -18,7 +18,7 @@ import { FleetTable } from '../FleetTable.tsx';
 import type { OperationsLog } from '../operations-log.ts';
 import { OperationsLogPanel } from '../OperationsLogPanel.tsx';
 import { SettingsResetNotice } from '../SettingsResetNotice.tsx';
-import { formatSol, formatUnits, parseSolAmount } from '../sol.ts';
+import { formatSol, parseSolAmount } from '../sol.ts';
 import { useBalances } from '../use-balances.ts';
 import { EMPTY_BUY, type BuyView } from '../use-buy.ts';
 import { useVault } from '../vault-state.ts';
@@ -158,12 +158,9 @@ export function FleetScreen({
   const onSelect = useCallback((index: number, value: boolean) => {
     setActive((d) => ({ ...d, [index]: value }));
   }, []);
-  const onSelectAll = useCallback(
-    (value: boolean) => {
-      setActive(Object.fromEntries(info.wallets.map((w) => [w.index, value])));
-    },
-    [info.wallets],
-  );
+  const onSelectAll = useCallback((indices: readonly number[], value: boolean) => {
+    setActive((d) => ({ ...d, ...Object.fromEntries(indices.map((i) => [i, value])) }));
+  }, []);
   // The address is the one the vault verified on unlock (D-018), never a typed one.
   const onCopy = useCallback(
     (_index: number, address: string) => {
@@ -181,14 +178,6 @@ export function FleetScreen({
     },
     [toast],
   );
-
-  const tokenAmounts = useMemo(() => {
-    const token = balances.token;
-    if (!token) return null;
-    return new Map(
-      [...token.amounts].map(([index, amount]) => [index, formatUnits(amount, token.decimals)]),
-    );
-  }, [balances.token]);
 
   // Bulk actions change only the drafts; saving stays a separate, explicit step.
   const setAllAmount = (lamports: bigint): void => {
@@ -449,12 +438,6 @@ export function FleetScreen({
         )}
       </BuyPanel>
 
-      <FleetSummaryBar
-        summary={summary}
-        walletCount={info.wallets.length}
-        selectedCount={selectedCount}
-        tokenDecimals={balances.token?.decimals ?? null}
-      />
       <FleetBulk
         onAmount={setAllAmount}
         onPercent={setAllPercent}
@@ -464,12 +447,7 @@ export function FleetScreen({
       <FleetTable
         wallets={info.wallets}
         lamports={balances.lamports}
-        tokenAmounts={tokenAmounts}
-        tokenLabel={
-          balances.token
-            ? `Token (${balances.token.program === 'token-2022' ? 'Token-2022' : 'SPL'})`
-            : null
-        }
+        token={balances.token}
         maxSpendText={maxSpendText}
         selected={active}
         minReserve={info.settings.global.minReserveLamports}
@@ -479,12 +457,19 @@ export function FleetScreen({
         onCopy={onCopy}
         probe={rowProbe}
         buy={buyView.run === null ? null : buyView.rows}
-        buyDecimals={buyDecimals}
         explorer={global.explorer}
         network={global.network}
         tools={
           <CreateWallets room={room} limit={MAX_WALLETS} blocked={createBlocked} onCreate={add} />
         }
+      />
+      <FleetSummaryBar
+        summary={summary}
+        walletCount={info.wallets.length}
+        selectedCount={selectedCount}
+        tokenDecimals={balances.token?.decimals ?? null}
+        firstFillMs={buyView.run?.firstConfirmMs ?? null}
+        lastFillMs={buyView.run?.lastConfirmMs ?? null}
       />
       <div className="actions">
         <Button

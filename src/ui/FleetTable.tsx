@@ -1,6 +1,5 @@
-import { memo, useId, useState, type ReactNode } from 'react';
+import { memo, useId, useMemo, useState, type ReactNode } from 'react';
 import { addressUrl, transactionUrl, type Explorer, type Network } from '../core/network.ts';
-import { formatPrice } from '../executor/oplog.ts';
 import {
   FAIL_MESSAGES,
   SKIP_MESSAGES,
@@ -15,17 +14,31 @@ import { shortAddress } from './short-address.ts';
 import { formatSol, formatUnits, parseSolAmount } from './sol.ts';
 import type { BuyRow } from './use-buy.ts';
 import {
+  DEFAULT_SORT,
+  WALLET_FILTERS,
+  matchesFilter,
+  matchesSearch,
+  nextSort,
+  sortWallets,
+  type FilterWallet,
+  type Sort,
+  type SortKey,
+  type WalletFilter,
+} from './wallet-filters.ts';
+import {
   Avatar,
   Checkbox,
   Chip,
   CopyIcon,
   ExternalIcon,
   IconButton,
-  InfoIcon,
+  Input,
   NumberInput,
   Popover,
   QrIcon,
+  SearchIcon,
   SolIcon,
+  SortIcon,
   cx,
   type Tone,
 } from './kit/index.ts';
@@ -52,14 +65,14 @@ interface RowProps extends FleetRowData {
   readonly probe?: ((index: number) => void) | undefined;
   /** This wallet's progress; the same object until its next event (memo). */
   readonly buy: BuyRow | null;
-  readonly decimals: number | null;
   readonly explorer: Explorer;
   readonly network: Network;
 }
 
 /** Shown where there is no value yet. */
 const NONE = '—';
-const COLUMNS = 7;
+/** Columns of the table, for the row that says no wallet matches. */
+const COLUMNS = 8;
 
 const STATE_LABELS: Record<WalletState, string> = {
   IDLE: 'Waiting',
@@ -103,19 +116,15 @@ function reasonText(reason: WalletReason | null): string | null {
 }
 
 const VERIFY_LABELS: Record<VerifyStatus, string> = {
-  MATCH: 'confirmed',
-  INCREASED: 'balance grew',
-  MISMATCH: 'different amount',
-  NO_INCREASE: 'no increase',
-  UNVERIFIABLE: 'not checked',
+  MATCH: 'Chain: confirmed',
+  INCREASED: 'Chain: balance grew',
+  MISMATCH: 'Chain: different amount',
+  NO_INCREASE: 'Chain: no increase',
+  UNVERIFIABLE: 'Chain: not checked',
 };
 
 function seconds(ms: number): string {
   return `${(ms / 1000).toFixed(1)} s`;
-}
-
-function tokens(amount: bigint, decimals: number | null): string {
-  return decimals === null ? amount.toString() : formatUnits(amount, decimals);
 }
 
 /** What the wallet would do on a buy, before any buy started. */
@@ -132,99 +141,25 @@ function idleStatus(
   return { text: 'Ready', tone: 'ok' };
 }
 
-/** DRY-RUN says it in the chip already; other reasons explain the state. */
-function whyOf(buy: BuyRow | null): string | null {
-  if (buy === null || buy.reason?.code === 'DRY_RUN') return null;
-  return reasonText(buy.reason);
+/**
+ * The wallet's last message under its state: why it ended as it did, or what the chain
+ * check found after a buy. DRY-RUN says it in the chip already.
+ */
+function lastMessage(buy: BuyRow | null): { readonly text: string; readonly title: string } | null {
+  if (buy === null) return null;
+  if (buy.verify !== null) {
+    return { text: VERIFY_LABELS[buy.verify], title: VERIFY_MESSAGES[buy.verify] };
+  }
+  if (buy.reason?.code === 'DRY_RUN') return null;
+  const why = reasonText(buy.reason);
+  return why === null ? null : { text: why, title: why };
 }
 
-function Detail({ term, children }: { readonly term: string; readonly children: ReactNode }) {
-  return (
-    <div>
-      <dt>{term}</dt>
-      <dd>{children}</dd>
-    </div>
-  );
-}
-
-/** The expanded row: the full address, the reserve and everything known about the buy. */
-function Details({
-  label,
-  address,
-  reserve,
-  buy,
-  decimals,
-  explorer,
-  network,
-}: {
-  readonly label: string;
-  readonly address: string;
-  readonly reserve: bigint | null;
-  readonly buy: BuyRow | null;
-  readonly decimals: number | null;
-  readonly explorer: Explorer;
-  readonly network: Network;
-}) {
-  const result = buy?.result ?? null;
-  const quote = buy?.quote ?? null;
-  const received = result?.totalOutputAmount ?? null;
-  const spent = result?.totalInputAmount ?? null;
-  const price =
-    received !== null && spent !== null && decimals !== null
-      ? formatPrice(spent, received, decimals)
-      : null;
-  const why = whyOf(buy);
-  const url = result?.signature ? transactionUrl(explorer, network, result.signature) : null;
-  const verify = buy?.verify ?? null;
-  const warn = verify === 'MISMATCH' || verify === 'NO_INCREASE';
-  return (
-    <dl className="details" aria-label={`Details of ${label}`}>
-      <Detail term="Deposit address">
-        <code className="address">{address}</code>
-      </Detail>
-      <Detail term="Reserve (SOL)">
-        {reserve === null ? NONE : formatSol(reserve < 0n ? 0n : reserve)}
-      </Detail>
-      <Detail term="Time">{buy === null ? NONE : seconds(buy.sinceStartMs)}</Detail>
-      <Detail term="Attempts">{buy === null ? NONE : buy.attempt}</Detail>
-      <Detail term="Bought">
-        {received !== null ? (
-          tokens(received, decimals)
-        ) : quote && buy?.reason?.code === 'DRY_RUN' ? (
-          <span className="muted" title="Quote from /order in DRY-RUN mode">
-            ≈ {tokens(quote.outAmount, decimals)}
-          </span>
-        ) : (
-          NONE
-        )}
-      </Detail>
-      <Detail term="Spent (SOL)">{spent === null ? NONE : formatSol(spent)}</Detail>
-      <Detail term="Price (SOL/token)">{price ?? NONE}</Detail>
-      <Detail term="Chain">
-        {verify === null ? (
-          NONE
-        ) : (
-          <Chip
-            size="sm"
-            tone={warn ? 'danger' : verify === 'UNVERIFIABLE' ? 'warn' : 'ok'}
-            title={VERIFY_MESSAGES[verify]}
-          >
-            {VERIFY_LABELS[verify]}
-          </Chip>
-        )}
-      </Detail>
-      <Detail term="Transaction">
-        {url ? (
-          <a href={url} target="_blank" rel="noopener noreferrer">
-            Transaction
-          </a>
-        ) : (
-          NONE
-        )}
-      </Detail>
-      {why && <Detail term="Reason">{why}</Detail>}
-    </dl>
-  );
+/** The amount typed in a row: lamports, null when empty, 'invalid' when it does not parse. */
+function amountOf(text: string): bigint | null | 'invalid' {
+  if (text.trim() === '') return null;
+  const parsed = parseSolAmount(text);
+  return parsed.ok ? parsed.lamports : 'invalid';
 }
 
 /**
@@ -233,8 +168,6 @@ function Details({
  */
 const FleetRow = memo(function FleetRow(p: RowProps) {
   p.probe?.(p.index);
-  const detailsId = useId();
-  const [detailsOpen, setDetailsOpen] = useState(false);
   const [qrOpen, setQrOpen] = useState(false);
   const input = p.maxSpendText.trim() === '' ? null : parseSolAmount(p.maxSpendText);
   const maxSpend = input?.ok ? input.lamports : null;
@@ -247,7 +180,9 @@ const FleetRow = memo(function FleetRow(p: RowProps) {
   const rowClass = state.reserveTooLow ? 'row-error' : state.ready ? 'row-ready' : null;
   const explorerUrl = addressUrl(p.explorer, p.network, p.address);
   const idle = idleStatus(state, p.selected, p.balance, maxSpend);
-  const why = whyOf(p.buy);
+  const message = lastMessage(p.buy);
+  const signature = p.buy?.result?.signature ?? null;
+  const txUrl = signature ? transactionUrl(p.explorer, p.network, signature) : null;
   const amountError =
     input !== null && !input.ok
       ? input.message
@@ -257,188 +192,307 @@ const FleetRow = memo(function FleetRow(p: RowProps) {
           ? `Leaves ${formatSol(state.reserve)} SOL; the minimum reserve is ${formatSol(p.minReserve)} SOL.`
           : null;
   return (
-    <>
-      <tr className={cx(rowClass, !p.selected && 'unsel')} data-ready={state.ready}>
-        <td className="c-check">
-          <Checkbox
-            aria-label={`Select ${p.label}`}
-            checked={p.selected}
-            onChange={(checked) => {
-              p.onSelect(p.index, checked);
-            }}
-          />
-        </td>
-        <td>
-          <div className="w">
-            <Avatar seed={p.address} />
-            <div>
-              <b className="w-name">{p.label}</b>
-              <span className="addr">
-                <span className="mono" title={p.address}>
-                  {shortAddress(p.address)}
-                </span>
-                <IconButton
-                  size="tiny"
-                  label={`Copy address ${p.label}`}
-                  icon={<CopyIcon />}
-                  onClick={() => {
-                    p.onCopy(p.index, p.address);
-                  }}
-                />
-                {explorerUrl && (
-                  <a
-                    className="k-iconbtn k-iconbtn-neutral k-iconbtn-tiny"
-                    href={explorerUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    aria-label={`Open ${p.label} in the explorer`}
-                    title={`Open ${p.label} in the explorer`}
-                  >
-                    <ExternalIcon />
-                  </a>
-                )}
+    <tr className={cx(rowClass, !p.selected && 'unsel')} data-ready={state.ready}>
+      <td className="c-check">
+        <Checkbox
+          aria-label={`Select ${p.label}`}
+          checked={p.selected}
+          onChange={(checked) => {
+            p.onSelect(p.index, checked);
+          }}
+        />
+      </td>
+      <td>
+        <div className="w">
+          <Avatar seed={p.address} />
+          <div>
+            <b className="w-name">{p.label}</b>
+            <span className="addr">
+              <span className="mono" title={p.address}>
+                {shortAddress(p.address)}
               </span>
-            </div>
-          </div>
-        </td>
-        <td>
-          {p.balance === null ? (
-            NONE
-          ) : (
-            <span className="bal">
-              <SolIcon />
-              {formatSol(p.balance)}
+              <IconButton
+                size="tiny"
+                label={`Copy address ${p.label}`}
+                icon={<CopyIcon />}
+                onClick={() => {
+                  p.onCopy(p.index, p.address);
+                }}
+              />
+              {explorerUrl && (
+                <a
+                  className="k-iconbtn k-iconbtn-neutral k-iconbtn-tiny"
+                  href={explorerUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  aria-label={`Open ${p.label} in the explorer`}
+                  title={`Open ${p.label} in the explorer`}
+                >
+                  <ExternalIcon />
+                </a>
+              )}
             </span>
-          )}
-        </td>
-        <td className="num">{p.token ?? NONE}</td>
-        <td>
-          <NumberInput
-            unit="SOL"
-            className="amount-input"
-            aria-label={`Max spend ${p.label}`}
-            value={p.maxSpendText}
-            invalid={input !== null && !input.ok}
-            onChange={(e) => {
-              p.onMaxSpend(p.index, e.target.value);
-            }}
-          />
-          {amountError && <p className="field-error">{amountError}</p>}
-        </td>
-        <td>
-          {p.buy === null ? (
-            <Chip tone={idle.tone}>{idle.text}</Chip>
-          ) : (
-            <Chip tone={stateTone(p.buy)} dot={stateTone(p.buy) === 'run'}>
-              {stateLabel(p.buy)}
-            </Chip>
-          )}
-          {why && (
-            <p className="cap" title={why}>
-              {why}
-            </p>
-          )}
-        </td>
-        <td className="c-acts">
-          <div className="acts">
-            <Popover
-              open={qrOpen}
-              onClose={() => {
-                setQrOpen(false);
-              }}
-              label={`QR code of ${p.label}`}
-              className="qr-pop"
-              trigger={
-                <IconButton
-                  size="sm"
-                  label={`QR code ${p.label}`}
-                  icon={<QrIcon />}
-                  aria-expanded={qrOpen}
-                  onClick={() => {
-                    setQrOpen((open) => !open);
-                  }}
-                />
-              }
-            >
-              <AddressQr address={p.address} />
-              <b>{p.label}</b>
-              <code className="address">{p.address}</code>
-            </Popover>
-            <IconButton
-              size="sm"
-              label={`Details ${p.label}`}
-              icon={<InfoIcon />}
-              aria-expanded={detailsOpen}
-              aria-controls={detailsOpen ? detailsId : undefined}
-              onClick={() => {
-                setDetailsOpen((open) => !open);
-              }}
-            />
           </div>
-        </td>
-      </tr>
-      {detailsOpen && (
-        <tr className="detail" id={detailsId}>
-          <td colSpan={COLUMNS}>
-            <Details
-              label={p.label}
-              address={p.address}
-              reserve={state.reserve}
-              buy={p.buy}
-              decimals={p.decimals}
-              explorer={p.explorer}
-              network={p.network}
-            />
-          </td>
-        </tr>
-      )}
-    </>
+        </div>
+      </td>
+      <td>
+        {p.balance === null ? (
+          NONE
+        ) : (
+          <span className="bal">
+            <SolIcon />
+            {formatSol(p.balance)}
+          </span>
+        )}
+      </td>
+      <td>
+        <NumberInput
+          unit="SOL"
+          className="amount-input"
+          aria-label={`Max spend ${p.label}`}
+          value={p.maxSpendText}
+          invalid={input !== null && !input.ok}
+          onChange={(e) => {
+            p.onMaxSpend(p.index, e.target.value);
+          }}
+        />
+        {amountError && <p className="field-error">{amountError}</p>}
+      </td>
+      <td className="num">{p.token ?? NONE}</td>
+      <td>
+        {p.buy === null ? (
+          <Chip tone={idle.tone}>{idle.text}</Chip>
+        ) : (
+          <Chip tone={stateTone(p.buy)} dot={stateTone(p.buy) === 'run'}>
+            {stateLabel(p.buy)}
+          </Chip>
+        )}
+        {message && (
+          <p className="cap" title={message.title}>
+            {message.text}
+          </p>
+        )}
+      </td>
+      <td className="c-tx">
+        {signature && txUrl ? (
+          <span className="tx">
+            <a href={txUrl} target="_blank" rel="noopener noreferrer" className="mono">
+              {shortAddress(signature)}
+            </a>
+            <small>+{seconds(p.buy?.sinceStartMs ?? 0)} after start</small>
+          </span>
+        ) : (
+          NONE
+        )}
+      </td>
+      <td className="c-acts">
+        <div className="acts">
+          <Popover
+            open={qrOpen}
+            onClose={() => {
+              setQrOpen(false);
+            }}
+            label={`QR code of ${p.label}`}
+            className="qr-pop"
+            trigger={
+              <IconButton
+                size="sm"
+                label={`QR code ${p.label}`}
+                icon={<QrIcon />}
+                aria-expanded={qrOpen}
+                onClick={() => {
+                  setQrOpen((open) => !open);
+                }}
+              />
+            }
+          >
+            <AddressQr address={p.address} />
+            <b>{p.label}</b>
+            <code className="address">{p.address}</code>
+          </Popover>
+        </div>
+      </td>
+    </tr>
   );
 });
 
 export interface FleetTableProps {
   readonly wallets: readonly FleetRowData[];
   readonly lamports: ReadonlyMap<number, bigint> | null;
-  readonly tokenAmounts: ReadonlyMap<number, string> | null;
-  readonly tokenLabel: string | null;
+  /** Token balances in base units, with the decimals and the program of the shown token. */
+  readonly token: {
+    readonly amounts: ReadonlyMap<number, bigint>;
+    readonly decimals: number;
+    readonly program: 'spl-token' | 'token-2022';
+  } | null;
   readonly maxSpendText: Readonly<Record<number, string>>;
   /** Wallets without an entry are selected (D-019). */
   readonly selected: Readonly<Record<number, boolean>>;
   readonly minReserve: bigint;
   readonly onMaxSpend: RowProps['onMaxSpend'];
   readonly onSelect: RowProps['onSelect'];
-  readonly onSelectAll: (selected: boolean) => void;
+  /** Selects or clears the given wallets: the ones the filter and the search show. */
+  readonly onSelectAll: (indices: readonly number[], selected: boolean) => void;
   readonly onCopy: RowProps['onCopy'];
   readonly probe?: RowProps['probe'];
   /** Progress of the current buy, or null before the first one (BUNNDLY-27). */
   readonly buy?: ReadonlyMap<number, BuyRow> | null;
-  /** Decimals of the bought token. */
-  readonly buyDecimals?: number | null;
   readonly explorer?: Explorer;
   /** Explorer links lead to this network's pages. */
   readonly network?: Network;
-  /** Controls on the right of the bar above the table. */
+  /** Controls on the right of the filter tabs. */
   readonly tools?: ReactNode;
 }
 
+/** A column header that sorts the table; `aria-sort` says how it is sorted now. */
+function SortHeader({
+  label,
+  name,
+  sortKey,
+  sort,
+  onSort,
+}: {
+  readonly label: string;
+  /** Accessible name of the column when it differs from the visible label. */
+  readonly name?: string;
+  readonly sortKey: SortKey;
+  readonly sort: Sort;
+  readonly onSort: (key: SortKey) => void;
+}) {
+  const active = sort.key === sortKey;
+  return (
+    <th
+      scope="col"
+      aria-label={name}
+      aria-sort={active ? (sort.dir === 1 ? 'ascending' : 'descending') : 'none'}
+    >
+      <button
+        type="button"
+        className={cx('th-sort', active && 'on')}
+        onClick={() => {
+          onSort(sortKey);
+        }}
+      >
+        {label}
+        <SortIcon />
+      </button>
+    </th>
+  );
+}
+
 /**
- * Wallet table (SPEC 11.2): one 56 px row per wallet; the buy details of a wallet open in a
- * row under it (SPEC 3.6).
+ * Wallet table (SPEC 11.2, mockup v2): filter tabs with counts and a search over it, one
+ * 68 px row per wallet, sortable columns. A buy's outcome stays in the row: the state, the
+ * wallet's last message under it and the transaction in "Last transaction".
  */
 export function FleetTable(t: FleetTableProps) {
-  const decimals = t.buyDecimals ?? null;
+  const ids = useId();
   const explorer = t.explorer ?? 'solscan';
   const network = t.network ?? 'mainnet';
+  const [filter, setFilter] = useState<WalletFilter>('all');
+  const [query, setQuery] = useState('');
+  const [sort, setSort] = useState<Sort>(DEFAULT_SORT);
+
+  const tokenText = useMemo(() => {
+    const token = t.token;
+    if (token === null) return null;
+    return new Map(
+      [...token.amounts].map(([index, amount]) => [index, formatUnits(amount, token.decimals)]),
+    );
+  }, [t.token]);
+
+  const rows = t.wallets.map((w) => {
+    const amount = amountOf(t.maxSpendText[w.index] ?? '');
+    const balance = t.lamports?.get(w.index) ?? null;
+    const selected = t.selected[w.index] ?? true;
+    const buy = t.buy?.get(w.index) ?? null;
+    const filterable: FilterWallet = {
+      selected,
+      buy,
+      reserveTooLow: rowState({
+        balance,
+        maxSpend: typeof amount === 'bigint' ? amount : null,
+        minReserve: t.minReserve,
+        active: selected,
+      }).reserveTooLow,
+    };
+    return {
+      wallet: w,
+      filterable,
+      sortable: {
+        index: w.index,
+        balance,
+        amount: typeof amount === 'bigint' ? amount : null,
+        tokens: t.token?.amounts.get(w.index) ?? null,
+      },
+    };
+  });
+  const counts = Object.fromEntries(
+    WALLET_FILTERS.map((f) => [
+      f.key,
+      rows.filter((r) => matchesFilter(f.key, r.filterable)).length,
+    ]),
+  ) as Record<WalletFilter, number>;
+  const shown = rows.filter(
+    (r) =>
+      matchesFilter(filter, r.filterable) && matchesSearch(query, r.wallet.label, r.wallet.address),
+  );
+  const byIndex = new Map(shown.map((r) => [r.wallet.index, r.wallet]));
+  const order = sortWallets(
+    shown.map((r) => r.sortable),
+    sort,
+  );
+  const visible = order.flatMap((i) => {
+    const w = byIndex.get(i);
+    return w ? [w] : [];
+  });
+
   const selectedCount = t.wallets.filter((w) => t.selected[w.index] ?? true).length;
-  const all = selectedCount === t.wallets.length;
+  const visibleSelected = visible.filter((w) => t.selected[w.index] ?? true).length;
+  const onSort = (key: SortKey): void => {
+    setSort((s) => nextSort(s, key));
+  };
+
   return (
     <div className="wallets-block">
+      <div className="tabsrow">
+        <div className="tabs" role="group" aria-label="Wallet filters">
+          {WALLET_FILTERS.map((f) => (
+            <button
+              key={f.key}
+              type="button"
+              className={cx('tab', filter === f.key && 'on')}
+              aria-pressed={filter === f.key}
+              onClick={() => {
+                setFilter(f.key);
+              }}
+            >
+              {f.label} <span className="tab-count">{counts[f.key]}</span>
+            </button>
+          ))}
+        </div>
+        <span className="spacer" />
+        {t.tools}
+      </div>
       <div className="table-bar">
+        <label className="search" htmlFor={`${ids}-q`}>
+          <SearchIcon />
+          <span className="sr-only">Search wallets</span>
+          <Input
+            id={`${ids}-q`}
+            type="search"
+            placeholder="Search wallets…"
+            spellCheck={false}
+            autoComplete="off"
+            value={query}
+            onChange={(e) => {
+              setQuery(e.target.value);
+            }}
+          />
+        </label>
         <span className="sel-count" aria-live="polite">
           {selectedCount} of {t.wallets.length} selected
         </span>
-        <span className="spacer" />
-        {t.tools}
       </div>
       <div className="wallets-wrap">
         <table className="wallets">
@@ -451,34 +505,65 @@ export function FleetTable(t: FleetTableProps) {
               <th scope="col" className="c-check">
                 <Checkbox
                   aria-label="Select all wallets"
-                  checked={selectedCount === 0 ? false : all ? true : 'mixed'}
-                  disabled={t.wallets.length === 0}
-                  onChange={t.onSelectAll}
+                  checked={
+                    visibleSelected === 0
+                      ? false
+                      : visibleSelected === visible.length
+                        ? true
+                        : 'mixed'
+                  }
+                  disabled={visible.length === 0}
+                  onChange={(checked) => {
+                    t.onSelectAll(
+                      visible.map((w) => w.index),
+                      checked,
+                    );
+                  }}
                 />
               </th>
-              <th scope="col">Wallet</th>
-              <th scope="col" aria-label="Balance (SOL)">
-                Balance
-              </th>
-              <th scope="col">{t.tokenLabel ?? 'Token'}</th>
-              <th scope="col" aria-label="Amount (max spend, SOL)">
-                Amount
-              </th>
+              <SortHeader label="Wallet" sortKey="wallet" sort={sort} onSort={onSort} />
+              <SortHeader
+                label="Balance"
+                name="Balance (SOL)"
+                sortKey="balance"
+                sort={sort}
+                onSort={onSort}
+              />
+              <SortHeader
+                label="Buy amount"
+                name="Buy amount (max spend, SOL)"
+                sortKey="amount"
+                sort={sort}
+                onSort={onSort}
+              />
+              <SortHeader
+                label={
+                  t.token
+                    ? `Tokens (${t.token.program === 'token-2022' ? 'Token-2022' : 'SPL'})`
+                    : 'Tokens'
+                }
+                sortKey="tokens"
+                sort={sort}
+                onSort={onSort}
+              />
               <th scope="col">Status</th>
+              <th scope="col" className="c-tx">
+                Last transaction
+              </th>
               <th scope="col" className="c-acts">
                 <span className="sr-only">Wallet tools</span>
               </th>
             </tr>
           </thead>
           <tbody>
-            {t.wallets.map((w) => (
+            {visible.map((w) => (
               <FleetRow
                 key={w.index}
                 index={w.index}
                 label={w.label}
                 address={w.address}
                 balance={t.lamports?.get(w.index) ?? null}
-                token={t.tokenAmounts?.get(w.index) ?? null}
+                token={tokenText?.get(w.index) ?? null}
                 maxSpendText={t.maxSpendText[w.index] ?? ''}
                 selected={t.selected[w.index] ?? true}
                 minReserve={t.minReserve}
@@ -487,11 +572,17 @@ export function FleetTable(t: FleetTableProps) {
                 onCopy={t.onCopy}
                 probe={t.probe}
                 buy={t.buy?.get(w.index) ?? null}
-                decimals={decimals}
                 explorer={explorer}
                 network={network}
               />
             ))}
+            {visible.length === 0 && (
+              <tr className="empty">
+                <td colSpan={COLUMNS}>
+                  {t.wallets.length === 0 ? 'No wallets yet.' : 'No wallet matches the filter.'}
+                </td>
+              </tr>
+            )}
           </tbody>
         </table>
       </div>
