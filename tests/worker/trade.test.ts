@@ -182,6 +182,21 @@ describe('buy amount as a percent of the balance (money path)', () => {
     ]);
   });
 
+  it('a balance exactly at the reserve: the percent gives 0, skipped with no /order', async () => {
+    const t = await setup(2);
+    t.balance(0, 15_000_000n); // exactly the 0.015 SOL reserve: nothing is free
+    t.balance(1, 15_000_001n); // one lamport above it
+    await t.save({}, trade({ buyAmount: { kind: 'percent', percent: 100 } }));
+    const finals = await t.buy();
+    // 0: min(15 000 000 × 100 / 100, 15 000 000 − 15 000 000) = 0 → never asked
+    // 1: min(15 000 001 × 100 / 100, 15 000 001 − 15 000 000) = 1
+    expect(t.asked()).toEqual([[1, 1n, undefined]]);
+    expect(finals.map((e) => [e.index, e.state, e.reason?.code])).toEqual([
+      [0, 'SKIPPED', 'INSUFFICIENT_SOL'],
+      [1, 'SKIPPED', 'DRY_RUN'],
+    ]);
+  });
+
   it('the balance changes after the setting: the read at the start counts', async () => {
     const t = await setup(1);
     await t.save({}, trade({ buyAmount: { kind: 'percent', percent: 40 } }));
