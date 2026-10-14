@@ -4,12 +4,13 @@
  * part 1). Based on Andy's reproduction; vault answers are released by hand.
  */
 import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
+import type { UserEvent } from '@testing-library/user-event';
 import { afterEach, describe, expect, it } from 'vitest';
 import { AppError } from '../../src/core/errors.ts';
 import { App } from '../../src/ui/App.tsx';
 import type { VaultBalances, VaultRequest, VaultStatus } from '../../src/worker/protocol.ts';
 import { fleetInfo, mockStorage, mockVault } from './fakes.ts';
+import { setupUser } from './user.ts';
 
 interface Deferred {
   resolve: (v: VaultBalances) => void;
@@ -68,10 +69,10 @@ function setup() {
       balanceRefreshMs={60_000}
     />,
   );
-  return { pending, vault, user: userEvent.setup() };
+  return { pending, vault, user: setupUser() };
 }
 
-async function submitMint(user: ReturnType<typeof userEvent.setup>, text: string) {
+async function submitMint(user: UserEvent, text: string) {
   const field = screen.getByLabelText('Token address (mint)');
   await user.clear(field);
   if (text !== '') await user.type(field, text);
