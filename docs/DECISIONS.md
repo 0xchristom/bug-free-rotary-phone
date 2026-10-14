@@ -1017,7 +1017,24 @@ Rejestr decyzji i rozbieżności z dokumentacją zewnętrzną. Nowe wpisy dopisu
   - Filtr i wyszukiwanie nie renderują ponownie wierszy, które zostają na ekranie (`memo`, test z sondą przy 100 portfelach).
   - Odrzucone: własny kontener przewijania tabeli jak w makiecie (przycinałby Popover kodu QR w krótkiej tabeli albo wymagał pozycjonowania `fixed` liczonego w skrypcie), przemianowanie etykiet w istniejących plikach (zadanie tego zabrania), keystore jako plik fixture w repo (zasada „żadnych keystore w repo”; test buduje plik z etykietą `W03` zapisaną jawnie).
 
-## D-048: Parametry handlu w tabeli (etap 2): zapis od razu, blokada w trakcie akcji, „Edit selected”
+## D-048: Zakup i uzbrojenie na portfelach z żądania; worker sprawdza rodzaj celu
+
+- Data: 2026-10-14
+- Zadanie: BUNNDLY-59
+- Kontekst: pasek komend działa na portfelach zaznaczonych w tabeli, także tych, których zaznaczenia jeszcze nie zapisano. Dotąd `startBuy` i `arm` brały portfele z zapisanego pola `active`. Pole celu przyjmuje mint albo portfel twórcy, a worker nie sprawdzał, co dostał.
+- Decyzja:
+  - `startBuy { mint, wallets?, group? }` i `arm { creator, wallets?, group? }`: `wallets` to indeksy portfeli, wszystkie z grupy żądania (D-046), tak jak w `startSell` (D-044). Z listą kupują portfele z listy, które mają kwotę kupna (D-045); zapisane `active` nie bierze w tym udziału i zostaje zapamiętanym zaznaczeniem tabeli (D-019, D-047). Bez listy kupują aktywne portfele grupy, jak przed zmianą. Pasek komend zawsze wysyła listę. Lista spoza grupy, z powtórzeniem albo nie-tablica to zniekształcone żądanie (`INTERNAL_ERROR`, jak inne). Pusta lista albo brak portfela z kwotą: `NO_WALLETS_TO_BUY`.
+  - `arm` zamraża listę do rozbrojenia, tak jak ustawienia (D-039). Każde wykrycie w tej grupie kupuje tą listą.
+  - Nowe żądanie `classifyTarget { address }` jednym odczytem `getMultipleAccounts` zwraca `mint` (z programem: SPL Token albo Token-2022) albo `wallet`. Portfel to konto System Program bez danych albo adres bez konta. Konto tokenowe, program wykonywalny i każde inne konto dają błąd z nazwą: `TARGET_IS_TOKEN_ACCOUNT`, `TARGET_IS_PROGRAM`, `TARGET_UNSUPPORTED`. Zły tekst adresu: `INVALID_TARGET_ADDRESS`.
+  - Ręczny `startBuy` i `arm` sprawdzają rodzaj celu tą samą funkcją. Zły rodzaj daje `TARGET_KIND_MISMATCH`, zanim cokolwiek pójdzie do Jupitera albo otworzy się gniazdo. Kupno wywołane przez detektor nie sprawdza celu: mint pochodzi z detekcji.
+  - Wynik „mint” worker pamięta do zablokowania floty (mint nie zmienia rodzaju). Zakup po sprawdzeniu w pasku nie czyta więc konta drugi raz. Wynik „wallet” nie jest pamiętany, bo pod adresem bez konta może jeszcze powstać mint.
+  - Odczyt idzie przez Helius, z publicznym RPC jako zapasem. Bez klucza Helius idzie przez publiczne RPC, bo DRY-RUN działa bez klucza.
+- Konsekwencje / alternatywy:
+  - Ręczny zakup ma o jedno zapytanie RPC więcej, gdy mintu nie sprawdzono wcześniej w pasku. Uzbrojenie ma zawsze jedno zapytanie więcej, przed odczytem sald.
+  - Kwoty max spend dalej pochodzą z zapisanych ustawień. Dopóki kwoty w tabeli nie są zapisane, zakup i uzbrojenie są wyłączone. Zmiana samego zaznaczenia ich nie blokuje.
+  - Odrzucone: rozpoznanie rodzaju tylko w UI (worker przyjąłby żądanie wysłane z pominięciem paska) i zgadywanie po długości danych bez sprawdzenia właściciela.
+
+## D-049: Parametry handlu w tabeli (etap 2): zapis od razu, blokada w trakcie akcji, „Edit selected”
 
 - Data: 2026-10-14
 - Zadanie: BUNNDLY-71
@@ -1030,6 +1047,7 @@ Rejestr decyzji i rozbieżności z dokumentacją zewnętrzną. Nowe wpisy dopisu
   - **Kwota w wierszu zostaje polem** (wymóg zadania), choć makieta pokazuje w tej kolumnie sam tekst. **Decyzja tymczasowa (2026-10-14):** pole z przyciskiem jednostki — do potwierdzenia przez Andy'ego przy odbiorze zrzutami.
   - **„Max spend for all” i „% of balance”** (dawne akcje zbiorcze, BUNNDLY-14) zastępuje „Edit selected” z kwotą w SOL albo w %. Procent jest teraz parametrem portfela liczonym na starcie przebiegu (D-045), a nie kwotą wyliczoną z salda w chwili kliknięcia.
   - **Wartości domyślne floty** w Ustawieniach („Trade defaults”) zapisuje „Save settings” razem z resztą ustawień. Puste pole slippage oznacza Auto, a pusta kwota oznacza brak kwoty domyślnej.
+  - **Gotowość w pasku komend (D-048):** BUY i ARM liczą jako gotowy zaznaczony portfel z kwotą kupna, własną albo domyślną, w SOL albo w %, a nie tylko z wpisem `maxSpend`. Kwota do wydania w podsumowaniu i w potwierdzeniu liczy procent z ostatniego odczytu salda. Kwoty zapisują się od razu, więc nie ma już blokady „najpierw zapisz max spend”.
 - Konsekwencje / alternatywy:
   - Każda zmiana kwoty daje nowy tekst pliku do zapisania; „Create wallets” czeka na zapis pliku jak dotąd.
   - Odrzucone: zapis kwot przyciskiem „Save table changes” (zadanie wymaga zapisu po Enter) i blokada całej tabeli w trakcie przebiegu (portfele spoza przebiegu i spoza uzbrojonej grupy wolno zmieniać, D-046).

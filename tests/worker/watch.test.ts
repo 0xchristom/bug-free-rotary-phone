@@ -11,10 +11,11 @@ import { logEntry, type ExecutorEvent } from '../../src/executor/index.ts';
 import type { JupiterClient } from '../../src/jupiter/index.ts';
 import type { WatchEvent } from '../../src/watcher/watch.ts';
 import type { VaultStatus, WorkerEvent } from '../../src/worker/protocol.ts';
-import { createVaultHandler } from '../../src/worker/vault.ts';
+import { createVaultHandler, type VaultHandler } from '../../src/worker/vault.ts';
 import { FakeClock, T0 } from '../helpers/fake-clock.ts';
 import { FakeJupiter } from '../helpers/fake-jupiter.ts';
 import { FakeSocket } from '../helpers/fake-socket.ts';
+import { MINT_ACCOUNT } from '../helpers/mint-account.ts';
 import { launch, signatureOf, withBlockTime, withMint } from '../helpers/launch-fixtures.ts';
 import { buildTransaction } from '../helpers/tx-fakes.ts';
 
@@ -30,6 +31,10 @@ const N = launch(0);
 const CREATOR = N.watched;
 const MINT = N.expectedMint;
 const MINT_2 = launch(1).expectedMint;
+
+/** Every wallet of the open fleet: what "select all" in the table sends (BUNNDLY-59). */
+const all = (h: VaultHandler): number[] =>
+  h.inspect().unlocked?.publicWallets.map((w) => w.index) ?? [];
 const SIG_2 = signatureOf(launch(1));
 const SIG_3 = signatureOf(launch(2));
 const RPC_DELAY_MS = 1_000;
@@ -65,14 +70,18 @@ async function setup(o: Setup = {}) {
       case 'getMultipleAccounts':
         return {
           context: { slot: 1 },
-          value: (params[0] as string[]).map(() => ({
-            lamports: 1_000_000_000,
-            owner: '11111111111111111111111111111111',
-            data: ['', 'base64'],
-            executable: false,
-            rentEpoch: 0,
-            space: 0,
-          })),
+          value: (params[0] as string[]).map((account) =>
+            account === MINT
+              ? MINT_ACCOUNT
+              : {
+                  lamports: 1_000_000_000,
+                  owner: '11111111111111111111111111111111',
+                  data: ['', 'base64'],
+                  executable: false,
+                  rentEpoch: 0,
+                  space: 0,
+                },
+          ),
         };
       case 'getSignaturesForAddress': {
         const opts = params[1] as { until?: string };
@@ -154,10 +163,16 @@ async function setup(o: Setup = {}) {
     if (!s) throw new Error('no socket');
     return s;
   };
-  /** Arms (the balance read takes the RPC's 1 s) and opens the socket. */
-  const arm = async (creator = CREATOR): Promise<void> => {
-    const armed = h.handle({ type: 'arm', creator });
-    if (!o.realClock) await clock.runUntil(clock.now() + RPC_DELAY_MS);
+  /**
+   * Arms (the target check and then the balance read take the RPC's 1 s each) and opens
+   * the socket.
+   */
+  const arm = async (creator = CREATOR, wallets = all(h)): Promise<void> => {
+    const armed = h.handle({ type: 'arm', creator, wallets });
+    if (!o.realClock) {
+      await clock.runUntil(clock.now() + RPC_DELAY_MS);
+      await clock.runUntil(clock.now() + RPC_DELAY_MS);
+    }
     await armed;
     await clock.settle();
     socket().connect();
@@ -397,21 +412,52 @@ describe('auto-lock and lock', () => {
     const t = await setup({ mode: 'continuous' });
     const reads = () => t.rpcLog.filter((c) => c.method === 'getMultipleAccounts').length;
     await t.arm();
-    expect(reads()).toBe(1);
-    expect(t.sockets).toHaveLength(1); // the socket opened after the read
+    expect(reads()).toBe(2); // the creator's account (BUNNDLY-59), then the balances
+    expect(t.sockets).toHaveLength(1); // the socket opened after the reads
     expect(t.sockets[0]?.createdAt).toBeGreaterThanOrEqual(
-      (t.rpcLog.find((c) => c.method === 'getMultipleAccounts')?.at ?? Infinity) + RPC_DELAY_MS,
+      (t.rpcLog.filter((c) => c.method === 'getMultipleAccounts').at(-1)?.at ?? Infinity) +
+        RPC_DELAY_MS,
     );
     await t.clock.runUntil(t.clock.now() + 30_000 + RPC_DELAY_MS);
-    expect(reads()).toBe(2);
+    expect(reads()).toBe(3);
     await t.h.handle({ type: 'disarm' });
+  });
+});
+
+describe('selected wallets and the target (BUNNDLY-59)', () => {
+  it('a detection buys with the wallets listed at arming, not the saved selection', async () => {
+    const t = await setup();
+    const addresses = t.h.inspect().unlocked?.publicWallets.map((w) => w.address) ?? [];
+    expect(addresses).toHaveLength(2);
+    await t.arm(CREATOR, [1]);
+    t.socket().message(N.message);
+    await t.clock.settle();
+    expect((await t.status()).buy).toMatchObject({ mint: MINT, wallets: 1 });
+    await t.untilNoBuy();
+    expect(t.fake.ordersOf(addresses[0] ?? '')).toBe(0);
+    expect(t.fake.ordersOf(addresses[1] ?? '')).toBe(1);
+  });
+
+  it('ARM on a token mint → TARGET_KIND_MISMATCH, no socket and no buy', async () => {
+    const t = await setup();
+    const armed = t.h.handle({ type: 'arm', creator: MINT, wallets: all(t.h) });
+    // Time for the target check and for the balance read an arming without it would do:
+    // the answer must be the refusal, not a hang.
+    await t.clock.runUntil(t.clock.now() + RPC_DELAY_MS);
+    await t.clock.runUntil(t.clock.now() + RPC_DELAY_MS);
+    await rejectsWith(armed, 'TARGET_KIND_MISMATCH');
+    expect(t.sockets).toHaveLength(0);
+    expect(await t.status()).toMatchObject({ armed: false, buy: null });
   });
 });
 
 describe('arm validation', () => {
   it('no Helius key → HELIUS_KEY_MISSING', async () => {
     const t = await setup({ heliusKey: false });
-    await rejectsWith(t.h.handle({ type: 'arm', creator: CREATOR }), 'HELIUS_KEY_MISSING');
+    await rejectsWith(
+      t.h.handle({ type: 'arm', creator: CREATOR, wallets: all(t.h) }),
+      'HELIUS_KEY_MISSING',
+    );
     expect(t.sockets).toHaveLength(0);
   });
 
@@ -421,7 +467,10 @@ describe('arm validation', () => {
     ['the SOL mint', SOL_MINT],
   ])('creator %s → INVALID_CREATOR_ADDRESS', async (_name, creator) => {
     const t = await setup();
-    await rejectsWith(t.h.handle({ type: 'arm', creator }), 'INVALID_CREATOR_ADDRESS');
+    await rejectsWith(
+      t.h.handle({ type: 'arm', creator, wallets: all(t.h) }),
+      'INVALID_CREATOR_ADDRESS',
+    );
   });
 
   it('during a buy → BUY_RUNNING; twice → WATCH_ARMED', async () => {
@@ -429,11 +478,20 @@ describe('arm validation', () => {
     const read = t.h.handle({ type: 'refreshBalances' });
     await t.clock.runUntil(t.clock.now() + RPC_DELAY_MS);
     await read;
-    await t.h.handle({ type: 'startBuy', mint: MINT });
-    await rejectsWith(t.h.handle({ type: 'arm', creator: CREATOR }), 'BUY_RUNNING');
+    // A manual buy reads the mint's account first (BUNNDLY-59): the RPC takes its 1 s.
+    const started = t.h.handle({ type: 'startBuy', mint: MINT, wallets: all(t.h) });
+    await t.clock.runUntil(t.clock.now() + RPC_DELAY_MS);
+    await started;
+    await rejectsWith(
+      t.h.handle({ type: 'arm', creator: CREATOR, wallets: all(t.h) }),
+      'BUY_RUNNING',
+    );
     await t.untilNoBuy();
     await t.arm();
-    await rejectsWith(t.h.handle({ type: 'arm', creator: CREATOR }), 'WATCH_ARMED');
+    await rejectsWith(
+      t.h.handle({ type: 'arm', creator: CREATOR, wallets: all(t.h) }),
+      'WATCH_ARMED',
+    );
     await t.h.handle({ type: 'disarm' });
   });
 
@@ -443,6 +501,9 @@ describe('arm validation', () => {
     const settings = s.info?.settings;
     if (!settings) throw new Error('no settings');
     await t.h.handle({ type: 'saveSettings', settings: { ...settings, maxSpend: [] } });
-    await rejectsWith(t.h.handle({ type: 'arm', creator: CREATOR }), 'NO_WALLETS_TO_BUY');
+    await rejectsWith(
+      t.h.handle({ type: 'arm', creator: CREATOR, wallets: all(t.h) }),
+      'NO_WALLETS_TO_BUY',
+    );
   });
 });

@@ -18,6 +18,7 @@ import type { VaultStatus } from '../../src/worker/protocol.ts';
 import { createVaultHandler } from '../../src/worker/vault.ts';
 import { FakeClock } from '../helpers/fake-clock.ts';
 import { FakeJupiter, type FakeJupiterScript } from '../helpers/fake-jupiter.ts';
+import { MINT_ACCOUNT } from '../helpers/mint-account.ts';
 import { USDC, buildTransaction } from '../helpers/tx-fakes.ts';
 
 vi.setConfig({ testTimeout: 60_000 });
@@ -34,14 +35,19 @@ const solOnly = ((config: { payload: unknown }) => {
     id: payload.id,
     result: {
       context: { slot: 1n },
-      value: payload.params[0].map(() => ({
-        lamports: SOL,
-        owner: '11111111111111111111111111111111',
-        data: ['', 'base64'],
-        executable: false,
-        rentEpoch: 0n,
-        space: 0n,
-      })),
+      // USDC is a token mint to the target check (BUNNDLY-59)
+      value: payload.params[0].map((address) =>
+        address === USDC
+          ? MINT_ACCOUNT
+          : {
+              lamports: SOL,
+              owner: '11111111111111111111111111111111',
+              data: ['', 'base64'],
+              executable: false,
+              rentEpoch: 0n,
+              space: 0n,
+            },
+      ),
     },
   });
 }) as unknown as RpcTransport;
@@ -58,14 +64,18 @@ async function setup(walletCount = 3, script: FakeJupiterScript = {}) {
           id: payload.id,
           result: {
             context: { slot: 1n },
-            value: payload.params[0].map((address) => ({
-              lamports: lamports.get(address) ?? SOL,
-              owner: '11111111111111111111111111111111',
-              data: ['', 'base64'],
-              executable: false,
-              rentEpoch: 0n,
-              space: 0n,
-            })),
+            value: payload.params[0].map((address) =>
+              address === USDC
+                ? MINT_ACCOUNT
+                : {
+                    lamports: lamports.get(address) ?? SOL,
+                    owner: '11111111111111111111111111111111',
+                    data: ['', 'base64'],
+                    executable: false,
+                    rentEpoch: 0n,
+                    space: 0n,
+                  },
+            ),
           },
         });
       }) as unknown as RpcTransport,

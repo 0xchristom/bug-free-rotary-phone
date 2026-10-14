@@ -1,0 +1,13 @@
+{
+  "_comment": "Mainnet program account read through the public RPC (https://api.mainnet-beta.solana.com, getMultipleAccounts, encoding base64, commitment confirmed) at slot 456703730 on 2026-10-14 for BUNNDLY-59: the Jupiter v6 program. No API key in this file.",
+  "source": "https://api.mainnet-beta.solana.com (getMultipleAccounts)",
+  "slot": 456703730,
+  "address": "JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4",
+  "account": {
+    "owner": "BPFLoaderUpgradeab1e11111111111111111111111",
+    "lamports": "6958115527",
+    "data": "AgAAADAPUGBbvrcwh4nmwPvj5KNgIENvbqDK2oAmDbRv9mCE",
+    "executable": true,
+    "space": 36
+  }
+}

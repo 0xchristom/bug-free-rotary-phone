@@ -1,22 +1,32 @@
 // @vitest-environment jsdom
 /**
- * Mode A on the fleet screen (BUNNDLY-27): start, events from the mock worker, progress,
- * explorer links, STOP, live mode only after confirmation, render counts at 100 wallets.
+ * Buying on the fleet screen (BUNNDLY-27, command bar BUNNDLY-59): start, events from the
+ * mock worker, progress, explorer links, STOP, live mode only after confirmation, render
+ * counts at 100 wallets.
  */
 import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import type { UserEvent } from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { FleetSettingsV1 } from '../../src/core/index.ts';
+import { AppError, type FleetSettingsV1 } from '../../src/core/index.ts';
 import type { RunEvent, WalletEvent } from '../../src/executor/index.ts';
 import { App } from '../../src/ui/App.tsx';
 import type { VaultInfo, VaultRequest, VaultStatus } from '../../src/worker/protocol.ts';
-import { fleetInfo, mockStorage, mockVault } from './fakes.ts';
+import {
+  TARGET_LABEL,
+  TARGET_WAIT,
+  TOKEN_2022_MINT,
+  classifyFake,
+  fleetInfo,
+  mockStorage,
+  mockVault,
+} from './fakes.ts';
 import { eventually } from './settle.ts';
 import { setupUser } from './user.ts';
 
 afterEach(cleanup);
 
 const MINT = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
+const CREATOR = '9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM';
 const SIG = `${'3'.repeat(40)}${'A'.repeat(48)}`;
 const SOL = 1_000_000_000n;
 
@@ -25,16 +35,40 @@ interface Setup {
   readonly global?: Partial<FleetSettingsV1['global']>;
   readonly probe?: (index: number) => void;
   readonly jupiterKey?: boolean;
+  /** Saved max spend per wallet in lamports (default 0.01 SOL each). */
+  readonly maxSpend?: readonly bigint[];
+  /** How the worker answers startBuy and startSell: at once, never, or with a refusal. */
+  readonly start?: 'answer' | 'hold' | 'refuse';
+  /** Part of the token balance each wallet sells, by index (BUNNDLY-58); 100 when unset. */
+  readonly sellPercent?: Readonly<Record<number, number>>;
 }
 
-function setup({ count = 3, global = {}, probe, jupiterKey = false }: Setup = {}) {
+function setup({
+  count = 3,
+  global = {},
+  probe,
+  jupiterKey = false,
+  maxSpend,
+  start = 'answer',
+  sellPercent = {},
+}: Setup = {}) {
   const base = fleetInfo(count);
   let info: VaultInfo = {
     ...base,
     settings: {
       ...base.settings,
-      maxSpend: base.wallets.map((w) => ({ index: w.index, lamports: 10_000_000n })),
+      maxSpend: base.wallets.map((w) => ({
+        index: w.index,
+        lamports: maxSpend?.[w.index] ?? 10_000_000n,
+      })),
       global: { ...base.settings.global, ...global },
+      trade: {
+        ...base.settings.trade,
+        wallets: Object.entries(sellPercent).map(([index, percent]) => ({
+          index: Number(index),
+          sellPercent: percent,
+        })),
+      },
     },
     apiKeys: { ...base.apiKeys, helius: true, jupiter: jupiterKey },
   };
@@ -63,7 +97,7 @@ function setup({ count = 3, global = {}, probe, jupiterKey = false }: Setup = {}
             ? {
                 token: {
                   mint: req.mint,
-                  program: 'spl-token',
+                  program: req.mint === MINT ? 'spl-token' : 'token-2022',
                   decimals: req.mint === MINT ? 6 : 9,
                   balances: info.wallets.map((w) => ({ index: w.index, amount: 0n })),
                 },
@@ -73,7 +107,12 @@ function setup({ count = 3, global = {}, probe, jupiterKey = false }: Setup = {}
           source: 'helius',
           fetchedAt: '2026-10-02T12:00:00.000Z',
         });
+      case 'classifyTarget':
+        return classifyFake(req.address);
+      case 'startSell':
       case 'startBuy':
+        if (start === 'hold') return new Promise(() => undefined);
+        if (start === 'refuse') return Promise.reject(new AppError('BUY_RUNNING'));
         buy = {
           runId: 1,
           mint: req.mint,
@@ -163,9 +202,9 @@ function walletEvent(
 
 async function showMint(user: UserEvent): Promise<void> {
   await eventually(() => screen.getByText(/^Balances as of /u));
-  await user.type(screen.getByLabelText('Token address (mint)'), MINT);
-  await user.click(screen.getByRole('button', { name: 'Show token balance' }));
-  await screen.findByRole('columnheader', { name: 'Tokens (SPL)' });
+  await user.type(screen.getByLabelText(TARGET_LABEL), MINT);
+  // the worker checks the address after a pause: a wait by the clock, not by turns
+  await screen.findByRole('columnheader', { name: 'Tokens (SPL)' }, TARGET_WAIT);
 }
 
 /** One part of the page, found by its class, to query inside it. */
@@ -198,16 +237,34 @@ function summaryValue(term: string): string {
 const SIG_SHORT = '3333…AAAA';
 
 describe('mode A', () => {
-  it('"Buy now" only with a mint the worker checked and a ready wallet', async () => {
+  it('BUY only with a mint the worker checked and a ready wallet', async () => {
     const { user, requests } = setup();
     await screen.findByText(/^Balances as of /u);
-    const buy = screen.getByRole('button', { name: 'Buy now' });
+    const buy = screen.getByRole('button', { name: 'BUY' });
     expect(buy).toHaveProperty('disabled', true);
     await showMint(user);
-    expect(screen.getByRole('button', { name: 'Buy now' })).toHaveProperty('disabled', false);
+    expect(screen.getByRole('button', { name: 'BUY' })).toHaveProperty('disabled', false);
     expect(screen.getByLabelText('Before the buy').textContent).toContain('0.03 SOL');
-    await user.click(screen.getByRole('button', { name: 'Buy now' }));
-    expect(requests.find((r) => r.type === 'startBuy')).toEqual({ type: 'startBuy', mint: MINT });
+    await user.click(screen.getByRole('button', { name: 'BUY' }));
+    expect(requests.find((r) => r.type === 'startBuy')).toEqual({
+      type: 'startBuy',
+      mint: MINT,
+      wallets: [0, 1, 2],
+    });
+  });
+
+  it('BUY sends the wallets selected in the table, saved or not (BUNNDLY-59)', async () => {
+    const { user, requests } = setup();
+    await screen.findByText(/^Balances as of /u);
+    await showMint(user);
+    await user.click(screen.getByRole('checkbox', { name: 'Select W02' }));
+    await user.click(screen.getByRole('button', { name: 'BUY' }));
+    expect(requests.find((r) => r.type === 'startBuy')).toEqual({
+      type: 'startBuy',
+      mint: MINT,
+      wallets: [0, 2],
+    });
+    expect(requests.filter((r) => r.type === 'saveSettings')).toEqual([]);
   });
 
   it('a full run of 3 wallets: success, failure, skip; bar, timers, explorer link; STOP', async () => {
@@ -215,7 +272,12 @@ describe('mode A', () => {
       global: { dryRun: false, explorer: 'orb' },
     });
     await showMint(user);
-    await user.click(screen.getByRole('button', { name: 'Buy now' }));
+    await user.click(screen.getByRole('button', { name: 'BUY' }));
+    // live mode: nothing leaves before the confirmation (BUNNDLY-59)
+    const dialog = screen.getByRole('alertdialog', { name: 'Buy in live mode?' });
+    expect(requests.filter((r) => r.type === 'startBuy')).toEqual([]);
+    await user.click(within(dialog).getByRole('button', { name: 'Yes, buy' }));
+    expect(requests.filter((r) => r.type === 'startBuy')).toHaveLength(1);
     act(() => {
       vault.emit(runEvent('started'));
       vault.emit(walletEvent(0, 'QUEUED'));
@@ -239,7 +301,12 @@ describe('mode A', () => {
     // STOP is there for the whole buy and sends stop
     await user.click(screen.getByRole('button', { name: 'STOP' }));
     expect(requests.some((r) => r.type === 'stop')).toBe(true);
-    expect(await screen.findByRole('button', { name: 'Stopping…' })).toBeTruthy();
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'STOP' }).getAttribute('aria-description')).toBe(
+        'Stopping…',
+      );
+    });
+    expect(screen.getByRole('button', { name: 'STOP' })).toHaveProperty('disabled', true);
 
     act(() => {
       vault.emit(
@@ -309,9 +376,157 @@ describe('mode A', () => {
     // one confirmed wallet at 1.2 s: the first and the last fill
     expect(summaryValue('First and last fill')).toBe('+1.2 s · +1.2 s');
 
-    // after the run: the log can be downloaded, "Kupuj teraz" is back
-    expect(await screen.findByRole('button', { name: 'Buy now' })).toBeTruthy();
+    // after the run: the log can be downloaded, BUY works again
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'BUY' })).toHaveProperty('disabled', false);
+    });
     expect(screen.getByRole('button', { name: 'Download CSV' })).toHaveProperty('disabled', false);
+  });
+});
+
+describe('command bar (BUNNDLY-59)', () => {
+  const stateOf = (label: string): string =>
+    within(row(label)).queryByText('Queued') === null ? 'not queued' : 'Queued';
+
+  it('BUY marks the selected rows Queued before the worker answers', async () => {
+    const { user, requests } = setup({ start: 'hold' });
+    await showMint(user);
+    await user.click(screen.getByRole('checkbox', { name: 'Select W02' }));
+    expect(['W01', 'W02', 'W03'].map(stateOf)).toEqual(['not queued', 'not queued', 'not queued']);
+    await user.click(screen.getByRole('button', { name: 'BUY' }));
+    // the worker has not answered startBuy: the rows changed in the click
+    expect(requests.filter((r) => r.type === 'startBuy')).toHaveLength(1);
+    expect(['W01', 'W02', 'W03'].map(stateOf)).toEqual(['Queued', 'not queued', 'Queued']);
+    expect(screen.getByRole('button', { name: 'BUY' }).getAttribute('aria-description')).toBe(
+      'Sending the command…',
+    );
+  });
+
+  it('a refused BUY puts the rows back and says why', async () => {
+    const { user } = setup({ start: 'refuse' });
+    await showMint(user);
+    await user.click(screen.getByRole('button', { name: 'BUY' }));
+    expect(
+      (await screen.findByText(/A buy is running\. Stop it with STOP/u)).closest('[role="alert"]'),
+    ).not.toBeNull();
+    expect(['W01', 'W02', 'W03'].map(stateOf)).toEqual(['not queued', 'not queued', 'not queued']);
+    expect(screen.getByRole('button', { name: 'BUY' })).toHaveProperty('disabled', false);
+  });
+
+  it('live: the confirmation sums the saved max spend of the selected wallets only', async () => {
+    // 0.01 + 0.025 + 0.1 SOL saved; W02 unselected: 0.01 + 0.1 = 0.11 SOL (all three: 0.135)
+    const { user, requests } = setup({
+      global: { dryRun: false },
+      maxSpend: [10_000_000n, 25_000_000n, 100_000_000n],
+    });
+    await showMint(user);
+    await user.click(screen.getByRole('checkbox', { name: 'Select W02' }));
+    await user.click(screen.getByRole('button', { name: 'BUY' }));
+    const dialog = screen.getByRole('alertdialog', { name: 'Buy in live mode?' });
+    const value = (term: string): string =>
+      within(dialog).getByText(term).nextElementSibling?.textContent ?? '';
+    expect(value('Wallets')).toBe('2');
+    expect(value('Total to spend')).toBe('up to 0.11 SOL');
+    await user.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+    expect(requests.filter((r) => r.type === 'startBuy')).toEqual([]);
+  });
+
+  it('B buys and Esc stops, but not while typing in the target field', async () => {
+    const { user, requests } = setup();
+    await showMint(user);
+    const field = screen.getByLabelText(TARGET_LABEL);
+    expect(document.activeElement).toBe(field);
+    await user.keyboard('b');
+    expect(requests.filter((r) => r.type === 'startBuy')).toEqual([]);
+    expect((field as HTMLInputElement).value).toBe(`${MINT}b`);
+    await user.clear(field);
+    await user.type(field, MINT);
+    await screen.findByText('Token · SPL', {}, TARGET_WAIT);
+    await user.click(screen.getByRole('heading', { name: 'Buy' }));
+    await user.keyboard('b');
+    expect(requests.filter((r) => r.type === 'startBuy')).toHaveLength(1);
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'STOP' })).toHaveProperty('disabled', false);
+    });
+    await user.keyboard('{Escape}');
+    expect(requests.filter((r) => r.type === 'stop')).toHaveLength(1);
+  });
+
+  it('the row button buys with that one wallet', async () => {
+    const { user, requests } = setup();
+    await showMint(user);
+    await user.click(screen.getByRole('button', { name: 'Buy W02' }));
+    expect(requests.filter((r) => r.type === 'startBuy')).toEqual([
+      { type: 'startBuy', mint: MINT, wallets: [1] },
+    ]);
+  });
+
+  it('SELL sends the mint and the selected wallets; the rows are queued at once', async () => {
+    const { user, requests } = setup({ start: 'hold' });
+    await showMint(user);
+    await user.click(screen.getByRole('checkbox', { name: 'Select W02' }));
+    await user.click(screen.getByRole('button', { name: 'SELL' }));
+    expect(requests.filter((r) => r.type === 'startSell')).toEqual([
+      { type: 'startSell', mint: MINT, wallets: [0, 2] },
+    ]);
+    expect(requests.filter((r) => r.type === 'startBuy')).toEqual([]);
+    expect(['W01', 'W02', 'W03'].map(stateOf)).toEqual(['Queued', 'not queued', 'Queued']);
+  });
+
+  it('S sells, but not while typing in the target field', async () => {
+    const { user, requests } = setup();
+    await showMint(user);
+    await user.keyboard('s');
+    expect(requests.filter((r) => r.type === 'startSell')).toEqual([]);
+    const field = screen.getByLabelText(TARGET_LABEL);
+    await user.clear(field);
+    await user.type(field, MINT);
+    await screen.findByText('Token · SPL', {}, TARGET_WAIT);
+    await user.click(screen.getByRole('heading', { name: 'Buy' }));
+    await user.keyboard('s');
+    expect(requests.filter((r) => r.type === 'startSell')).toHaveLength(1);
+  });
+
+  it('live: SELL asks first and names the part each wallet sells', async () => {
+    // W02 sells 40 % (its own setting), the others the fleet default of 100 %
+    const { user, requests } = setup({ global: { dryRun: false }, sellPercent: { 1: 40 } });
+    await showMint(user);
+    await user.click(screen.getByRole('button', { name: 'SELL' }));
+    const dialog = screen.getByRole('alertdialog', { name: 'Sell in live mode?' });
+    const value = (term: string): string =>
+      within(dialog).getByText(term).nextElementSibling?.textContent ?? '';
+    expect(value('Wallets')).toBe('3');
+    expect(value('To sell')).toBe('40–100% of each token balance');
+    expect(requests.filter((r) => r.type === 'startSell')).toEqual([]);
+    await user.click(within(dialog).getByRole('button', { name: 'Yes, sell' }));
+    expect(requests.filter((r) => r.type === 'startSell')).toEqual([
+      { type: 'startSell', mint: MINT, wallets: [0, 1, 2] },
+    ]);
+  });
+
+  it('SELL needs a token and selected wallets, and says so', async () => {
+    const { user } = setup();
+    await eventually(() => screen.getByText(/^Balances as of /u));
+    const sell = (): HTMLElement => screen.getByRole('button', { name: 'SELL' });
+    expect(sell()).toHaveProperty('disabled', true);
+    expect(sell().getAttribute('aria-description')).toBe('Paste the mint of the token to sell.');
+    await user.type(screen.getByLabelText(TARGET_LABEL), MINT);
+    await screen.findByText('Token · SPL', {}, TARGET_WAIT);
+    expect(sell()).toHaveProperty('disabled', false);
+    await user.click(screen.getByRole('checkbox', { name: 'Select all wallets' }));
+    expect(sell().getAttribute('aria-description')).toBe('Select the wallets that sell.');
+  });
+
+  it('a creator wallet as the target: BUY waits for that creator’s token', async () => {
+    const { user } = setup();
+    await screen.findByText(/^Balances as of /u);
+    await user.type(screen.getByLabelText(TARGET_LABEL), CREATOR);
+    await screen.findByText('Creator wallet', {}, TARGET_WAIT);
+    const buy = screen.getByRole('button', { name: 'BUY' });
+    expect(buy).toHaveProperty('disabled', true);
+    expect(buy.getAttribute('aria-description')).toBe(
+      'BUY needs a token: arm the watcher and wait for this creator’s token, or paste a mint.',
+    );
   });
 });
 
@@ -319,7 +534,7 @@ describe('decimals of the bought mint', () => {
   it('the log keeps the decimals of the bought token when another mint is shown later', async () => {
     const { user, vault, blobs } = setup();
     await showMint(user);
-    await user.click(screen.getByRole('button', { name: 'Buy now' }));
+    await user.click(screen.getByRole('button', { name: 'BUY' }));
     act(() => {
       vault.emit({ ...runEvent('started'), dryRun: true });
       vault.emit(
@@ -336,13 +551,10 @@ describe('decimals of the bought mint', () => {
     });
     await within(row('W01')).findByText('Bought');
     // another token (9 decimals) in the field: the buy still reads with 6
-    const field = screen.getByLabelText('Token address (mint)');
+    const field = screen.getByLabelText(TARGET_LABEL);
     await user.clear(field);
-    await user.type(field, 'So11111111111111111111111111111111111111112');
-    await user.click(screen.getByRole('button', { name: 'Show token balance' }));
-    await waitFor(() => {
-      expect(screen.getByLabelText('Before the buy').textContent).toContain('So1111');
-    });
+    await user.type(field, TOKEN_2022_MINT);
+    await screen.findByRole('columnheader', { name: 'Tokens (Token-2022)' }, TARGET_WAIT);
     await user.click(screen.getByRole('button', { name: 'Download CSV' }));
     const csv = (await blobs.at(-1)?.text()) ?? '';
     // 0.01 SOL for 2 101 000 units of 6 decimals: 0.01 / 2.101, by hand
@@ -432,18 +644,16 @@ describe('100 wallets', () => {
     };
     const { user, vault } = setup({ count: 100, probe });
     // The steps of `showMint`, with two differences that matter only at 100 rows. Queries
-    // by label, role and name run inside the form and the panel they belong to: over the
-    // whole page each one works out the accessible name of every control of 100 rows. And
-    // the address is pasted, because every typed character renders the screen again. On a
-    // busy machine these took most of the 5 s the test has (BUNNDLY-65).
+    // by label, role and name run inside the command bar: over the whole page each one
+    // works out the accessible name of every control of 100 rows. And the address is
+    // pasted, because every typed character renders the screen again (BUNNDLY-65).
     await eventually(() => screen.getByText(/^Balances as of /u));
-    const tokenBar = within(part('form.token-bar'));
-    await user.click(tokenBar.getByLabelText('Token address (mint)'));
+    const bar = within(part('section.cmd-bar'));
+    await user.click(bar.getByLabelText(TARGET_LABEL));
     await user.paste(MINT);
-    await user.click(tokenBar.getByRole('button', { name: 'Show token balance' }));
-    await eventually(() => screen.getByRole('columnheader', { name: 'Tokens (SPL)' }));
+    await screen.findByRole('columnheader', { name: 'Tokens (SPL)' }, TARGET_WAIT);
+    await user.click(bar.getByRole('button', { name: 'BUY' }));
     const panel = within(part('section.buy-panel'));
-    await user.click(panel.getByRole('button', { name: 'Buy now' }));
     act(() => {
       vault.emit(runEvent('started', 100));
       for (let i = 0; i < 100; i++) vault.emit(walletEvent(i, 'QUEUED'));

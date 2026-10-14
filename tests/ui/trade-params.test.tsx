@@ -13,14 +13,22 @@ import type { RunEvent, WalletEvent } from '../../src/executor/index.ts';
 import { App } from '../../src/ui/App.tsx';
 import { FleetSummaryBar } from '../../src/ui/FleetSummaryBar.tsx';
 import type { VaultInfo, VaultRequest, VaultStatus } from '../../src/worker/protocol.ts';
-import { fleetInfo, mockStorage, mockVault } from './fakes.ts';
+import {
+  SPL_MINT,
+  TARGET_LABEL,
+  TARGET_WAIT,
+  classifyFake,
+  fleetInfo,
+  mockStorage,
+  mockVault,
+} from './fakes.ts';
 import { eventually } from './settle.ts';
 import { setupUser } from './user.ts';
 
 afterEach(cleanup);
 
 const SOL = 1_000_000_000n;
-const MINT = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
+const MINT = SPL_MINT;
 const LOCKED = 'Can be changed after the run finishes or after STOP.';
 
 type Saved = Extract<VaultRequest, { type: 'saveSettings' }>['settings'];
@@ -82,6 +90,8 @@ function setup(settings: Partial<FleetSettingsV1> = {}, { armed = false } = {}) 
           source: 'helius',
           fetchedAt: '2026-10-14T09:00:00.000Z',
         });
+      case 'classifyTarget':
+        return classifyFake(req.address);
       case 'startBuy':
         buy = { runId: 1, mint: req.mint, dryRun: true, wallets: 2, accepting: true };
         return Promise.resolve({ ...buy });
@@ -148,6 +158,12 @@ function amount(label: string): HTMLInputElement {
 
 async function ready(): Promise<void> {
   await eventually(() => screen.getByText(/^Balances as of /u));
+}
+
+/** The mint in the command bar, checked by the worker (BUNNDLY-59). */
+async function pasteMint(user: ReturnType<typeof setupUser>): Promise<void> {
+  await user.type(screen.getByLabelText(TARGET_LABEL), MINT);
+  await screen.findByRole('columnheader', { name: 'Tokens (SPL)' }, TARGET_WAIT);
 }
 
 function runEvent(phase: RunEvent['phase']): RunEvent {
@@ -271,10 +287,8 @@ describe('the buy amount in a row', () => {
       ],
     });
     await ready();
-    await user.type(screen.getByLabelText('Token address (mint)'), MINT);
-    await user.click(screen.getByRole('button', { name: 'Show token balance' }));
-    await screen.findByRole('columnheader', { name: 'Tokens (SPL)' });
-    await user.click(screen.getByRole('button', { name: 'Buy now' }));
+    await pasteMint(user);
+    await user.click(screen.getByRole('button', { name: 'BUY' }));
     act(() => {
       vault.emit(runEvent('started'));
       vault.emit(walletEvent(0, 'QUEUED'));
@@ -303,6 +317,27 @@ describe('the buy amount in a row', () => {
     });
     expect(amount('W02').disabled).toBe(false);
     expect(within(row('W01')).queryByText(LOCKED)).toBeNull();
+  });
+
+  it('a wallet with only a percent amount is ready: BUY sends it', async () => {
+    const { user, vault } = setup({
+      trade: { fleet: DEFAULT_TRADE_SETTINGS.fleet, wallets: [{ index: 2, buyPercent: 10 }] },
+    });
+    await ready();
+    await pasteMint(user);
+    // 10 % of the 2 SOL read: 0.2 SOL, not counted from a maxSpend entry (there is none)
+    expect(screen.getByLabelText('Before the buy').textContent).toContain('0.2 SOL');
+    await user.click(screen.getByRole('button', { name: 'BUY' }));
+    await eventually(() => {
+      expect(vault.request.mock.calls.map(([r]) => r).find((r) => r.type === 'startBuy')).toEqual({
+        type: 'startBuy',
+        mint: MINT,
+        wallets: [0, 1, 2],
+      });
+    });
+    // only W03 has an amount: its row is the one queued
+    expect(within(row('W03')).getByText('Queued')).toBeTruthy();
+    expect(within(row('W01')).queryByText('Queued')).toBeNull();
   });
 
   it('an armed watcher locks every wallet of its group', async () => {

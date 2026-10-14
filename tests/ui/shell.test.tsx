@@ -9,7 +9,7 @@ import { App } from '../../src/ui/App.tsx';
 import { StatusBar } from '../../src/ui/StatusBar.tsx';
 import type { WatchStatus } from '../../src/watcher/watch.ts';
 import type { VaultBalances, VaultStatus } from '../../src/worker/protocol.ts';
-import { LOCKED, fleetInfo, mockStorage, mockVault, unlocked } from './fakes.ts';
+import { LOCKED, TARGET_LABEL, fleetInfo, mockStorage, mockVault, unlocked } from './fakes.ts';
 
 const STATUS_POLL_MS = 5_000;
 
@@ -246,7 +246,7 @@ describe('keyboard', () => {
     expect(expected.length).toBeGreaterThan(25);
     expect(expected).toContain(screen.getByRole('button', { name: 'Lock' }));
     expect(expected).toContain(screen.getByRole('button', { name: 'Refresh balances' }));
-    expect(expected).toContain(screen.getByLabelText('Token address (mint)'));
+    expect(expected).toContain(screen.getByLabelText(TARGET_LABEL));
 
     const visited: Element[] = [];
     for (let i = 0; i < expected.length; i++) {
