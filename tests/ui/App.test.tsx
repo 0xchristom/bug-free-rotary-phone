@@ -59,10 +59,11 @@ describe('navigation', () => {
 
     await user.click(within(nav).getByRole('button', { name: 'Dashboard' }));
     expect(screen.getByRole('heading', { name: 'Fleet' })).toBeTruthy();
-    // auto-lock is off by default (BUNNDLY-51)
-    expect(within(screen.getByRole('contentinfo')).getByRole('status').textContent).toBe(
-      'Auto-lock: off',
-    );
+    // auto-lock is off by default (BUNNDLY-51); the rail's other status is the named
+    // command line (BUNNDLY-90)
+    expect(
+      within(screen.getByRole('contentinfo')).getByRole('status', { name: '' }).textContent,
+    ).toBe('Auto-lock: off');
   });
 
   it('shows that auto-lock is suspended while armed', async () => {
@@ -81,7 +82,9 @@ describe('navigation', () => {
       }),
     );
     const rail = await screen.findByRole('contentinfo');
-    expect(within(rail).getByRole('status').textContent).toBe('Armed: auto-lock is paused');
+    expect(within(rail).getByRole('status', { name: '' }).textContent).toBe(
+      'Armed: auto-lock is paused',
+    );
   });
 });
 
