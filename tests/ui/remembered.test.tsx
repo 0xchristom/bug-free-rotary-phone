@@ -177,7 +177,10 @@ describe('Settings, This device', () => {
     await waitFor(async () => {
       expect(await store.get('prefs')).toEqual({ remember: true, windowMs: 120 * MINUTE });
     });
-    expect(screen.queryByText(/^No time limit:/u)).toBeNull();
+    await waitFor(() => {
+      expect(screen.queryByText(/^No time limit:/u)).toBeNull(); // after the view reloads
+    });
+    expect(select.selectedOptions[0]?.textContent).toBe('2 hours');
 
     await user.click(screen.getByRole('checkbox', { name: 'Remember this fleet on this device' }));
     await waitFor(() => {
