@@ -15,7 +15,7 @@ import {
   mockVault,
   unlocked,
 } from './fakes.ts';
-import { setupUser } from './user.ts';
+import { enter, setupUser } from './user.ts';
 
 const CREATOR = '6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P';
 const MINT = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
@@ -402,7 +402,7 @@ describe('devnet has no buy', () => {
     expect(screen.getByText(sentence)).toBeTruthy();
     await user.click(buy);
 
-    await user.type(screen.getByLabelText(TARGET_LABEL), CREATOR);
+    await enter(user, screen.getByLabelText(TARGET_LABEL), CREATOR);
     await screen.findByText('Creator wallet', {}, TARGET_WAIT);
     const arm = screen.getByRole<HTMLButtonElement>('button', { name: 'Arm' });
     expect(arm.disabled).toBe(true);

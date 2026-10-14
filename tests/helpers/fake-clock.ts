@@ -1,5 +1,6 @@
 /** Manual clock for executor and limiter tests: time moves only when a test runs it. */
 import type { LimiterClock } from '../../src/executor/limiter.ts';
+import { pendingCrypto } from './pending-crypto.ts';
 
 export const T0 = 1_790_000_000_000; // ms, a realistic Unix time
 
@@ -9,9 +10,9 @@ export class FakeClock implements LimiterClock {
   private timers: { at: number; resolve: () => void }[] = [];
 
   /**
-   * `fast`: settle with setImmediate, without the 1 ms minimum of setTimeout, for long
-   * simulations of pure logic. Not for tests with real WebCrypto (the vault's signing),
-   * which finishes on a thread pool and needs real time to pass.
+   * `fast`: settle with three setImmediate turns, for long simulations of pure logic.
+   * Otherwise settle also waits until no WebCrypto call is running (the vault's signing
+   * finishes on a thread pool, outside the microtask queue).
    */
   constructor(private readonly fast = false) {}
 
@@ -28,13 +29,17 @@ export class FakeClock implements LimiterClock {
   /**
    * Lets every resolved promise run before time moves on: a real macrotask turn drains
    * the whole microtask queue, however many hops a pipeline needs.
+   *
+   * The turns are setImmediate, not setTimeout(0): on Windows one setTimeout(0) waits for
+   * the system timer, about 15–17 ms, which made a 2 h simulation take 22 s (BUNNDLY-75).
+   * Without `fast` it ends only after three quiet turns with no WebCrypto call running.
    */
   async settle(): Promise<void> {
-    for (let i = 0; i < 3; i++) {
+    for (let quiet = 0; quiet < 3;) {
       await new Promise((resolve) => {
-        if (this.fast) setImmediate(resolve);
-        else setTimeout(resolve, 0);
+        setImmediate(resolve);
       });
+      quiet = this.fast || pendingCrypto() === 0 ? quiet + 1 : 0;
     }
   }
 

@@ -7,7 +7,7 @@ import { App } from '../../src/ui/App.tsx';
 import { createVaultHandler } from '../../src/worker/vault.ts';
 import type { VaultClient } from '../../src/worker/vault-client.ts';
 import { mockStorage } from './fakes.ts';
-import { setupUser } from './user.ts';
+import { enter, setupUser } from './user.ts';
 
 // The key derivation is not the subject here: the fast stand-in keeps the key bound to
 // the password, the salt and the cost (tests/helpers/fast-kdf.ts, BUNNDLY-74).
@@ -145,8 +145,8 @@ describe('wizard', () => {
     const user = setupUser();
     await user.click(await screen.findByRole('button', { name: 'Create a new fleet' }));
     await user.type(screen.getByLabelText('Fleet name'), 'Nowa');
-    await user.type(screen.getByLabelText('Password'), PASSWORD);
-    await user.type(screen.getByLabelText('Repeat the password'), PASSWORD);
+    await enter(user, screen.getByLabelText('Password'), PASSWORD);
+    await enter(user, screen.getByLabelText('Repeat the password'), PASSWORD);
     await user.click(screen.getByRole('button', { name: 'Create the fleet' }));
     await user.click(
       await screen.findByRole('button', { name: 'Save the fleet file' }, SCRYPT_WAIT),
