@@ -524,6 +524,12 @@ describe('Edit selected', () => {
     await eventually(() => {
       expect(saved).toHaveLength(1);
     });
+    // BUNNDLY-90: 2 selected (W02 left out)
+    await eventually(() => {
+      expect(screen.getByRole('status', { name: 'Last command' }).textContent).toBe(
+        'Settings saved for 2 wallets',
+      );
+    });
     expect(saved[0]?.maxSpend).toEqual([
       { index: 0, lamports: 200_000_000n },
       { index: 1, lamports: 300_000_000n },

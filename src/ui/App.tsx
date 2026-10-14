@@ -94,9 +94,10 @@ export function App({
   // The Dashboard's parts of the top bar (header-slots.ts).
   const [modeSlot, setModeSlot] = useState<HTMLElement | null>(null);
   const [balanceSlot, setBalanceSlot] = useState<HTMLElement | null>(null);
+  const [saySlot, setSaySlot] = useState<HTMLElement | null>(null);
   const slots = useMemo<HeaderSlots>(
-    () => ({ mode: modeSlot, balance: balanceSlot }),
-    [modeSlot, balanceSlot],
+    () => ({ mode: modeSlot, balance: balanceSlot, say: saySlot }),
+    [modeSlot, balanceSlot, saySlot],
   );
   const [exportOpen, setExportOpen] = useState(false);
   const onMintDecimals = useCallback((mint: string, decimals: number) => {
@@ -405,6 +406,7 @@ export function App({
                 </main>
                 <StatusBar
                   version={APP_VERSION}
+                  saySlot={setSaySlot}
                   status={status}
                   read={unlocked && lastRead?.network === network ? lastRead : null}
                   feed={unlocked && feed?.network === network ? feed.state : null}

@@ -542,6 +542,12 @@ describe('command bar (BUNNDLY-59)', () => {
     await user.click(document.body);
     await user.keyboard('s');
     expect(requests.filter((r) => r.type === 'startSell')).toHaveLength(1);
+    // BUNNDLY-90: the count is the one the worker answers (the fake answers 3), DRY-RUN said
+    await waitFor(() => {
+      expect(screen.getByRole('status', { name: 'Last command' }).textContent).toBe(
+        'Sell started on 3 wallets · Immediate · DRY-RUN',
+      );
+    });
   });
 
   it('live: SELL asks first and names the part each wallet sells', async () => {
