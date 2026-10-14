@@ -69,6 +69,8 @@ export interface FakeCall {
   readonly start: number;
   end: number | null;
   readonly signedTransaction?: string;
+  /** `/order` only: what was asked (BUNNDLY-60: the mints tell a sell from a buy). */
+  readonly request?: OrderRequest;
 }
 
 /** Deterministic 88-character base58 signature for a taker and attempt. */
@@ -111,7 +113,7 @@ export class FakeJupiter implements JupiterClient {
 
   async getOrder(request: OrderRequest): Promise<JupiterResult<JupiterOrder>> {
     const taker = request.taker ?? '';
-    const { ctx, end } = this.begin('order', taker);
+    const { ctx, end } = this.begin('order', taker, { request });
     await this.clock.sleep(this.script.orderDelayMs?.(ctx) ?? 100);
     end();
     const outcome = this.script.order?.(ctx) ?? 'ok';
@@ -136,6 +138,7 @@ export class FakeJupiter implements JupiterClient {
       signatureFeePayer: rfq ? 'MarketMaker1111111111111111111111111111111' : taker,
       lastValidBlockHeight: rfq ? null : chain ? chain.height() + 150n : base.lastValidBlockHeight,
       expireAt: rfq ? Math.floor(this.clock.now() / 1000) + 30 : null,
+      inputMint: request.inputMint ?? base.inputMint,
       outputMint: request.outputMint,
       inAmount: request.amount,
       outAmount:
@@ -218,6 +221,11 @@ export class FakeJupiter implements JupiterClient {
 
   ordersOf(taker: string): number {
     return this.calls.filter((c) => c.kind === 'order' && c.taker === taker).length;
+  }
+
+  /** What each `/order` asked for, in call order. */
+  orderRequests(): OrderRequest[] {
+    return this.calls.flatMap((c) => (c.request === undefined ? [] : [c.request]));
   }
 
   executions(): FakeCall[] {

@@ -5,7 +5,7 @@
  * counts at 100 wallets.
  */
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
+import type { UserEvent } from '@testing-library/user-event';
 import { afterEach, describe, expect, it } from 'vitest';
 import { AppError, type FleetSettingsV1 } from '../../src/core/index.ts';
 import type { RunEvent, WalletEvent } from '../../src/executor/index.ts';
@@ -20,6 +20,7 @@ import {
   mockStorage,
   mockVault,
 } from './fakes.ts';
+import { eventually } from './settle.ts';
 import { setupUser } from './user.ts';
 
 afterEach(cleanup);
@@ -69,6 +70,7 @@ function setup({
     info,
     buy,
     watch: null,
+    groups: [],
   });
   const vault = mockVault(status());
   const requests: VaultRequest[] = [];
@@ -181,12 +183,18 @@ function walletEvent(
   };
 }
 
-async function showMint(user: ReturnType<typeof userEvent.setup>): Promise<void> {
-  // A hundred rows take jsdom over a second to build.
-  await screen.findByText(/^Balances as of /u, {}, { timeout: 10_000 });
+async function showMint(user: UserEvent): Promise<void> {
+  await eventually(() => screen.getByText(/^Balances as of /u));
   await user.type(screen.getByLabelText(TARGET_LABEL), MINT);
-  // the worker checks the address after a pause; the hundred rows then get a token column
-  await screen.findByRole('columnheader', { name: 'Token (SPL)' }, { timeout: 10_000 });
+  // the worker checks the address after a pause: a wait by the clock, not by turns
+  await screen.findByRole('columnheader', { name: 'Token (SPL)' }, TARGET_WAIT);
+}
+
+/** One part of the page, found by its class, to query inside it. */
+function part(selector: string): HTMLElement {
+  const element = document.querySelector<HTMLElement>(selector);
+  if (!element) throw new Error(`no ${selector}`);
+  return element;
 }
 
 function row(label: string): HTMLElement {
@@ -547,21 +555,30 @@ describe('100 wallets', () => {
       renders.set(i, (renders.get(i) ?? 0) + 1);
     };
     const { user, vault } = setup({ count: 100, probe });
-    await showMint(user);
-    await user.click(screen.getByRole('button', { name: 'BUY' }));
+    // The steps of `showMint`, with two differences that matter only at 100 rows. Queries
+    // by label, role and name run inside the command bar: over the whole page each one
+    // works out the accessible name of every control of 100 rows. And the address is
+    // pasted, because every typed character renders the screen again (BUNNDLY-65).
+    await eventually(() => screen.getByText(/^Balances as of /u));
+    const bar = within(part('section.cmd-bar'));
+    await user.click(bar.getByLabelText(TARGET_LABEL));
+    await user.paste(MINT);
+    await screen.findByRole('columnheader', { name: 'Token (SPL)' }, TARGET_WAIT);
+    await user.click(bar.getByRole('button', { name: 'BUY' }));
+    const panel = within(part('section.buy-panel'));
     act(() => {
       vault.emit(runEvent('started', 100));
       for (let i = 0; i < 100; i++) vault.emit(walletEvent(i, 'QUEUED'));
     });
-    await screen.findByText(/0\/100 confirmed/u);
-    expect(screen.getByText(/100 in progress/u)).toBeTruthy();
+    await eventually(() => panel.getByText(/0\/100 confirmed/u));
+    expect(panel.getByText(/100 in progress/u)).toBeTruthy();
     renders.clear();
     act(() => {
       vault.emit(walletEvent(5, 'QUOTING'));
       vault.emit(walletEvent(5, 'SIGNING'));
       vault.emit(walletEvent(42, 'QUOTING'));
     });
-    await screen.findByText('Signing', {}, { timeout: 10_000 });
+    await eventually(() => screen.getByText('Signing'));
     // one frame for the batch: rows 5 and 42 once each, no other row
     expect([...renders.keys()].sort((a, b) => a - b)).toEqual([5, 42]);
     expect(renders.get(5)).toBe(1);

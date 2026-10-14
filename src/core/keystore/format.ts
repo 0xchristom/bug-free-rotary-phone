@@ -14,6 +14,15 @@ import {
   type GlobalSettingsV1,
   type SettingsField,
 } from '../settings.ts';
+import {
+  DEFAULT_TRADE_SETTINGS,
+  validateTradeSettings,
+  type BuyAmount,
+  type FleetTradeV1,
+  type TradeSettingsV1,
+  type WalletTradeV1,
+} from '../trade.ts';
+import { validateGroups, type WalletGroupV1 } from '../groups.ts';
 
 export { MAX_KEYSTORE_FILE_BYTES, isValidFleetName } from './limits.ts';
 
@@ -71,15 +80,42 @@ export interface FleetSettingsV1 {
   readonly active: readonly WalletActiveV1[];
   readonly global: GlobalSettingsV1;
   /**
+   * Trade parameters per wallet and their fleet defaults (BUNNDLY-58). A file without
+   * them reads as the defaults; they are written only when they differ from them, so
+   * such a file still opens in an app from before the change.
+   */
+  readonly trade: TradeSettingsV1;
+  /**
+   * Wallet groups (BUNNDLY-68). Empty: one group with every wallet, the fleet from before
+   * groups; such a list is not written, so the file still opens in an older app.
+   */
+  readonly groups: readonly WalletGroupV1[];
+  /**
    * Global settings that were out of the current range in the file and were replaced by
    * the defaults when reading it (D-019). Only present after reading such a file; it is
    * never written and disappears with the next save.
    */
   readonly resetFields?: readonly SettingsField[];
+  /**
+   * The same for trade parameters: `fleet.<field>` took the default, `wallet.<i>.<field>`
+   * was dropped and the wallet takes the fleet default.
+   */
+  readonly resetTradeFields?: readonly string[];
+  /**
+   * The groups in the file broke a rule (a wallet in two groups or in none, a name taken
+   * twice) and were replaced by the default single group. Never written.
+   */
+  readonly resetGroups?: true;
 }
 
 export function defaultFleetSettings(): FleetSettingsV1 {
-  return { maxSpend: [], active: [], global: DEFAULT_GLOBAL_SETTINGS };
+  return {
+    maxSpend: [],
+    active: [],
+    global: DEFAULT_GLOBAL_SETTINGS,
+    trade: DEFAULT_TRADE_SETTINGS,
+    groups: [],
+  };
 }
 
 /** Secrets that never leave the vault worker (D-016). Custom Helius URLs contain the key. */
@@ -334,6 +370,162 @@ function parseGlobalSettings(value: unknown): {
   return { global: merged as unknown as GlobalSettingsV1, resets: [...resets] };
 }
 
+const FLEET_TRADE_KEYS = Object.keys(DEFAULT_TRADE_SETTINGS.fleet) as (keyof FleetTradeV1)[];
+const WALLET_TRADE_KEYS = [
+  'buyPercent',
+  'sellPercent',
+  'buySlippageBps',
+  'sellSlippageBps',
+  'buyPriorityFeeLamports',
+  'sellPriorityFeeLamports',
+] as const satisfies readonly (keyof WalletTradeV1)[];
+const FEE_KEYS: readonly string[] = ['buyPriorityFeeLamports', 'sellPriorityFeeLamports'];
+/** Stands for a value of the wrong type: it fails validation and is reset. */
+const WRONG = Symbol('wrong type');
+
+/** A fee is a lamport string or null; anything else is reset. */
+function feeOf(value: unknown): bigint | null | typeof WRONG {
+  if (value === null) return null;
+  try {
+    return expectLamports(value);
+  } catch {
+    return WRONG;
+  }
+}
+
+function buyAmountOf(value: unknown): BuyAmount | null | typeof WRONG {
+  if (value === null) return null;
+  if (!isObject(value)) return WRONG;
+  const keys = Object.keys(value);
+  if (keys.length === 1 && keys[0] === 'percent') {
+    return typeof value.percent === 'number' ? { kind: 'percent', percent: value.percent } : WRONG;
+  }
+  if (keys.length === 1 && keys[0] === 'lamports') {
+    try {
+      return { kind: 'lamports', lamports: expectLamports(value.lamports) };
+    } catch {
+      return WRONG;
+    }
+  }
+  return WRONG;
+}
+
+/**
+ * The `trade` part. Its shape (keys, wallet indices) is strict like the rest of the
+ * file; values out of range or of the wrong type are reset as in D-019.
+ */
+function parseTrade(
+  value: unknown,
+  walletIndices: ReadonlySet<number>,
+  maxSpendIndices: ReadonlySet<number>,
+): { trade: TradeSettingsV1; resets: string[] } {
+  if (value === undefined) return { trade: DEFAULT_TRADE_SETTINGS, resets: [] };
+  const t = expectKeys(value, [], ['fleet', 'wallets']);
+  const fleet: Record<string, unknown> = { ...DEFAULT_TRADE_SETTINGS.fleet };
+  if (t.fleet !== undefined) {
+    const f = expectKeys(t.fleet, [], FLEET_TRADE_KEYS);
+    for (const key of FLEET_TRADE_KEYS) {
+      if (!(key in f)) continue;
+      fleet[key] =
+        key === 'buyAmount' ? buyAmountOf(f[key]) : FEE_KEYS.includes(key) ? feeOf(f[key]) : f[key];
+    }
+  }
+  const wallets: Record<string, unknown>[] = [];
+  if (t.wallets !== undefined) {
+    if (!Array.isArray(t.wallets)) return invalid();
+    const raw: unknown[] = t.wallets;
+    const indices: { index: number }[] = [];
+    for (const item of raw) {
+      const w = expectKeys(item, ['index'], WALLET_TRADE_KEYS);
+      const index = expectIndex(w.index);
+      if (!walletIndices.has(index)) invalid();
+      indices.push({ index });
+      const entry: Record<string, unknown> = { index };
+      for (const key of WALLET_TRADE_KEYS) {
+        if (key in w) entry[key] = FEE_KEYS.includes(key) ? feeOf(w[key]) : w[key];
+      }
+      wallets.push(entry);
+    }
+    expectUniqueIndices(indices);
+  }
+  const resets: string[] = [];
+  const merged = { fleet, wallets } as unknown as TradeSettingsV1;
+  for (const { field } of validateTradeSettings(merged, walletIndices, maxSpendIndices)) {
+    const [scope, name, key] = field.split('.');
+    if (scope === 'fleet' && name !== undefined) {
+      fleet[name] = DEFAULT_TRADE_SETTINGS.fleet[name as keyof FleetTradeV1];
+    } else if (scope === 'wallet' && key !== undefined) {
+      const entry = wallets.find((w) => String(w.index) === name);
+      if (entry) Reflect.deleteProperty(entry, key);
+    }
+    resets.push(field);
+  }
+  return { trade: merged, resets };
+}
+
+function tradeToJson(trade: TradeSettingsV1): unknown {
+  const fee = (v: bigint | null): string | null => (v === null ? null : v.toString());
+  const amount = trade.fleet.buyAmount;
+  return {
+    fleet: {
+      ...trade.fleet,
+      buyAmount:
+        amount === null
+          ? null
+          : amount.kind === 'percent'
+            ? { percent: amount.percent }
+            : { lamports: amount.lamports.toString() },
+      buyPriorityFeeLamports: fee(trade.fleet.buyPriorityFeeLamports),
+      sellPriorityFeeLamports: fee(trade.fleet.sellPriorityFeeLamports),
+    },
+    wallets: trade.wallets.map((w) => ({
+      ...w,
+      ...(w.buyPriorityFeeLamports === undefined
+        ? {}
+        : { buyPriorityFeeLamports: fee(w.buyPriorityFeeLamports) }),
+      ...(w.sellPriorityFeeLamports === undefined
+        ? {}
+        : { sellPriorityFeeLamports: fee(w.sellPriorityFeeLamports) }),
+    })),
+  };
+}
+
+/** Default trade settings are not written: such a file opens in an older app too. */
+function isDefaultTrade(trade: TradeSettingsV1): boolean {
+  const f = trade.fleet;
+  const d = DEFAULT_TRADE_SETTINGS.fleet;
+  return (
+    trade.wallets.length === 0 &&
+    FLEET_TRADE_KEYS.every((k) => (k === 'buyAmount' ? f.buyAmount === null : f[k] === d[k]))
+  );
+}
+
+/**
+ * The `groups` part. The shape is strict; a broken rule resets every group to the
+ * default single group, so the fleet still opens with every wallet in it.
+ */
+function parseGroups(
+  value: unknown,
+  walletIndices: ReadonlySet<number>,
+): { groups: readonly WalletGroupV1[]; reset: boolean } {
+  if (value === undefined) return { groups: [], reset: false };
+  if (!Array.isArray(value)) return invalid();
+  const raw: unknown[] = value;
+  const groups = raw.map((item) => {
+    const g = expectKeys(item, ['id', 'name', 'wallets']);
+    if (!Array.isArray(g.wallets)) return invalid();
+    const wallets: unknown[] = g.wallets;
+    return {
+      id: expectString(g.id),
+      name: expectString(g.name),
+      wallets: wallets.map(expectIndex),
+    };
+  });
+  if (groups.length === 0) return invalid();
+  if (validateGroups(groups, walletIndices).length > 0) return { groups: [], reset: true };
+  return { groups, reset: false };
+}
+
 /**
  * Validates decrypted secrets (the JSON inside `ciphertext`). Throws
  * KEYSTORE_INVALID_FORMAT. Mnemonic validity and key consistency are checked by
@@ -353,7 +545,7 @@ export function parseSecrets(raw: unknown): KeystoreSecretsV1 {
   });
   expectUniqueIndices(wallets);
 
-  const settings = expectKeys(s.settings, ['maxSpend'], ['active', 'global']);
+  const settings = expectKeys(s.settings, ['maxSpend'], ['active', 'global', 'trade', 'groups']);
   if (!Array.isArray(settings.maxSpend)) return invalid();
   const rawMaxSpend: unknown[] = settings.maxSpend;
   const maxSpend = rawMaxSpend.map((value) => {
@@ -376,6 +568,12 @@ export function parseSecrets(raw: unknown): KeystoreSecretsV1 {
     if (!active.every((a) => walletIndices.has(a.index))) invalid();
   }
   const { global, resets } = parseGlobalSettings(settings.global);
+  const { trade, resets: tradeResets } = parseTrade(
+    settings.trade,
+    walletIndices,
+    new Set(maxSpend.filter((m) => m.lamports > 0n).map((m) => m.index)),
+  );
+  const { groups, reset: groupsReset } = parseGroups(settings.groups, walletIndices);
 
   const keys = expectKeys(s.apiKeys, [], API_KEY_NAMES);
   const apiKeys: { -readonly [K in ApiKeyName]?: string } = {};
@@ -389,7 +587,16 @@ export function parseSecrets(raw: unknown): KeystoreSecretsV1 {
   return {
     mnemonic,
     wallets,
-    settings: { maxSpend, active, global, ...(resets.length > 0 ? { resetFields: resets } : {}) },
+    settings: {
+      maxSpend,
+      active,
+      global,
+      trade,
+      groups,
+      ...(resets.length > 0 ? { resetFields: resets } : {}),
+      ...(tradeResets.length > 0 ? { resetTradeFields: tradeResets } : {}),
+      ...(groupsReset ? { resetGroups: true as const } : {}),
+    },
     apiKeys,
   };
 }
@@ -412,6 +619,18 @@ export function secretsToJson(secrets: KeystoreSecretsV1): string {
       })),
       active: secrets.settings.active.map((a) => ({ index: a.index, active: a.active })),
       global: { ...global, minReserveLamports: global.minReserveLamports.toString() },
+      ...(isDefaultTrade(secrets.settings.trade)
+        ? {}
+        : { trade: tradeToJson(secrets.settings.trade) }),
+      ...(secrets.settings.groups.length === 0
+        ? {}
+        : {
+            groups: secrets.settings.groups.map((g) => ({
+              id: g.id,
+              name: g.name,
+              wallets: [...g.wallets],
+            })),
+          }),
     },
     apiKeys,
   });

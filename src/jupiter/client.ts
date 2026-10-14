@@ -136,12 +136,22 @@ export interface JupiterOrder {
 }
 
 export interface OrderRequest {
+  /** The token to sell (BUNNDLY-60); omit for a buy, which pays in SOL. */
+  readonly inputMint?: string;
   readonly outputMint: string;
-  /** Lamports of SOL to spend. */
+  /** Smallest units of the input token: lamports for a buy, raw token units for a sell. */
   readonly amount: bigint;
   /** Wallet that will sign; omit for a quote only (connection test). */
   readonly taker?: string;
+  /**
+   * Slippage in basis points (BUNNDLY-58). Without it Jupiter picks the slippage itself;
+   * with it the order is in manual mode. The OpenAPI spec allows 0–10000.
+   */
+  readonly slippageBps?: number;
 }
+
+/** Inclusive range of `slippageBps` in the OpenAPI spec of `/order`. */
+export const SLIPPAGE_BPS_RANGE = { min: 0, max: 10_000 } as const;
 
 export interface JupiterClientOptions {
   /** Jupiter key; null for the Keyless plan (no `x-api-key` header). */
@@ -395,15 +405,28 @@ export interface JupiterClient {
   execute(request: ExecuteRequest): Promise<JupiterResult<JupiterExecution>>;
 }
 
-/** URL of `/order` for a request: exactly the four documented required parameters. */
+/**
+ * URL of `/order` for a request: the documented required parameters, the taker, and
+ * `slippageBps` only when the request sets it.
+ */
 export function orderUrl(request: OrderRequest): string {
   const params = new URLSearchParams({
-    inputMint: SOL_MINT,
+    inputMint: request.inputMint ?? SOL_MINT,
     outputMint: request.outputMint,
     amount: request.amount.toString(),
   });
   if (request.taker !== undefined) params.set('taker', request.taker);
+  if (request.slippageBps !== undefined) params.set('slippageBps', String(request.slippageBps));
   return `${JUPITER_SWAP_URL}/order?${params.toString()}`;
+}
+
+export function isSlippageBps(value: unknown): value is number {
+  return (
+    typeof value === 'number' &&
+    Number.isInteger(value) &&
+    value >= SLIPPAGE_BPS_RANGE.min &&
+    value <= SLIPPAGE_BPS_RANGE.max
+  );
 }
 
 export function createJupiterClient(options: JupiterClientOptions): JupiterClient {
@@ -415,6 +438,9 @@ export function createJupiterClient(options: JupiterClientOptions): JupiterClien
   return {
     async getOrder(request) {
       if (request.amount <= 0n) return failure('BAD_REQUEST', null, null);
+      if (request.slippageBps !== undefined && !isSlippageBps(request.slippageBps)) {
+        return failure('BAD_REQUEST', null, null);
+      }
       const outcome = await requestJson(
         options.fetch,
         orderUrl(request),

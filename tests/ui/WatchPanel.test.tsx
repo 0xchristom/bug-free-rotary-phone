@@ -6,7 +6,7 @@
  * a detection. Events and status from a mock worker.
  */
 import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
+import type { UserEvent } from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { FleetSettingsV1 } from '../../src/core/index.ts';
 import type { RunEvent } from '../../src/executor/index.ts';
@@ -140,6 +140,7 @@ function setup(o: Setup = {}) {
     info,
     buy: null,
     watch,
+    groups: [],
   });
   const vault = mockVault(status());
   const requests: VaultRequest[] = [];
@@ -224,17 +225,14 @@ async function openTabB(): Promise<void> {
 }
 
 /** Types a creator into the command bar and waits until the worker named it a wallet. */
-async function typeCreator(
-  user: ReturnType<typeof userEvent.setup>,
-  creator = CREATOR,
-): Promise<void> {
+async function typeCreator(user: UserEvent, creator = CREATOR): Promise<void> {
   await user.type(screen.getByLabelText(TARGET_LABEL), creator);
   await screen.findByText('Creator wallet', {}, TARGET_WAIT);
 }
 
 const armButton = () => screen.getByRole('button', { name: 'ARM' });
 
-async function arm(user: ReturnType<typeof userEvent.setup>): Promise<void> {
+async function arm(user: UserEvent): Promise<void> {
   await openTabB();
   await typeCreator(user);
   await user.click(armButton());

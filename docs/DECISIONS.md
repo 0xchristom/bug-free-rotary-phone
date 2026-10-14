@@ -831,7 +831,7 @@ Rejestr decyzji i rozbieżności z dokumentacją zewnętrzną. Nowe wpisy dopisu
     - przycisk UZBRÓJ podaje, czego brakuje: zapisanej tabeli, klucza Helius (URL WS i HTTP), gotowego portfela, poprawnego adresu albo końca trwającego zakupu;
     - w trybie na żywo uzbrojenie wymaga dialogu `role="alertdialog"` z kwotą i liczbą portfeli, a „Anuluj” nic nie wysyła. W DRY-RUN nie ma dialogu.
   - **Stan z workera:** UI czyta `status.watch` (D-038). Każde zdarzenie `watch` (zmiana połączenia, wykrycie, weryfikacja) od razu odświeża status, więc baner i lista nie czekają na odpytywanie co 5 s. Czas ostatniej wiadomości pochodzi teraz z gniazda na bieżąco (`Stream.lastMessageAt()`), także z odpowiedzi na podtrzymanie.
-  - **Uzbrojony watcher zamraża ustawienia** (review PR #28): automatyczny zakup idzie z tym, co użytkownik potwierdził przy uzbrojeniu. Worker odrzuca `saveSettings` i `addWallets` kodem `WATCH_ARMED`, dopóki watcher jest aktywny (uzbrojony albo z wykryciem w kolejce). UI w tym czasie zamiast przełącznika DRY-RUN/na żywo pokazuje „Rozbrój watcher, żeby zmienić tryb lub ustawienia.”, a „Zapisz zmiany w tabeli”, „Dodaj portfele” i „Zapisz ustawienia” są nieaktywne z tym samym powodem. Bez tego dało się uzbroić w DRY-RUN, potem przełączyć na tryb na żywo i kupić bez potwierdzenia trybu B.
+  - **Uzbrojony watcher zamraża ustawienia** (review PR #28): automatyczny zakup idzie z tym, co użytkownik potwierdził przy uzbrojeniu. Worker odrzuca `saveSettings` i `addWallets` kodem `WATCH_ARMED`, dopóki watcher jest aktywny (uzbrojony albo z wykryciem w kolejce). UI w tym czasie zamiast przełącznika DRY-RUN/na żywo pokazuje „Rozbrój watcher, żeby zmienić tryb lub ustawienia.”, a „Zapisz zmiany w tabeli”, „Dodaj portfele” i „Zapisz ustawienia” są nieaktywne z tym samym powodem. Bez tego dało się uzbroić w DRY-RUN, potem przełączyć na tryb na żywo i kupić bez potwierdzenia trybu B. Blokadę w workerze złagodziło D-046 (BUNNDLY-68).
   - **`WatchGuard` w `App`, na każdym ekranie:**
     - utrata połączenia przy uzbrojonym watcherze (`reconnecting` albo `disconnected`) daje czerwony baner `role="alert"` i dźwięk co 3 s. Baner jest przyklejony do góry ekranu (`position: sticky`), więc widać go także po przewinięciu do ROZBRÓJ (review PR #28);
     - dźwięk milknie po powrocie połączenia albo po „Wycisz”, a następna utrata znowu dzwoni;
@@ -924,7 +924,71 @@ Rejestr decyzji i rozbieżności z dokumentacją zewnętrzną. Nowe wpisy dopisu
   - Układ ekranu floty z makiety v2 (pasek celu, zakładki filtrów, pasek poleceń, kolumny tabeli) to BUNNDLY-55; tu ekrany dostały tylko nowe komponenty i tokeny.
   - Nagłówek tabeli portfeli nie jest jeszcze przyklejony przy przewijaniu strony (tabela przewija się w poziomie we własnym kontenerze); do rozwiązania razem z układem w BUNNDLY-55.
 
-## D-044: Tabela portfeli: etykiety „Wallet N”, zaznaczenie zamiast „Active”, szczegóły w rozwijanym wierszu
+## D-044: Sprzedaż tokenu flotą przez Jupitera
+
+- Data: 2026-10-13
+- Zadanie: BUNNDLY-60
+- Źródła (odczyt 2026-10-13):
+  - <https://developers.jup.ag/docs/swap/order-and-execute.md> i <https://developers.jup.ag/docs/openapi-spec/swap/v2/swap.yaml>. `/order` wymaga `inputMint`, `outputMint` i `amount` („The amount to swap in the smallest unit of the input token”); `taker` daje transakcję. Sprzedaż to te same parametry z tokenem jako `inputMint` i mintem SOL jako `outputMint`. `swapMode` ma tylko `ExactIn`.
+  - `/execute`: `totalInputAmount` to „Total input token amount deducted from the user's wallet, including the fee if feeMint is the input mint”, `totalOutputAmount` to „Final output token amount reflected in the user's wallet, after any fee collected in the output mint”. Opłata w mincie wejściowym = `totalInputAmount` − `inputAmountResult`.
+  - Prawdziwa wycena z mainnetu (Keyless, bez `taker`, 2026-10-13 09:27 UTC, HTTP 200): 1 USDC → 9 333 744 lamportów, `feeMint` = mint SOL, router `jupiterz`; nagłówki `x-ratelimit-remaining: 19`, `x-ratelimit-current: 1`. Zapisana w `tests/fixtures/jupiter-order-sell.mainnet.json`.
+  - **Czego dokumentacja nie mówi:** w jakiej postaci SOL ze sprzedaży trafia do portfela, gdy nie ma parametru `receiver` (natywny czy opakowany) i czy zostaje konto do zamknięcia. Jedyne zdanie o tym stoi przy `receiver` („For SOL output: native SOL is transferred directly to the receiver”); `wrapAndUnwrapSol` istnieje tylko w `/build`. O opłacie transferowej Token-2022 nie ma osobnego zdania. **Niesprawdzone prawdziwą transakcją** (wymaga portfela z tokenem; smoke test Krystiana).
+- Decyzja:
+  - **Jeden executor, dwie strony.** `RunOptions.side` (`buy` domyślnie, `sell`). Kolejka, limiter, bramka mintu, ponowienia, kontrola łańcucha po `UNKNOWN`, STOP i DRY-RUN są wspólne. Sprzedaż różni się w trzech miejscach: zapytanie ma odwrócone minty; portfel z planem 0 jest pomijany przed jakimkolwiek zapytaniem (`SKIPPED: NO_TOKENS`); nie ma sufitu ceny ani jego odpowiednika (decyzja tymczasowa z zadania: przed złym kursem chroni slippage Jupitera).
+  - **Kupno bez zmian w zapytaniach.** `OrderRequest.inputMint` jest opcjonalny; bez niego adres `/order` jest znak w znak taki jak przed zmianą (test porównuje cały adres).
+  - **Plan sprzedaży:** `floor(saldo × procent / 100)` na surowych jednostkach (`src/executor/sell-plan.ts`). Saldo pochodzi z odczytu wykonanego w `startSell`, tylko dla wskazanych portfeli; późniejsze zmiany salda nie zmieniają planu. Każde zlecenie portfela, także ponowione, prosi o dokładnie tę ilość, a ponowienie następuje dopiero, gdy łańcuch pokaże, że poprzednia transakcja nie weszła i już nie wejdzie. Stąd portfel nie sprzeda w jednym przebiegu więcej niż plan.
+  - **Plan trzyma sejf, nie executor.** `signOrder` podpisuje zlecenie sprzedaży tylko wtedy, gdy trwa sprzedaż tego mintu, mint wyjściowy to SOL, a `inAmount` nie przekracza planu portfela (`NO_SELL_PLAN`, `OVER_MAX_SPEND`). To odpowiednik max spend przy kupnie: niezależny od tego, o co poprosił executor.
+  - **Żądanie `startSell`:** `mint`, `wallets` (indeksy, każdy raz) i opcjonalny `percent` (liczba całkowita 1–100, domyślnie 100). **Decyzja tymczasowa:** procent w żądaniu, dopóki BUNNDLY-58 nie da ustawienia na portfel. Lista portfeli jest brana dosłownie: `active` i max spend dotyczą kupna i sprzedaży nie ograniczają. Sprzedaż potrzebuje odczytu sald także w DRY-RUN (`HELIUS_KEY_MISSING` bez klucza). W trakcie sprzedaży nie rusza kupno ani druga sprzedaż (`BUY_RUNNING`); przy uzbrojonym watcherze sprzedaż jest odrzucana (`WATCH_ARMED`), bo wykrycie startuje kupno bez pytania.
+  - **Opłata w SOL:** bez własnej kontroli przed zleceniem. Jupiter może sponsorować opłatę (w wycenie z mainnetu `gasless: true`), więc próg liczony lokalnie odrzucałby portfele, które mogą sprzedać. Portfel bez SOL na opłatę kończy jako `SKIPPED: INSUFFICIENT_SOL_FOR_GAS` na podstawie kodu z `/order`.
+  - **Kontrola wyniku:** saldo tokenu musi spaść o `totalInputAmount`, a saldo SOL wzrosnąć względem odczytu ze startu przebiegu. Tylko „wzrosnąć”: dokładnej kwoty nie porównuję, bo dokumentacja nie mówi, jak SOL wraca, a opłaty i czynsz konta ją przesuwają. Oznaczenia te same co przy kupnie (`MATCH`, `INCREASED`, `MISMATCH`, `NO_INCREASE`, `UNVERIFIABLE`) z osobnymi komunikatami. Bez odczytu SOL wynik to `UNVERIFIABLE`, nigdy `MATCH`. Zdarzenie niesie `solChange`.
+  - **Pole `side` w zdarzeniach i statusie występuje tylko przy sprzedaży** (decyzja tymczasowa). Zdarzenia kupna są takie same jak przed zmianą. Dziennik ma kolumnę `side` (`buy` / `sell`, pusta dla wpisów watchera) przed kolumną `network`; przy sprzedaży `spent` to sprzedane jednostki tokenu, `received` to lamporty, a cena dalej jest w SOL za cały token.
+- Konsekwencje / alternatywy:
+  - Odrzucone: osobny executor sprzedaży (kopiowałby kolejkę i ponowienia, czyli miejsce, gdzie powstają podwójne transakcje) i plan liczony w executorze bez kontroli w sejfie (błąd w executorze mógłby sprzedać więcej).
+  - Nowe komunikaty (`NO_TOKENS`, `NO_WALLETS_TO_SELL`, komunikaty kontroli sprzedaży) są po angielsku, jak reszta interfejsu (D-042).
+  - Kolumna `side` przesuwa `network` o jedną pozycję w CSV.
+  - Sprzedaż drogą bezpośrednią (BUNNDLY-63) dojdzie jako kolejna droga, nie jako zmiana tego przebiegu.
+
+## D-045: Parametry handlu na portfel (etap 1, silnik)
+
+- Data: 2026-10-14
+- Zadanie: BUNNDLY-58
+- Źródła (odczyt 2026-10-14):
+  - <https://developers.jup.ag/docs/openapi-spec/swap/v2/swap.yaml>, GET `/order`: `slippageBps` to liczba całkowita 0–10000; bez niej slippage dobiera Jupiter. Jest też `priorityFeeLamports` („Setting this overrides the automatic optimisation”) i `broadcastFeeType` (`maxCap` / `exactFee`).
+  - <https://developers.jup.ag/docs/swap/order-and-execute.md>: nie wymienia `priorityFeeLamports`; macierz wpływu na routing nie obejmuje opłaty ani slippage, jest tylko zdanie, że parametry opcjonalne mogą zawęzić routery.
+  - **Rozbieżność z zadaniem:** zadanie zakładało, że `/order` nie ma parametru opłaty priorytetowej. Specyfikacja OpenAPI go ma.
+- Decyzja:
+  - **Format:** w zaszyfrowanych ustawieniach floty dochodzi opcjonalne `trade` z `fleet` (wartości domyślne floty) i `wallets` (własne wartości portfeli). Brak pola we wpisie portfela oznacza wartość domyślną floty, `null` oznacza „Auto”. Opłaty zapisuję jako lamporty w tekście, slippage w punktach bazowych (10–10000, czyli 0,1–100%). Kwota kupna w SOL zostaje w `maxSpend`; procent salda to `buyPercent`. Oba naraz dla jednego portfela są niedozwolone.
+  - **Zgodność:** plik bez `trade` czyta się jako wartości domyślne (brak domyślnej kwoty, sprzedaż 100%, wszędzie Auto). Domyślne `trade` nie jest zapisywane, więc taki plik otwiera się też w wersji sprzed zmiany. Wartości spoza zakresu w pliku są zastępowane domyślnymi i zgłaszane w `resetTradeFields`, jak w D-019. Kształt (klucze, indeksy portfeli) pozostaje ścisły. **Decyzja tymczasowa:** bez podbicia `KEYSTORE_VERSION`, tak jak przy `network` w D-041.
+  - **Kwota procentowa:** `min(floor(saldo × p / 100), saldo − MIN_RESERVE)` z ostatniego odczytu salda w chwili startu (`src/executor/buy-plan.ts`). Kwota 0 daje `SKIPPED: INSUFFICIENT_SOL` bez zapytania.
+  - **Sejf trzyma plan przebiegu po obu stronach:** przy podpisie kupna limitem jest kwota portfela zamrożona na starcie przebiegu, a nie bieżące ustawienia. W trakcie przebiegu `saveSettings`, który zmienia parametry portfela biorącego w nim udział (także przez wartość domyślną, z której portfel korzysta), kończy się `WALLET_IN_RUN` (**decyzja tymczasowa** co do kodu). Zmiany innych portfeli przechodzą.
+  - **Slippage** trafia do `/order` jako `slippageBps` tylko wtedy, gdy nie jest Auto. Kupno bierze wartość kupna, sprzedaż wartość sprzedaży. Sprzedaż bez `percent` w żądaniu bierze część z ustawień portfela.
+  - **Opłata priorytetowa** jest zapisywana i walidowana (1 lamport–0,1 SOL), ale na drodze Jupitera nie trafia do `/order`. **Decyzja tymczasowa** do czasu sprawdzenia na prawdziwym API, czy ustawiona opłata zmienia router albo wyłącza darmowy gas.
+  - `saveSettings` bez `trade` zostawia zapisane parametry handlu. Dzięki temu ekrany, które ich nie znają, niczego nie kasują.
+- Konsekwencje / alternatywy:
+  - Odrzucone: kwota w SOL przeniesiona z `maxSpend` do `trade`. Wymagałoby to migracji, a pliki sprzed zmiany kupowałyby inaczej niż dotąd.
+  - Etap 2 (pola w tabeli, „Set for selected”, ustawienia domyślne na ekranie) korzysta z tych pól bez zmiany formatu.
+
+## D-046: Grupy portfeli w silniku
+
+- Data: 2026-10-14
+- Zadanie: BUNNDLY-68
+- Decyzja:
+  - **Format:** w zaszyfrowanych ustawieniach floty dochodzi opcjonalne `groups`, lista `{ id, name, wallets }`. `id` nadaje aplikacja (`g1`, `g2`, …, bez ponownego użycia). Nazwa ma 1–32 znaki, nie ma spacji na końcach i nie powtarza się bez względu na wielkość liter. Każdy portfel jest w dokładnie jednej grupie. Grupa może być pusta. Grup jest najwyżej 64. Zasady siedzą w `src/core/groups.ts`, wspólnym dla formularza i sejfu (D-019).
+  - **Zgodność:** pusta lista oznacza jedną grupę `g1` „All wallets” ze wszystkimi portfelami i nie jest zapisywana, więc plik otwiera się też w wersji sprzed zmiany. Złamana zasada w pliku (portfel w dwóch grupach albo w żadnej, powtórzona nazwa) przywraca tę jedną grupę i zgłasza to w `resetGroups`. Kształt pozostaje ścisły. **Decyzja tymczasowa:** bez podbicia `KEYSTORE_VERSION`, jak w D-045.
+  - **Sejf:** przebieg kupna albo sprzedaży, jego plan podpisu i watcher należą do grupy. `startBuy`, `startSell`, `arm`, `disarm` i `stop` niosą `group`. Przy jednej grupie pole można pominąć; przy kilku jego brak albo nieznana grupa to `INTERNAL_ERROR`, bo to błąd interfejsu. Sprzedaż przyjmuje tylko portfele swojej grupy. Podpis bierze plan przebiegu grupy, do której należy portfel. Limitery Jupitera są wspólne dla całej aplikacji (SPEC 2.2). Automatyczna blokada, `lock`, `unlock` i `create` czekają, aż żadna grupa nie działa.
+  - **Skład grupy, która działa** (kupuje, sprzedaje albo ma uzbrojony watcher), się nie zmienia: `saveSettings` albo `addWallets`, które by go zmieniły, kończą się `GROUP_RUNNING`. Zmiana nazwy przechodzi. Nowe portfele trafiają do pierwszej grupy na liście.
+  - **Skład grup zmienia `saveSettings`** z opcjonalnym `groups` (bez pola skład zostaje). Nie ma osobnych żądań tworzenia, zmiany nazwy, usuwania i przenoszenia; sejf waliduje całość naraz (Andy, 14.10).
+  - **Status:** `groups` z `{ id, armed, buy, watch }` dla każdej grupy. Pola `buy` i `watch` sprzed zmiany pokazują pierwszy trwający przebieg i pierwsze uzbrojenie, dopóki interfejs (BUNNDLY-69) nie przejdzie na `groups`.
+  - **D-039 złagodzone (Andy, 14.10):** uzbrojony watcher blokuje tylko to, od czego zależy jego kupno.
+    - Ustawienia globalne poza eksploratorem i czasem automatycznej blokady, klucze API i `setNetwork` kończą się `WATCH_ARMED`.
+    - Kwota, aktywność i parametry handlu portfeli uzbrojonej grupy, także wartość domyślna floty, którą biorą, kończą się `WALLET_IN_RUN`, tak jak portfele trwającego przebiegu (D-045).
+    - Portfele pozostałych grup można zmieniać.
+    - `addWallets` przechodzi, gdy pierwsza grupa nie działa; w przeciwnym razie kończy się `GROUP_RUNNING` (na teraz, jak wyżej).
+- Konsekwencje / alternatywy:
+  - Odrzucone: osobne limitery na grupę (dwie grupy razem przekroczyłyby limit planu) i grupy zapisane poza zaszyfrowanym plikiem (nazwy grup zdradzałyby układ floty).
+  - Nazwy i skład grup nie trafiają do zdarzeń ani do jawnej części pliku.
+
+## D-047: Tabela portfeli: etykiety „Wallet N”, zaznaczenie zamiast „Active”, szczegóły w rozwijanym wierszu
 
 - Data: 2026-10-13
 - Zadanie: BUNNDLY-55
@@ -948,14 +1012,14 @@ Rejestr decyzji i rozbieżności z dokumentacją zewnętrzną. Nowe wpisy dopisu
   - Odrzucone: własny kontener przewijania tabeli jak w makiecie (przycinałby Popover kodu QR w krótkiej tabeli albo wymagał pozycjonowania `fixed` liczonego w skrypcie), przemianowanie etykiet w istniejących plikach (zadanie tego zabrania), keystore jako plik fixture w repo (zasada „żadnych keystore w repo”; test buduje plik z etykietą `W03` zapisaną jawnie).
   - Poza zakresem, zgodnie z zadaniem: kolumny Slippage i Priority fee (BUNNDLY-58), Progress i Tokens (BUNNDLY-56), zakładki filtrów i pasek poleceń z makiety.
 
-## D-045: Zakup i uzbrojenie na portfelach z żądania; worker sprawdza rodzaj celu
+## D-048: Zakup i uzbrojenie na portfelach z żądania; worker sprawdza rodzaj celu
 
 - Data: 2026-10-14
 - Zadanie: BUNNDLY-59
 - Kontekst: pasek komend działa na portfelach zaznaczonych w tabeli, także tych, których zaznaczenia jeszcze nie zapisano. Dotąd `startBuy` i `arm` brały portfele z zapisanego pola `active`. Pole celu przyjmuje mint albo portfel twórcy, a worker nie sprawdzał, co dostał.
 - Decyzja:
-  - `startBuy { mint, wallets }` i `arm { creator, wallets }`: `wallets` to indeksy portfeli, pole wymagane. Kupują portfele z listy, które mają max spend większy od zera. Zapisane `active` nie bierze w tym udziału; zostaje jako zapamiętane zaznaczenie tabeli (D-019, D-044). Lista spoza floty, z powtórzeniem albo nie-tablica to zniekształcone żądanie (`INTERNAL_ERROR`, jak inne). Pusta lista albo bez portfela z max spend: `NO_WALLETS_TO_BUY`.
-  - `arm` zamraża listę do rozbrojenia, tak jak ustawienia (D-039). Każde wykrycie kupuje tą listą.
+  - `startBuy { mint, wallets?, group? }` i `arm { creator, wallets?, group? }`: `wallets` to indeksy portfeli, wszystkie z grupy żądania (D-046), tak jak w `startSell` (D-044). Z listą kupują portfele z listy, które mają kwotę kupna (D-045); zapisane `active` nie bierze w tym udziału i zostaje zapamiętanym zaznaczeniem tabeli (D-019, D-047). Bez listy kupują aktywne portfele grupy, jak przed zmianą. Pasek komend zawsze wysyła listę. Lista spoza grupy, z powtórzeniem albo nie-tablica to zniekształcone żądanie (`INTERNAL_ERROR`, jak inne). Pusta lista albo brak portfela z kwotą: `NO_WALLETS_TO_BUY`.
+  - `arm` zamraża listę do rozbrojenia, tak jak ustawienia (D-039). Każde wykrycie w tej grupie kupuje tą listą.
   - Nowe żądanie `classifyTarget { address }` jednym odczytem `getMultipleAccounts` zwraca `mint` (z programem: SPL Token albo Token-2022) albo `wallet`. Portfel to konto System Program bez danych albo adres bez konta. Konto tokenowe, program wykonywalny i każde inne konto dają błąd z nazwą: `TARGET_IS_TOKEN_ACCOUNT`, `TARGET_IS_PROGRAM`, `TARGET_UNSUPPORTED`. Zły tekst adresu: `INVALID_TARGET_ADDRESS`.
   - Ręczny `startBuy` i `arm` sprawdzają rodzaj celu tą samą funkcją. Zły rodzaj daje `TARGET_KIND_MISMATCH`, zanim cokolwiek pójdzie do Jupitera albo otworzy się gniazdo. Kupno wywołane przez detektor nie sprawdza celu: mint pochodzi z detekcji.
   - Wynik „mint” worker pamięta do zablokowania floty (mint nie zmienia rodzaju). Zakup po sprawdzeniu w pasku nie czyta więc konta drugi raz. Wynik „wallet” nie jest pamiętany, bo pod adresem bez konta może jeszcze powstać mint.

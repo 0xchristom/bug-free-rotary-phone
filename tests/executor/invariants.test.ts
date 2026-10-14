@@ -3,6 +3,8 @@
  * Keyless and Free, live and DRY-RUN, seeded random failures (delays, 429, 5xx, timeouts
  * after landing, "no route" for the first seconds, slippage, RFQ with an unknown
  * signature, STOP at a random moment). The fake chain is the truth the invariants use.
+ * Wallet groups (BUNNDLY-68): two runs at once on the limiters of one plan, as the vault
+ * runs them; STOP stops only the first.
  *
  * `npm test` runs a fast set of seeds; `npm run test:sim` (`--mode sim`) the long one.
  */
@@ -18,6 +20,7 @@ import {
   type ExecutorWallet,
   type OrderSigner,
   type RunSummary,
+  type Side,
 } from '../../src/executor/index.ts';
 import { FakeChain } from '../helpers/fake-chain.ts';
 import { FakeClock, T0 } from '../helpers/fake-clock.ts';
@@ -33,7 +36,16 @@ const LONG =
   (import.meta as ImportMeta & { readonly env: { readonly MODE: string } }).env.MODE === 'sim';
 const FIRST_SEED = 1;
 const SEEDS = LONG ? 5_000 : 50;
+/** Sell runs (BUNNDLY-60), on top of the buy runs: their own seeds, the same failures. */
+const SELL_SEEDS = LONG ? 2_000 : 20;
+const FIRST_SELL_SEED = 100_001;
+/** Two groups at once (BUNNDLY-68), on top of the runs above: their own seeds. */
+const GROUP_SEEDS = LONG ? 1_000 : 10;
+const FIRST_GROUP_SEED = 200_001;
 const MINT = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
+/** The second group's mint (any token mint other than MINT). */
+const MINT_2 = 'Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB';
+const SOL_MINT = 'So11111111111111111111111111111111111111112';
 
 const signer: OrderSigner = (_index, _request, order) =>
   Promise.resolve(
@@ -81,10 +93,22 @@ export interface SimResult {
   readonly landedWithError: number;
   /** Fake time the run took. */
   readonly durationMs: number;
+  /** Two groups: some 60 s window held the full budget with /order of both groups. */
+  readonly sharedFullWindow: boolean;
 }
 
-/** Runs one scenario and checks the invariants against the fake chain. */
-export async function simulate(s: Scenario): Promise<SimResult> {
+/**
+ * Runs one scenario and checks the invariants against the fake chain. For a sell,
+ * `maxSpend` is the planned token amount and `spent` on the chain is the tokens sold.
+ * `groups: 2`: the first half of the wallets buys MINT, the second half MINT_2, both runs
+ * at once on one pair of limiters; STOP stops the first group only.
+ */
+export async function simulate(
+  s: Scenario,
+  side: Side = 'buy',
+  groups: 1 | 2 = 1,
+): Promise<SimResult> {
+  const selling = side === 'sell';
   const random = seeded(s.seed);
   const clock = new FakeClock(true);
   const chain = new FakeChain(clock);
@@ -134,49 +158,60 @@ export async function simulate(s: Scenario): Promise<SimResult> {
   const wallets: ExecutorWallet[] = Array.from({ length: s.wallets }, (_, i) => ({
     index: i,
     address: `Wallet${String(i).padStart(3, '0')}`,
-    maxSpend: 5_000_000n + BigInt(i) * 100_000n,
+    // a sell: a few wallets hold nothing
+    maxSpend: selling && i % 17 === 3 ? 0n : 5_000_000n + BigInt(i) * 100_000n,
     // a few cannot afford max spend + reserve, a few were never read
     balance: i % 23 === 7 ? null : i % 19 === 5 ? 1_000_000n : 1_000_000_000n,
   }));
   const rpm = JUPITER_PLAN_RPM[s.plan];
-  const run = startRun(
-    {
-      jupiter,
-      orderLimiter: new OrderLimiter({ orderRpm: rpm, clock }),
-      executeLimiter: new ExecuteLimiter({ plan: s.plan, orderRpm: rpm, clock }),
-      sign: signer,
-      landing: chain.checker,
-      clock,
-      emit: () => undefined,
-    },
-    {
-      runId: s.seed,
-      mint: MINT,
-      wallets,
-      dryRun: s.dryRun,
-      maxAttempts: 3,
-      minReserveLamports: 15_000_000n,
-      priceCeilingPercent: 50,
-      noRouteWindowMs: 20_000,
-      noRouteBackoffMinMs: 500,
-      noRouteBackoffMaxMs: 2_000,
-    },
+  // One pair for every group, as the vault keeps one pair per plan (SPEC 2.2).
+  const orderLimiter = new OrderLimiter({ orderRpm: rpm, clock });
+  const executeLimiter = new ExecuteLimiter({ plan: s.plan, orderRpm: rpm, clock });
+  const groupOf = (index: number): number => (groups === 2 && index >= s.wallets / 2 ? 1 : 0);
+  const mintOf = (group: number): string => (group === 0 ? MINT : MINT_2);
+  const runs = Array.from({ length: groups }, (_, group) =>
+    startRun(
+      {
+        jupiter,
+        orderLimiter,
+        executeLimiter,
+        sign: signer,
+        landing: chain.checker,
+        clock,
+        emit: () => undefined,
+      },
+      {
+        runId: s.seed * 10 + group,
+        ...(selling ? { side } : {}),
+        mint: mintOf(group),
+        wallets: wallets.filter((w) => groupOf(w.index) === group),
+        dryRun: s.dryRun,
+        maxAttempts: 3,
+        minReserveLamports: 15_000_000n,
+        priceCeilingPercent: 50,
+        noRouteWindowMs: 20_000,
+        noRouteBackoffMinMs: 500,
+        noRouteBackoffMaxMs: 2_000,
+      },
+    ),
   );
-  let summary: RunSummary | null = null;
-  void run.done.then((r) => {
-    summary = r;
+  const summaries: (RunSummary | null)[] = runs.map(() => null);
+  runs.forEach((run, i) => {
+    void run.done.then((r) => {
+      summaries[i] = r;
+    });
   });
   let stoppedAt: number | null = null;
   if (s.stopAt !== null) {
     await clock.runUntil(T0 + s.stopAt);
-    run.stop();
+    runs[0]?.stop();
     stoppedAt = clock.now();
   }
   await clock.runUntil();
 
   const broken: string[] = [];
-  const done = summary as RunSummary | null;
-  if (done === null) {
+  const finished = summaries.filter((r): r is RunSummary => r !== null);
+  if (finished.length !== runs.length) {
     return {
       broken: ['the run did not finish'],
       outcomes: {},
@@ -184,8 +219,10 @@ export async function simulate(s: Scenario): Promise<SimResult> {
       chainChecks: 0,
       landedWithError: 0,
       durationMs: 0,
+      sharedFullWindow: false,
     };
   }
+  const done = { wallets: finished.flatMap((r) => r.wallets) };
   const outcomes: Record<string, number> = {};
   for (const w of done.wallets) {
     const key = w.reason === null ? w.state : `${w.state}:${w.reason.code}`;
@@ -216,10 +253,11 @@ export async function simulate(s: Scenario): Promise<SimResult> {
       broken.push(`${taker}: ${w.state} but ${String(buys.length)} buys on the chain`);
     }
   }
-  const starts = jupiter.calls
+  // Every /order of every group counts against the one plan limit.
+  const orderCalls = jupiter.calls
     .filter((c) => c.kind === 'order')
-    .map((c) => c.start)
-    .sort((a, b) => a - b);
+    .sort((a, b) => a.start - b.start);
+  const starts = orderCalls.map((c) => c.start);
   const budget = orderBudget(rpm);
   for (let i = 0; i + budget < starts.length; i++) {
     const a = starts[i] ?? 0;
@@ -227,13 +265,34 @@ export async function simulate(s: Scenario): Promise<SimResult> {
     if (b - a < ORDER_WINDOW_MS)
       broken.push(`more than ${String(budget)} /order in 60 s at ${String(a - T0)}`);
   }
+  const groupOfTaker = new Map(wallets.map((w) => [w.address, groupOf(w.index)]));
+  const sharedFullWindow =
+    groups === 2 &&
+    orderCalls.some((first, i) => {
+      const window = orderCalls.slice(i).filter((c) => c.start - first.start < ORDER_WINDOW_MS);
+      const both = new Set(window.map((c) => groupOfTaker.get(c.taker)));
+      return window.length === budget && both.size === 2;
+    });
   if (s.dryRun && jupiter.executions().length > 0) broken.push('/execute in DRY-RUN');
   if (stoppedAt !== null) {
+    // STOP of the first group: none of its wallets asks again; the second goes on.
     const stop = stoppedAt;
-    const after = starts.filter((t) => t > stop);
+    const after = orderCalls.filter((c) => c.start > stop && groupOfTaker.get(c.taker) === 0);
     if (after.length > 0) broken.push(`${String(after.length)} /order after STOP`);
   }
   if (jupiter.maxOpenPerWallet > 1) broken.push('two calls in flight for one wallet');
+  // Every /order is for this wallet's planned amount, in the direction of the run.
+  const planOf = new Map(wallets.map((w) => [w.address, w.maxSpend]));
+  for (const r of jupiter.orderRequests()) {
+    const mint = mintOf(groupOfTaker.get(r.taker ?? '') ?? -1);
+    const direction = selling
+      ? r.inputMint === mint && r.outputMint === SOL_MINT
+      : r.inputMint === undefined && r.outputMint === mint;
+    if (!direction) broken.push(`${r.taker ?? '?'}: /order in the wrong direction`);
+    if (r.amount !== planOf.get(r.taker ?? '') || r.amount <= 0n) {
+      broken.push(`${r.taker ?? '?'}: /order for ${String(r.amount)}, not the plan`);
+    }
+  }
   return {
     broken,
     outcomes,
@@ -241,6 +300,7 @@ export async function simulate(s: Scenario): Promise<SimResult> {
     chainChecks: chain.checks,
     landedWithError: chain.landed.filter((l) => !l.ok).length,
     durationMs: clock.now() - T0,
+    sharedFullWindow,
   };
 }
 
@@ -294,5 +354,88 @@ describe(`fleet invariants (${String(SEEDS)} seeds${LONG ? ', long set' : ''})`,
     expect(all.some((s) => s.stopAt !== null)).toBe(true);
     expect(all.some((s) => s.noRouteMs > 0)).toBe(true);
     expect(all.some((s) => s.serverErrorMs > 0)).toBe(true);
+  });
+});
+
+describe(`fleet invariants of a sell (${String(SELL_SEEDS)} seeds${LONG ? ', long set' : ''})`, () => {
+  const seeds = Array.from({ length: SELL_SEEDS }, (_, i) => FIRST_SELL_SEED + i);
+
+  const results: SimResult[] = [];
+
+  it.each(seeds)(
+    'sell seed %i',
+    async (seed) => {
+      const s = scenario(seed);
+      const result = await simulate(s, 'sell');
+      results.push(result);
+      expect(result.broken, JSON.stringify(s)).toEqual([]);
+    },
+    60_000,
+  );
+
+  it('the sell runs went through every path (not a vacuous pass)', () => {
+    expect(results).toHaveLength(SELL_SEEDS);
+    const total: Record<string, number> = {};
+    for (const r of results) {
+      for (const [k, v] of Object.entries(r.outcomes)) total[k] = (total[k] ?? 0) + v;
+    }
+    for (const key of [
+      'CONFIRMED',
+      'SKIPPED:DRY_RUN',
+      'SKIPPED:STOPPED',
+      'SKIPPED:NO_TOKENS',
+      'SKIPPED:INSUFFICIENT_FUNDS',
+      'FAILED:MAX_ATTEMPTS',
+      'FAILED:EXECUTE_FAILED',
+    ]) {
+      expect(total[key] ?? 0, key).toBeGreaterThan(0);
+    }
+    // what belongs to a buy only never happens to a sell
+    for (const key of [
+      'SKIPPED:PRICE_CEILING',
+      'SKIPPED:INSUFFICIENT_SOL',
+      'SKIPPED:BALANCE_UNKNOWN',
+    ]) {
+      expect(total[key] ?? 0, key).toBe(0);
+    }
+    expect(results.reduce((n, r) => n + r.executes, 0)).toBeGreaterThan(SELL_SEEDS * 20);
+    expect(results.reduce((n, r) => n + r.chainChecks, 0)).toBeGreaterThan(SELL_SEEDS * 10);
+    expect(results.reduce((n, r) => n + r.landedWithError, 0)).toBeGreaterThan(0);
+  });
+
+  it('the sell scenarios cover live, DRY-RUN and STOP', () => {
+    const all = seeds.map(scenario);
+    expect(new Set(all.map((s) => s.dryRun))).toEqual(new Set([true, false]));
+    expect(all.some((s) => s.stopAt !== null)).toBe(true);
+  });
+});
+
+describe(`two wallet groups at once (${String(GROUP_SEEDS)} seeds${LONG ? ', long set' : ''})`, () => {
+  const seeds = Array.from({ length: GROUP_SEEDS }, (_, i) => FIRST_GROUP_SEED + i);
+  /** The /order budget per 60 s, worked out by hand: 90 % of 30 and of 60 a minute. */
+  const BUDGET = { keyless: 27, free: 54 } as const;
+
+  const results: SimResult[] = [];
+
+  it('the budget in the invariant is the hand-worked one', () => {
+    expect(orderBudget(JUPITER_PLAN_RPM.keyless)).toBe(BUDGET.keyless);
+    expect(orderBudget(JUPITER_PLAN_RPM.free)).toBe(BUDGET.free);
+  });
+
+  it.each(seeds)(
+    'groups seed %i',
+    async (seed) => {
+      const s = scenario(seed);
+      const result = await simulate(s, 'buy', 2);
+      results.push(result);
+      expect(result.broken, JSON.stringify(s)).toEqual([]);
+    },
+    60_000,
+  );
+
+  it('the two groups really shared full windows (not a vacuous pass)', () => {
+    expect(results).toHaveLength(GROUP_SEEDS);
+    expect(results.some((r) => r.sharedFullWindow)).toBe(true);
+    expect(results.reduce((n, r) => n + r.executes, 0)).toBeGreaterThan(GROUP_SEEDS * 20);
   });
 });

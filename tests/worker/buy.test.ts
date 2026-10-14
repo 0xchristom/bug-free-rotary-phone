@@ -28,6 +28,8 @@ import { FakeJupiter, type FakeJupiterScript } from '../helpers/fake-jupiter.ts'
 import { MINT_ACCOUNT } from '../helpers/mint-account.ts';
 import { USDC, buildTransaction } from '../helpers/tx-fakes.ts';
 
+vi.mock('@noble/hashes/scrypt.js', () => import('../helpers/fast-kdf.ts'));
+
 vi.setConfig({ testTimeout: 60_000 });
 
 const PASSWORD = 'correct horse battery staple';

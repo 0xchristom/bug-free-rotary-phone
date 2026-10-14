@@ -28,6 +28,8 @@ import {
   stepClock,
 } from '../helpers/net-fakes.ts';
 
+vi.mock('@noble/hashes/scrypt.js', () => import('../helpers/fast-kdf.ts'));
+
 vi.setConfig({ testTimeout: 60_000 });
 
 const PASSWORD = 'correct horse battery staple';

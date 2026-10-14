@@ -15,6 +15,7 @@ import {
   mockStorage,
   mockVault,
 } from './fakes.ts';
+import { eventually } from './settle.ts';
 import { setupUser } from './user.ts';
 
 const SOL = 1_000_000_000n;
@@ -56,9 +57,10 @@ function setup({
     info,
     buy: null,
     watch: null,
+    groups: [],
   });
   const vault = mockVault(status());
-  const saved: FleetSettingsV1[] = [];
+  const saved: Extract<VaultRequest, { type: 'saveSettings' }>['settings'][] = [];
   const added: number[] = [];
   vault.request.mockImplementation((req: VaultRequest) => {
     switch (req.type) {
@@ -90,8 +92,16 @@ function setup({
           fetchedAt: '2026-10-02T12:00:00.000Z',
         });
       case 'saveSettings': {
+        // like the worker: without trade parameters or groups the current ones stay
         saved.push(req.settings);
-        info = { ...info, settings: req.settings };
+        info = {
+          ...info,
+          settings: {
+            ...req.settings,
+            trade: req.settings.trade ?? info.settings.trade,
+            groups: req.settings.groups ?? info.settings.groups,
+          },
+        };
         return Promise.resolve({ fileText: '{"saved":true}', info });
       }
       case 'addWallets': {
@@ -146,7 +156,7 @@ function row(label: string): HTMLElement {
  * to build, so the wait is longer than the default one.
  */
 async function ready(): Promise<void> {
-  await screen.findByText(/^Balances as of /u, {}, { timeout: 10_000 });
+  await eventually(() => screen.getByText(/^Balances as of /u));
 }
 
 function cells(label: string): string[] {
