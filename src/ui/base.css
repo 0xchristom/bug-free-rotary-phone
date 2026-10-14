@@ -874,15 +874,16 @@ code.address {
 }
 
 /* In the row the amount reads like the mockup's .amt (SOL mark, plain number): the frame of
-   the field and of the unit button shows on hover and focus only. */
+   the field and of the unit button shows on hover and focus only. Narrow enough for the
+   table to fit 1280 px without scrolling (BUNNDLY-56, mockup column 114 px): 6 digits fit. */
 .amt {
   font-size: var(--fs-strong);
   font-weight: 500;
 }
 
 .amt .amount-input {
-  width: 96px;
-  padding: 0 var(--s-2);
+  width: 64px;
+  padding: 0 var(--s-1);
   background: transparent;
   border-color: transparent;
 }
@@ -892,6 +893,8 @@ code.address {
 }
 
 .amt .unit-toggle {
+  min-width: 0;
+  padding: 0 var(--s-1);
   background: transparent;
   border-color: transparent;
   color: var(--fg-3);
