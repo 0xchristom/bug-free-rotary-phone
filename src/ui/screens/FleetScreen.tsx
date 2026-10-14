@@ -22,7 +22,7 @@ import {
 import { ARM_TARGET, BUY_TARGET, SELL_TARGET, targetReason } from '../target-reasons.ts';
 import { CreateWallets } from '../CreateWallets.tsx';
 import type { StairsOptions } from '../../executor/index.ts';
-import { fillOf, fleetFill, type Fill } from '../fill.ts';
+import { ARMED_FILL, fillOf, fleetFill, type Fill } from '../fill.ts';
 import { FleetSegments, FleetSummaryBar } from '../FleetSummaryBar.tsx';
 import { summarize } from '../fleet-math.ts';
 import { FleetTable } from '../FleetTable.tsx';
@@ -755,6 +755,14 @@ export function FleetScreen({
     }
     return out;
   }, [groups, statusGroups]);
+  // Selected wallets of armed groups wait for the creator's token (BUNNDLY-88); once the
+  // group's run starts, its rows say where each wallet is.
+  const armedWallets = new Set<number>();
+  for (const g of groups) {
+    const gs = statusGroups?.find((x) => x.id === g.id);
+    if (gs?.watch?.armed !== true || groupRunning(gs)) continue;
+    for (const i of g.wallets) if (selectedIndexes.includes(i)) armedWallets.add(i);
+  }
   const groupNames = useMemo(
     () => new Map(groups.flatMap((g) => g.wallets.map((i) => [i, g.name] as const))),
     [groups],
@@ -980,7 +988,9 @@ export function FleetScreen({
   // like the rows, counted by `fleetFill`.
   const fleetFills: Fill[] = selectedIndexes.map((i) => {
     const row = tableBuy?.get(i);
-    if (row === undefined) return { percent: 0, tone: 'idle', label: 'Waiting' };
+    if (row === undefined) {
+      return armedWallets.has(i) ? ARMED_FILL : { percent: 0, tone: 'idle', label: 'Waiting' };
+    }
     return fillOf({
       state: row.state,
       reason: row.reason,
@@ -1172,6 +1182,7 @@ export function FleetScreen({
         onSellWallet={onSellWallet}
         rowSellBlocked={rowSellBlocked}
         frozen={frozen}
+        armed={armedWallets}
         groupNames={tab === null ? groupNames : undefined}
         explorer={global.explorer}
         network={global.network}

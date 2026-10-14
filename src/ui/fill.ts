@@ -126,6 +126,16 @@ function rawFill(input: FillInput): Fill {
   }
 }
 
+/**
+ * A selected wallet of an armed group before any buy (BUNNDLY-88, mockup v2): it waits for
+ * the creator's token, so it counts as in flight.
+ */
+export const ARMED_FILL: Fill = {
+  percent: 0,
+  tone: 'watch',
+  label: 'Waiting for the creator’s token',
+};
+
 /** "2nd", "3rd", "4th", "11th", "21st". */
 export function ordinal(n: number): string {
   const tens = n % 100;
