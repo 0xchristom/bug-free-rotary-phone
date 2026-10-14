@@ -239,13 +239,13 @@ function FillBar({
       aria-valuenow={percent}
       aria-valuetext={text === '' ? `${String(percent)}%` : `${String(percent)}%, ${text}`}
     >
-      <div className="top">
-        <div className="track">
-          <div className="bar" style={{ width: `${String(percent)}%` }} />
+      <div className="fill-top">
+        <div className="fill-track">
+          <div className="fill-bar" style={{ width: `${String(percent)}%` }} />
         </div>
-        <span className="pct">{percent}%</span>
+        <span className="fill-pct">{percent}%</span>
       </div>
-      <div className="cap" title={text}>
+      <div className="fill-cap" title={text}>
         {text}
       </div>
     </div>

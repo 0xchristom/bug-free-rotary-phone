@@ -5,6 +5,7 @@
  * text is written out by hand from the task's list (fill.ts carries the same list), never
  * read from the code under test.
  */
+import { readFileSync } from 'node:fs';
 import { act, cleanup, render, screen, within } from '@testing-library/react';
 import type { UserEvent } from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -207,6 +208,24 @@ function toolbar(): HTMLElement {
 }
 
 describe('Fill column and fleet fill (BUNNDLY-56)', () => {
+  // BUNNDLY-85: the bar's inner `.top` took the app header's rule (min-height 58 px, padding,
+  // border), so a row was 88 px instead of about 68. No class inside the bar may be one that
+  // base.css styles on its own, outside `.fill`.
+  it('no element of the fill bar has a class that base.css styles globally (e.g. the header .top)', async () => {
+    const { user } = setup();
+    await showMint(user);
+    const bar = screen.getByRole('progressbar', { name: 'Fill of W01' });
+    const inner = [...bar.querySelectorAll('*')].flatMap((el) => [...el.classList]);
+    expect(inner.length).toBeGreaterThan(0);
+    expect(inner).not.toContain('top');
+    // a rule whose selector starts with the bare class, e.g. ".top {" or ".cap,"
+    const css = readFileSync('src/ui/base.css', 'utf8');
+    const global = new Set(
+      [...css.matchAll(/(?:^|[},]\s*)\.([a-z][\w-]*)(?=[\s,{:[])/gu)].map((m) => m[1]),
+    );
+    expect(inner.filter((c) => global.has(c))).toEqual([]);
+  });
+
   it('live: Verifying at 90 until the chain read, Filled at 100 after MATCH; failed at 0', async () => {
     const { vault, user } = setup({ dryRun: false });
     await showMint(user);
@@ -278,7 +297,7 @@ describe('Fill column and fleet fill (BUNNDLY-56)', () => {
     await eventually(() => {
       expect(fillOf('W01')).toEqual({ now: '100', text: '100%, Simulated' });
     });
-    expect(screen.queryByText('Filled', { selector: '.fill .cap' })).toBeNull();
+    expect(screen.queryByText('Filled', { selector: '.fill-cap' })).toBeNull();
     expect(segmentTones()).toEqual(['sim', 'sim', 'sim']);
   });
 
