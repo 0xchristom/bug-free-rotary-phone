@@ -276,6 +276,181 @@ describe('a fleet file the disk lacks, after a refresh', () => {
   });
 });
 
+// BUNNDLY-84: opening a file or creating a fleet replaces the remembered fleet (with the
+// option on) or forgets it (off). While only the browser holds its changes, both ask first.
+describe('another fleet over a remembered fleet the disk lacks', () => {
+  const NEW_FLEET = 'Druga flota';
+  const QUESTION = (doing: string): string =>
+    `“Flota testowa” is remembered on this device. The fleet file on your disk is older than this fleet, or was never saved: only this browser holds the latest changes. ${doing} replaces it and deletes them for good. Continue anyway?`;
+  const KEPT =
+    'The remembered fleet was kept. Unlock it on the start screen and save its fleet file first.';
+
+  /** A remembered fleet with a change only the browser has, locked: the start screen. */
+  async function lockedWithChanges(store: MemoryRememberStore) {
+    const { handler, user } = load(store);
+    await openFile(user);
+    const info = handler.inspect().unlocked;
+    if (info === null) throw new Error('not unlocked');
+    const changed = (await handler.handle({
+      type: 'saveSettings',
+      settings: { ...info.settings, maxSpend: [{ index: 0, lamports: 100_000_000n }] },
+      apiKeys: {},
+    })) as { fileText: string };
+    const next = refresh(store);
+    await screen.findByText(/^The updated fleet file is not saved yet/u);
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValueOnce(true); // Lock asks too
+    await next.user.click(screen.getByRole('button', { name: 'Lock' }));
+    await screen.findByRole('heading', { name: 'Welcome back' });
+    expect(await store.get('account')).toMatchObject({ fileText: changed.fileText, unsaved: true });
+    confirm.mockClear();
+    return { ...next, confirm, newest: changed.fileText };
+  }
+
+  async function rememberOption(user: UserEvent, on: boolean): Promise<void> {
+    const option = screen.getByRole<HTMLInputElement>('checkbox', {
+      name: 'Remember this fleet on this device',
+    });
+    await waitFor(() => {
+      expect(option.disabled).toBe(false);
+    });
+    if (option.checked !== on) await user.click(option);
+    expect(option.checked).toBe(on);
+  }
+
+  it.each([true, false])(
+    'opening another file (remember %s) asks; No sends nothing and keeps the record',
+    async (remember) => {
+      const store = memoryRememberStore();
+      const { handler, user, confirm, newest } = await lockedWithChanges(store);
+      await user.click(screen.getByRole('button', { name: 'Open another fleet file' }));
+      await user.click(screen.getByRole('button', { name: 'Choose a fleet file' }));
+      await screen.findByRole('heading', { name: 'Fleet preview' });
+      await rememberOption(user, remember);
+
+      confirm.mockReturnValueOnce(false);
+      await user.type(screen.getByLabelText('Password'), PASSWORD);
+      await user.click(screen.getByRole('button', { name: 'Unlock' }));
+      // the question comes first (a red test says so, not a missing message)
+      await waitFor(() => {
+        expect(confirm.mock.calls).toEqual([[QUESTION('Opening another fleet file')]]);
+      });
+      expect((await screen.findByRole('alert')).textContent).toBe(KEPT);
+      expect(handler.inspect().unlocked).toBeNull(); // nothing reached the worker
+      expect(await store.get('account')).toMatchObject({ fileText: newest, unsaved: true });
+
+      // Yes: the file opens and the worker does what the option says.
+      confirm.mockReturnValueOnce(true);
+      await user.type(screen.getByLabelText('Password'), PASSWORD);
+      await user.click(screen.getByRole('button', { name: 'Unlock' }));
+      await findFleet();
+      expect(confirm).toHaveBeenCalledTimes(2);
+      if (remember) {
+        expect(await store.get('account')).toMatchObject({ fileText, unsaved: false });
+      } else {
+        expect(store.keys()).toEqual(['prefs']);
+      }
+    },
+  );
+
+  it.each([true, false])(
+    'creating a new fleet (remember %s) asks; No keeps the record and the form',
+    async (remember) => {
+      const store = memoryRememberStore();
+      const { handler, user, confirm, newest } = await lockedWithChanges(store);
+      await user.click(screen.getByRole('button', { name: 'Create a new fleet' }));
+      await user.clear(screen.getByLabelText('Number of wallets'));
+      await user.type(screen.getByLabelText('Number of wallets'), '2');
+      await user.type(screen.getByLabelText('Fleet name'), NEW_FLEET);
+      await user.type(screen.getByLabelText('Password'), PASSWORD);
+      await user.type(screen.getByLabelText('Repeat the password'), PASSWORD);
+      await rememberOption(user, remember);
+
+      confirm.mockReturnValueOnce(false);
+      await user.click(screen.getByRole('button', { name: 'Create the fleet' }));
+      // the question comes first (a red test says so, not a missing message)
+      await waitFor(() => {
+        expect(confirm.mock.calls).toEqual([[QUESTION('Creating a new fleet')]]);
+      });
+      expect((await screen.findByRole('alert')).textContent).toBe(KEPT);
+      expect(handler.inspect().unlocked).toBeNull();
+      expect(await store.get('account')).toMatchObject({ fileText: newest, unsaved: true });
+      expect(screen.getByLabelText<HTMLInputElement>('Repeat the password').value).toBe(PASSWORD);
+
+      confirm.mockReturnValueOnce(true);
+      await user.click(screen.getByRole('button', { name: 'Create the fleet' }));
+      await waitFor(() => {
+        expect(handler.inspect().unlocked?.fleetName).toBe(NEW_FLEET);
+      });
+      expect(confirm).toHaveBeenCalledTimes(2);
+      await waitFor(async () => {
+        if (remember) {
+          // the new fleet is remembered now, with its own file not on disk yet
+          const account = await store.get('account');
+          expect(account?.fileText).toContain(`"${NEW_FLEET}"`);
+          expect(account?.unsaved).toBe(true);
+        } else {
+          expect(store.keys()).toEqual(['prefs']);
+        }
+      });
+    },
+  );
+
+  it('the device cannot be read: opening a file asks without a name; No sends no unlock', async () => {
+    const handler = createVaultHandler({ remember: memoryRememberStore() });
+    const sent: string[] = [];
+    // Every `remembered` question to the worker fails; the rest goes to the real handler.
+    const failing = {
+      request: (request, options) => {
+        sent.push(request.type);
+        return request.type === 'remembered'
+          ? Promise.reject(new Error('IndexedDB is gone'))
+          : handler.handle(request, options);
+      },
+      onEvent: (l) => handler.onEvent(l),
+    } as VaultClient;
+    const storage = mockStorage();
+    storage.offerFile({ name: FILE_NAME, text: fileText });
+    render(<App vault={failing} storage={storage.env} statusPollMs={60_000} />);
+    const user = setupUser();
+    await user.click(await screen.findByRole('button', { name: 'Open a fleet file' }));
+    await user.click(screen.getByRole('button', { name: 'Choose a fleet file' }));
+    await screen.findByRole('heading', { name: 'Fleet preview' });
+
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValueOnce(false);
+    await user.type(screen.getByLabelText('Password'), PASSWORD);
+    await user.click(screen.getByRole('button', { name: 'Unlock' }));
+    // unknown is the risky case: the question comes, with no fleet to name
+    await waitFor(() => {
+      expect(confirm.mock.calls).toEqual([
+        [
+          'A fleet is remembered on this device. The fleet file on your disk is older than this fleet, or was never saved: only this browser holds the latest changes. Opening another fleet file replaces it and deletes them for good. Continue anyway?',
+        ],
+      ]);
+    });
+    expect((await screen.findByRole('alert')).textContent).toBe(KEPT);
+    expect(sent).not.toContain('unlock');
+    expect(handler.inspect().unlocked).toBeNull();
+  });
+
+  it('a remembered fleet whose file is saved: opening another file asks nothing', async () => {
+    const store = memoryRememberStore();
+    const { user } = load(store);
+    await openFile(user); // opened from disk: nothing only in the browser
+    await user.click(screen.getByRole('button', { name: 'Lock' }));
+    await screen.findByRole('heading', { name: 'Welcome back' });
+    expect((await store.get('account'))?.unsaved).toBe(false);
+    const confirm = vi.spyOn(window, 'confirm');
+    await user.click(screen.getByRole('button', { name: 'Open another fleet file' }));
+    await user.click(screen.getByRole('button', { name: 'Choose a fleet file' }));
+    await screen.findByRole('heading', { name: 'Fleet preview' });
+    await rememberOption(user, true);
+    await user.type(screen.getByLabelText('Password'), PASSWORD);
+    await user.click(screen.getByRole('button', { name: 'Unlock' }));
+    await findFleet();
+    expect(confirm).not.toHaveBeenCalled();
+  });
+});
+
 describe('a browser that keeps no data', () => {
   it('the option is off and disabled with the reason; the fleet still opens', async () => {
     const { user } = load(failingRememberStore());

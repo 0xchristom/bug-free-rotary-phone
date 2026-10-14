@@ -55,8 +55,48 @@ export function useRememberedView(): {
   return { view, reload };
 }
 
-export const FORGET_UNSAVED_CONFIRM =
-  'The fleet file on your disk is older than this fleet, or was never saved: only this browser holds the latest changes. Forgetting this device deletes them for good. Forget anyway?';
+/** Said before every action that would drop a remembered fleet the disk is behind on. */
+const ONLY_IN_BROWSER =
+  'The fleet file on your disk is older than this fleet, or was never saved: only this browser holds the latest changes.';
+
+export const FORGET_UNSAVED_CONFIRM = `${ONLY_IN_BROWSER} Forgetting this device deletes them for good. Forget anyway?`;
+
+/**
+ * Opening a file or creating a fleet replaces the remembered fleet (or forgets it when
+ * "remember" is off), so it asks with the sentence of "Forget this device" (BUNNDLY-84).
+ */
+export function replaceUnsavedConfirm(fleetName: string | null, action: 'open' | 'create'): string {
+  const which =
+    fleetName === null
+      ? 'A fleet is remembered on this device.'
+      : `“${fleetName}” is remembered on this device.`;
+  const doing = action === 'open' ? 'Opening another fleet file' : 'Creating a new fleet';
+  return `${which} ${ONLY_IN_BROWSER} ${doing} replaces it and deletes them for good. Continue anyway?`;
+}
+
+/** Shown after "No": nothing was sent, the remembered fleet is as it was. */
+export const REPLACE_KEPT =
+  'The remembered fleet was kept. Unlock it on the start screen and save its fleet file first.';
+
+/**
+ * Asks before a file is opened or a fleet is created while the remembered fleet holds
+ * changes the disk does not have (BUNNDLY-84); true when there is nothing to lose or the
+ * user agrees. Read fresh from the vault, like `confirmForget`.
+ */
+export async function confirmReplace(
+  client: VaultClient,
+  action: 'open' | 'create',
+): Promise<boolean> {
+  let account: RememberedView['account'];
+  try {
+    account = (await client.request({ type: 'remembered' })).account;
+  } catch {
+    // unknown is treated as the risky case
+    return window.confirm(replaceUnsavedConfirm(null, action));
+  }
+  if (account === null || !account.unsaved) return true;
+  return window.confirm(replaceUnsavedConfirm(account.fleetName, action));
+}
 
 /**
  * Asks before the remembered fleet is removed: `usual` while the disk holds its file (null:
