@@ -31,6 +31,13 @@ function sameAmount(
     : saved.value.kind === 'percent' && saved.value.percent === value.percent;
 }
 
+function amountKey(value: BuyAmount | typeof DEFAULT): string {
+  if (value === DEFAULT) return DEFAULT;
+  return value.kind === 'lamports'
+    ? `${String(value.lamports)} lamports`
+    : `${String(value.percent)} %`;
+}
+
 /** Saves a change; resolves to an error message for the field, or null when it is saved. */
 export type SaveTrade = (patch: WalletPatch) => Promise<string | null>;
 
@@ -65,6 +72,8 @@ export function AmountField({
   const [error, setError] = useState<string | null>(null);
   const field = useRef<HTMLInputElement>(null);
   const toggle = useRef<HTMLButtonElement>(null);
+  /** The amount last sent and the saved value it was sent from. */
+  const sent = useRef<{ readonly key: string; readonly base: string } | null>(null);
   // A new saved value (this field, "Edit selected", Settings) replaces what the field
   // shows; adjusted while rendering, as React advises for state derived from props.
   const savedKey = `${savedUnit}|${savedText}`;
@@ -84,8 +93,14 @@ export function AmountField({
     setError(null);
     // The saved value again ("0,5" for 0.5 SOL, or nothing typed): nothing to save.
     if (sameAmount(parsed.value, parseAmount(savedText, savedUnit))) return;
+    // Already sent from this saved value (Enter, then the field left before the answer is
+    // shown): one change, one save (BUNNDLY-76).
+    const key = amountKey(parsed.value);
+    if (sent.current?.key === key && sent.current.base === savedKey) return;
+    sent.current = { key, base: savedKey };
     const refused = await onSave({ amount: parsed.value });
     if (refused !== null) {
+      sent.current = null;
       setText(savedText);
       setUnit(savedUnit);
       setError(refused);

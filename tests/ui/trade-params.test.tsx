@@ -6,7 +6,7 @@
  * the fleet defaults in Settings.
  */
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AppError } from '../../src/core/errors.ts';
 import { DEFAULT_TRADE_SETTINGS, type FleetSettingsV1 } from '../../src/core/index.ts';
 import type { RunEvent, WalletEvent } from '../../src/executor/index.ts';
@@ -533,7 +533,12 @@ describe('Edit selected', () => {
       wallets: [{ index: 1, buySlippageBps: 100 }],
     });
 
+    // The settings are not in the file yet: leaving Settings asks, and the user goes on.
+    await screen.findByRole('button', { name: 'Save the updated fleet file' });
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
     await user.click(screen.getByRole('button', { name: 'Fleet' }));
+    expect(confirm).toHaveBeenCalledTimes(1);
+    confirm.mockRestore();
     await ready();
     expect([slips('W01'), slips('W02'), slips('W03')]).toEqual([
       ['3 %', 'Auto'],
