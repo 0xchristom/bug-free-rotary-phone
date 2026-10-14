@@ -244,6 +244,44 @@ describe('passwordless window', () => {
     expect((await session(store))?.expiresAt).toBe(t + 15 * MINUTE);
   });
 
+  it('the window counts from the last activity, like the auto-lock', async () => {
+    const store = memoryRememberStore();
+    const h = vault(store, 15 * MINUTE);
+    const created = await create(h, true);
+    t += 10 * MINUTE;
+    await call(h, { type: 'activity' });
+    await call(h, { type: 'remembered' }); // queued after the rewrite
+    expect((await session(store))?.expiresAt).toBe(T0 + 25 * MINUTE);
+    t += 10 * MINUTE;
+    await call(h, { type: 'activity' });
+    await call(h, { type: 'remembered' });
+    expect((await session(store))?.expiresAt).toBe(T0 + 35 * MINUTE);
+    t += 30_000; // within a minute of the last write: no new write
+    await call(h, { type: 'activity' });
+    await call(h, { type: 'remembered' });
+    expect((await session(store))?.expiresAt).toBe(T0 + 35 * MINUTE);
+
+    t = T0 + 30 * MINUTE; // a refresh 30 minutes after the unlock, 10 after the last activity
+    kdf.calls = 0;
+    const resumed = await call<VaultStatus>(vault(store), { type: 'resume' });
+    expect(resumed.locked).toBe(false);
+    expect(addresses(resumed.info?.wallets)).toEqual(addresses(created.info.wallets));
+    expect(kdf.calls).toBe(0);
+  });
+
+  it('16 minutes without activity in a 15-minute window: the password is needed', async () => {
+    const store = memoryRememberStore();
+    const h = vault(store, 15 * MINUTE);
+    await create(h, true);
+    t += 10 * MINUTE;
+    await call(h, { type: 'activity' });
+    await call(h, { type: 'remembered' });
+    t += 16 * MINUTE;
+    const resumed = await call<VaultStatus>(vault(store), { type: 'resume' });
+    expect(resumed.locked).toBe(true);
+    expect(await session(store)).toBeUndefined();
+  });
+
   it('after the window the password is needed and the record is gone', async () => {
     const store = memoryRememberStore();
     await create(vault(store), true);
