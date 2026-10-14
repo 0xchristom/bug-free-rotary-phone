@@ -5,6 +5,7 @@
  * bytes or to export keys without the password (DECISIONS D-013). Responses carry
  * the encrypted file text and public data only; errors carry only a code (D-008).
  */
+import type { FeedState } from '../chain/balance-stream.ts';
 import type { TargetKind } from '../chain/target.ts';
 import type { ExecutorEvent, Side, StairsOptions } from '../executor/executor.ts';
 import type { WatchEvent, WatchStatus } from '../watcher/watch.ts';
@@ -181,7 +182,13 @@ export type VaultRequest =
   /** Closes the socket and empties the detection queue; a running buy goes on. */
   | { readonly type: 'disarm'; readonly group?: string }
   /** User activity in the UI; resets the auto-lock timer. */
-  | { readonly type: 'activity' };
+  | { readonly type: 'activity' }
+  /**
+   * Live balances (BUNNDLY-57, D-055): `on` opens one Helius WebSocket with a subscription
+   * per wallet, `off` closes it. Changes arrive as `balance` events. Locking closes it too.
+   * Not user activity. Without a Helius key the feed stays `polling`.
+   */
+  | { readonly type: 'balanceFeed'; readonly on: boolean };
 
 export type VaultRequestType = VaultRequest['type'];
 
@@ -233,6 +240,29 @@ export interface VaultBalances {
   /** ISO-8601 time of the read. */
   readonly fetchedAt: string;
 }
+
+/** Where the balances on screen come from now (BUNNDLY-57). */
+export interface BalanceFeedStatus {
+  readonly network: Network;
+  readonly state: FeedState;
+}
+
+/**
+ * Live balance changes (BUNNDLY-57, D-055), each with the network it was read on: the UI
+ * drops one that belongs to a network no longer shown.
+ */
+export type BalanceEvent = { readonly kind: 'balance'; readonly network: Network } & (
+  | { readonly type: 'feed'; readonly state: FeedState }
+  /** A wallet's SOL balance from its account subscription. */
+  | { readonly type: 'sol'; readonly index: number; readonly lamports: bigint }
+  /** A wallet's token balance, read right after its transaction landed. */
+  | {
+      readonly type: 'token';
+      readonly mint: string;
+      readonly index: number;
+      readonly amount: bigint;
+    }
+);
 
 export interface BuyStatus {
   /** Present for a sell only. */
@@ -307,6 +337,7 @@ export interface VaultResultMap {
   readonly arm: VaultStatus;
   readonly disarm: VaultStatus;
   readonly activity: VaultStatus;
+  readonly balanceFeed: BalanceFeedStatus;
 }
 
 export type VaultRequestOf<T extends VaultRequestType> = Extract<VaultRequest, { type: T }>;
@@ -322,8 +353,8 @@ export interface VaultProgressEnvelope {
   readonly progress: number;
 }
 
-/** Everything the worker pushes on its own: executor progress and the watcher (mode B). */
-export type WorkerEvent = ExecutorEvent | WatchEvent;
+/** Everything the worker pushes on its own: executor progress, the watcher, live balances. */
+export type WorkerEvent = ExecutorEvent | WatchEvent | BalanceEvent;
 
 /**
  * Executor and watcher progress, pushed by the worker without a request id (BUNNDLY-21,

@@ -64,7 +64,13 @@ export function createVaultClient(port: VaultPort, options: VaultClientOptions =
     const data = event.data;
     if (isRecord(data) && data.id === undefined && isRecord(data.event)) {
       const kind = data.event.kind;
-      if (kind === 'wallet' || kind === 'run' || kind === 'verify' || kind === 'watch') {
+      if (
+        kind === 'wallet' ||
+        kind === 'run' ||
+        kind === 'verify' ||
+        kind === 'watch' ||
+        kind === 'balance'
+      ) {
         for (const listener of listeners) listener(data.event as unknown as WorkerEvent);
       }
       return;

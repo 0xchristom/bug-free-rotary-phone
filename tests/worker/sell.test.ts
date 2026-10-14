@@ -108,7 +108,7 @@ async function setup(o: Setup = {}) {
   });
   const events: ExecutorEvent[] = [];
   h.onEvent((e) => {
-    if (e.kind !== 'watch') events.push(e);
+    if (e.kind !== 'watch' && e.kind !== 'balance') events.push(e);
   });
   await h.handle({
     type: 'create',

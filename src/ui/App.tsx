@@ -8,7 +8,8 @@ import { AppHeader } from './AppHeader.tsx';
 import { ExportDialog } from './ExportDialog.tsx';
 import { HeaderSlotsContext, type HeaderSlots } from './header-slots.ts';
 import { NetworkNotice, NetworkSwitch } from './NetworkSwitch.tsx';
-import { RpcReadContext, type RpcRead } from './shell-status.ts';
+import type { FeedState } from '../chain/balance-stream.ts';
+import { BalanceFeedContext, RpcReadContext, type RpcRead } from './shell-status.ts';
 import { ToastProvider } from './kit/index.ts';
 import { StatusBar } from './StatusBar.tsx';
 import { useNetworkSwitch } from './use-network-switch.ts';
@@ -110,6 +111,17 @@ export function App({
   const reportRead = useCallback(
     (read: RpcRead) => {
       setLastRead({ ...read, network });
+    },
+    [network],
+  );
+
+  // Live or polling balances (BUNNDLY-57), of the network on screen only.
+  const [feed, setFeed] = useState<{ readonly state: FeedState; readonly network: Network } | null>(
+    null,
+  );
+  const reportFeed = useCallback(
+    (state: FeedState | null) => {
+      setFeed(state === null ? null : { state, network });
     },
     [network],
   );
@@ -275,128 +287,133 @@ export function App({
     <VaultContext.Provider value={context}>
       <WatchRuntimeContext.Provider value={watchRuntime}>
         <RpcReadContext.Provider value={reportRead}>
-          <ToastProvider>
-            <div className="app">
-              <AppHeader
-                status={status}
-                screen={visible}
-                onNavigate={navigate}
-                onLock={() => void lock()}
-                modeSlot={setModeSlot}
-                balanceSlot={setBalanceSlot}
-                network={
-                  status && (
-                    <NetworkSwitch
-                      network={network}
-                      locked={status.locked || status.info === null}
-                      onChoose={switching.choose}
-                    />
-                  )
-                }
-              />
-              <main className={visible === 'fleet' ? 'content dash-content' : 'content'}>
-                {unlocked && <WatchGuard />}
-                {unlocked && <NetworkNotice switching={switching} storage={storage} />}
-                {notice && (
-                  <p className="notice" role="alert">
-                    {notice}
-                  </p>
-                )}
-                {status === null || !resumed ? (
-                  <p className="muted">Connecting to the vault…</p>
-                ) : (
-                  <>
-                    {visible === 'start' && (
-                      <StartScreen
-                        onCreate={() => {
-                          navigate('wizard');
-                        }}
-                        onOpen={() => {
-                          navigate('open');
-                        }}
+          <BalanceFeedContext.Provider value={reportFeed}>
+            <ToastProvider>
+              <div className="app">
+                <AppHeader
+                  status={status}
+                  screen={visible}
+                  onNavigate={navigate}
+                  onLock={() => void lock()}
+                  modeSlot={setModeSlot}
+                  balanceSlot={setBalanceSlot}
+                  network={
+                    status && (
+                      <NetworkSwitch
+                        network={network}
+                        locked={status.locked || status.info === null}
+                        onChoose={switching.choose}
                       />
-                    )}
-                    {visible === 'wizard' && (
-                      <WizardScreen
-                        storage={storage}
-                        onBack={() => {
-                          navigate(unlocked ? 'fleet' : 'start');
-                        }}
-                        onDone={() => {
-                          navigate('fleet');
-                        }}
-                        onUnsavedChange={onScreenUnsaved}
-                      />
-                    )}
-                    {visible === 'open' && (
-                      <OpenScreen
-                        storage={storage}
-                        onBack={() => {
-                          navigate('start');
-                        }}
-                        onUnlocked={() => {
-                          navigate('fleet');
-                        }}
-                      />
-                    )}
-                    {visible === 'fleet' && status.info && (
-                      <HeaderSlotsContext.Provider value={slots}>
-                        <FleetScreen
+                    )
+                  }
+                />
+                <main className={visible === 'fleet' ? 'content dash-content' : 'content'}>
+                  {unlocked && <WatchGuard />}
+                  {unlocked && <NetworkNotice switching={switching} storage={storage} />}
+                  {notice && (
+                    <p className="notice" role="alert">
+                      {notice}
+                    </p>
+                  )}
+                  {status === null || !resumed ? (
+                    <p className="muted">Connecting to the vault…</p>
+                  ) : (
+                    <>
+                      {visible === 'start' && (
+                        <StartScreen
+                          onCreate={() => {
+                            navigate('wizard');
+                          }}
+                          onOpen={() => {
+                            navigate('open');
+                          }}
+                        />
+                      )}
+                      {visible === 'wizard' && (
+                        <WizardScreen
+                          storage={storage}
+                          onBack={() => {
+                            navigate(unlocked ? 'fleet' : 'start');
+                          }}
+                          onDone={() => {
+                            navigate('fleet');
+                          }}
+                          onUnsavedChange={onScreenUnsaved}
+                        />
+                      )}
+                      {visible === 'open' && (
+                        <OpenScreen
+                          storage={storage}
+                          onBack={() => {
+                            navigate('start');
+                          }}
+                          onUnlocked={() => {
+                            navigate('fleet');
+                          }}
+                        />
+                      )}
+                      {visible === 'fleet' && status.info && (
+                        <HeaderSlotsContext.Provider value={slots}>
+                          <FleetScreen
+                            info={status.info}
+                            storage={storage}
+                            onUnsavedChange={onScreenUnsaved}
+                            buyView={buyView}
+                            onMintDecimals={onMintDecimals}
+                            {...(balanceRefreshMs === undefined ? {} : { balanceRefreshMs })}
+                            {...(rowProbe === undefined ? {} : { rowProbe })}
+                          />
+                        </HeaderSlotsContext.Provider>
+                      )}
+                      {visible === 'activity' && status.info && (
+                        <ActivityScreen
+                          info={status.info}
+                          storage={storage}
+                          operationsLog={operationsLog}
+                          decimals={
+                            buyView.run === null
+                              ? null
+                              : (mintDecimals.get(buyView.run.mint) ?? null)
+                          }
+                        />
+                      )}
+                      {visible === 'settings' && status.info && (
+                        <SettingsScreen
                           info={status.info}
                           storage={storage}
                           onUnsavedChange={onScreenUnsaved}
-                          buyView={buyView}
-                          onMintDecimals={onMintDecimals}
-                          {...(balanceRefreshMs === undefined ? {} : { balanceRefreshMs })}
-                          {...(rowProbe === undefined ? {} : { rowProbe })}
                         />
-                      </HeaderSlotsContext.Provider>
-                    )}
-                    {visible === 'activity' && status.info && (
-                      <ActivityScreen
-                        info={status.info}
-                        storage={storage}
-                        operationsLog={operationsLog}
-                        decimals={
-                          buyView.run === null ? null : (mintDecimals.get(buyView.run.mint) ?? null)
+                      )}
+                    </>
+                  )}
+                </main>
+                <StatusBar
+                  version={APP_VERSION}
+                  status={status}
+                  read={unlocked && lastRead?.network === network ? lastRead : null}
+                  feed={unlocked && feed?.network === network ? feed.state : null}
+                  autoLockMinutes={
+                    status?.info?.settings.global.autoLockMinutes ?? DEFAULT_AUTO_LOCK_MS / 60_000
+                  }
+                  onExport={
+                    unlocked
+                      ? () => {
+                          setExportOpen(true);
                         }
-                      />
-                    )}
-                    {visible === 'settings' && status.info && (
-                      <SettingsScreen
-                        info={status.info}
-                        storage={storage}
-                        onUnsavedChange={onScreenUnsaved}
-                      />
-                    )}
-                  </>
-                )}
-              </main>
-              <StatusBar
-                version={APP_VERSION}
-                status={status}
-                read={unlocked && lastRead?.network === network ? lastRead : null}
-                autoLockMinutes={
-                  status?.info?.settings.global.autoLockMinutes ?? DEFAULT_AUTO_LOCK_MS / 60_000
-                }
-                onExport={
-                  unlocked
-                    ? () => {
-                        setExportOpen(true);
-                      }
-                    : null
-                }
-              />
-              {exportOpen && unlocked && (
-                <ExportDialog
-                  storage={storage}
-                  onClose={() => {
-                    setExportOpen(false);
-                  }}
+                      : null
+                  }
                 />
-              )}
-            </div>
-          </ToastProvider>
+                {exportOpen && unlocked && (
+                  <ExportDialog
+                    storage={storage}
+                    onClose={() => {
+                      setExportOpen(false);
+                    }}
+                  />
+                )}
+              </div>
+            </ToastProvider>
+          </BalanceFeedContext.Provider>
         </RpcReadContext.Provider>
       </WatchRuntimeContext.Provider>
     </VaultContext.Provider>

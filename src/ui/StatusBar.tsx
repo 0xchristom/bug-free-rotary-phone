@@ -1,7 +1,8 @@
+import type { FeedState } from '../chain/balance-stream.ts';
 import { NETWORK_LABELS } from '../core/network.ts';
 import type { VaultStatus } from '../worker/protocol.ts';
 import { Chip, FolderIcon } from './kit/index.ts';
-import type { RpcRead } from './shell-status.ts';
+import { FEED_LABELS, type RpcRead } from './shell-status.ts';
 import { connectionLabel, connectionTone } from './watch-labels.ts';
 
 export interface StatusBarProps {
@@ -10,6 +11,8 @@ export interface StatusBarProps {
   readonly status: VaultStatus | null;
   /** The last balance read on the open fleet's network; null before the first one. */
   readonly read: RpcRead | null;
+  /** Live or polling balances (BUNNDLY-57); null while no screen reads them. */
+  readonly feed?: FeedState | null;
   readonly autoLockMinutes: number;
   /** Opens the plain export of the recovery phrase and keys; null while locked. */
   readonly onExport?: (() => void) | null;
@@ -26,6 +29,7 @@ export function StatusBar({
   version,
   status,
   read,
+  feed = null,
   autoLockMinutes,
   onExport = null,
 }: StatusBarProps) {
@@ -77,6 +81,15 @@ export function StatusBar({
               <span className="rail-item" aria-live="polite">
                 Balances as of {new Date(read.at).toLocaleTimeString('en-GB')}
               </span>
+            )}
+            {feed !== null && (
+              <>
+                <span className="rail-sep" aria-hidden="true" />
+                {/* Said in words: polling is never shown as live (BUNNDLY-57). */}
+                <span className="rail-item" data-tone={feed === 'live' ? 'ok' : 'warn'}>
+                  Balances: {FEED_LABELS[feed]}
+                </span>
+              </>
             )}
             <span className="rail-sep" aria-hidden="true" />
             {watch === null || socketTone === null ? (

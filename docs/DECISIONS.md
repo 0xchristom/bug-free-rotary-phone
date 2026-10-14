@@ -1137,3 +1137,26 @@ Rejestr decyzji i rozbieżności z dokumentacją zewnętrzną. Nowe wpisy dopisu
 - Konsekwencje / alternatywy:
   - Stare elementy → nowe miejsca: Buy Mode A/B → jedno pole **Target** (D-048); przełącznik trybu na żywo → przełącznik **DRY-RUN** w górnym pasku; panel obserwatora → linia stanu na pasku celu i **Arm**; one-shot/continuous → **Settings**; pole mintu z „Show token balance” → pole **Target** (kolumna tokenu po rozpoznaniu mintu); „Refresh balances” → chip salda floty; podsumowanie „Before the buy” → **Planned buy** w podsumowaniu i limit Jupitera w **Settings**; postęp → pole **Fleet fill**; Operations log i Detections → **Activity**; bulk → **Edit selected** (D-050); Plain export → stopka.
   - Odrzucone: zostawienie panelu zakupu pod tabelą (makieta go nie ma, a tabela przy 1920 px zaczynała się poniżej pierwszego ekranu) i osobny ekran obserwatora (stan uzbrojenia musi być widać przy komendach).
+
+## D-055: Salda na żywo: `accountSubscribe` na portfel, odpytywanie jako zapas
+
+- Data: 2026-10-14
+- Zadanie: BUNNDLY-57
+- Kontekst: SPEC 11.2, 11.6, 2.2 i 3.4. Dokumentacja Helius sprawdzona 14.10.2026:
+  - `accountSubscribe` (`/docs/api-reference/rpc/websocket/accountsubscribe`): parametry to adres i `{ encoding, commitment }`, odpowiedź to numer subskrypcji, a powiadomienie `accountNotification` ma `params.result.context.slot`, `params.result.value.lamports` i `params.subscription`. Standardowe metody Solany działają na każdym planie, a „Enhanced” wymagają planu płatnego.
+  - FAQ WebSocket (`/docs/faqs/websockets`): wiele subskrypcji `accountSubscribe` na jednym połączeniu jest dozwolone; plan Free ma 5 równoczesnych połączeń; połączenie zamyka się po 10 min bez ruchu; ping co minutę; otwarcie połączenia kosztuje 1 kredyt.
+  - Strona limitów (`/docs/billing/rate-limits`): Free to 10 zapytań RPC/s i do 1000 subskrypcji na połączenie (tabela „LaserStream WebSocket”, typ „Standard”). To odpowiada na otwarte pytanie zadania. Wartości nie zmierzyłem.
+  - `accountUnsubscribe`: Helius go nie opisuje; dokumentacja Solany (`solana.com/docs/rpc/websocket/accountunsubscribe`) przyjmuje numer subskrypcji i zwraca `true`. Aplikacja go nie używa (niżej).
+- Decyzja:
+  - **Jedno połączenie, subskrypcja na portfel:** worker otwiera jedno gniazdo Helius na sieć floty i wysyła `accountSubscribe` dla każdego portfela z `commitment: confirmed` i `encoding: base64`. Powiadomienie zmienia saldo tylko swojego portfela (zdarzenie `balance` typu `sol`). Ze 100 portfelami to 100 subskrypcji na jednym połączeniu, daleko od 1000. Razem z watcherem trybu B zajęte są najwyżej 2 z 5 połączeń.
+  - **Stan „Live” tylko po potwierdzeniu wszystkich subskrypcji.** W każdym innym przypadku (łączenie, utrata połączenia, brak klucza) stan to „Polling”. Pasek stanu i nagłówek kolumny salda mówią to słowami. UI zaczyna od „Polling” i przechodzi na „Live” dopiero po zdarzeniu z workera.
+  - **Odpytywanie zostaje:** w stanie „Polling” pełny odczyt `getMultipleAccounts` co 12 s, jak dotąd. W stanie „Live” co 30 s jako uzgodnienie. Każde przejście na „Live” daje od razu jeden pełny odczyt, bo w przerwie powiadomienia mogły przepaść.
+  - **Utrzymanie i ponowne łączenie** jak w watcherze (D-036): `getHealth` co 30 s, brak odpowiedzi w 10 s to martwe połączenie, backoff 0,5–30 s z jitterem, subskrypcja bez odpowiedzi w 10 s albo odrzucona to utrata połączenia. Stałe i funkcję backoffu bierzemy z `src/watcher/stream.ts`; kod watchera się nie zmienia.
+  - **Zamykanie:** blokada sejfu, zmiana sieci i zmiana klucza albo adresu WebSocket zamykają gniazdo, a wraz z nim wszystkie subskrypcje. Dlatego `accountUnsubscribe` nie jest potrzebne. Ekran floty prosi o zasilanie przy otwarciu (`balanceFeed { on: true }`) i zamyka je przy wyjściu. Nowe portfele dostają subskrypcje na tym samym gnieździe.
+  - **Strażnik sieci** (jak w BUNNDLY-44) działa w trzech miejscach: gniazdo ma numer generacji, więc wiadomość z gniazda zamkniętego albo zastąpionego nie przechodzi; worker przepuszcza tylko zdarzenia aktualnego strumienia, tej samej sesji i tej samej sieci; zdarzenie niesie sieć, a UI odrzuca zdarzenie z sieci, której nie ma na ekranie.
+  - **Saldo tokenu po transakcji:** gdy portfel ma `CONFIRMED`, worker od razu czyta jego konto tokenowe i wysyła zdarzenie `balance` typu `token`. Portfele, które wylądują blisko siebie, dzielą jeden odczyt, a odczyty dzieli co najmniej 1 s (`TOKEN_READ_GAP_MS`). Jeden odczyt to 2 zapytania HTTP (mint i konta), więc mieści się w 10/s.
+  - **Precyzja:** `lamports` w powiadomieniu to liczba JSON. Wartość powyżej 2^53 traci cyfry, więc jest pomijana, a dokładną kwotę daje następne uzgodnienie.
+  - **Podświetlenie** zmienionej komórki salda trwa 1,2 s i jest wyłączone przy `prefers-reduced-motion`. Pierwsza wartość wiersza nie miga. Wiersz renderuje się raz na zmianę.
+- Konsekwencje / alternatywy:
+  - Kredyty: 1 za otwarcie połączenia plus strumień danych. Pełny odczyt co 30 s zamiast co 12 s zmniejsza liczbę zapytań HTTP przy działającym gnieździe.
+  - Odrzucone: `signatureSubscribe` dla każdej transakcji (nie pokazuje wpłat z zewnątrz), osobne połączenie na portfel (limit 5 połączeń), drugi klucz albo dostawca (zakazane w zadaniu i w SPEC 2.2).
