@@ -1068,3 +1068,19 @@ Rejestr decyzji i rozbieżności z dokumentacją zewnętrzną. Nowe wpisy dopisu
   - `prefs` zostaje w IndexedDB także przy wyłączonym pamiętaniu (`{remember: false, windowMs}`), żeby wybór przetrwał odświeżenie. Nie ma w nim danych floty.
   - Kod uruchomiony na stronie w czasie okna może otworzyć flotę bez hasła (SPEC 6.9). Bez okna kopia profilu daje tylko szyfrogram, jak plik na dysku.
   - Odrzucone: zapis czegokolwiek w `localStorage` albo `sessionStorage`, zapis z wątku interfejsu i trzymanie surowych bajtów klucza (wariant A).
+
+## D-052: Stairs w silniku i w workerze: kroki o stałych godzinach, pauza bez zmiany kroków już rozpoczętych
+
+- Data: 2026-10-14
+- Zadanie: BUNNDLY-61 (PR 1: harmonogram; ekran w PR 2)
+- Decyzja:
+  - **Krok:** stała liczba portfeli (`perStep`, co najmniej 1) w stałym odstępie (`intervalMs`, 1 s do 24 h, liczba całkowita ms); potwierdzone przez Krystiana („tak”, komentarz Andy'ego w BUNNDLY-61). Złe parametry worker odrzuca kodem `INVALID_STAIRS` przed jakimkolwiek zapytaniem; executor odrzuca je też sam (`RangeError`), bo `perStep` 0 budowałby kroki bez końca.
+  - **Godziny kroków są bezwzględne:** krok k zaczyna się w chwili startu przebiegu + k × odstęp. Długi krok (ponowienia, wolne `/execute`) nie przesuwa następnych. W trybie B start liczy się od wykrycia, tak jak dotąd (`triggeredAt`).
+  - **Kroki budowane z portfeli gotowych do zakupu:** portfel pominięty przed `/order` (brak salda, brak odczytu, brak tokenów) nie zajmuje miejsca w kroku.
+  - **Stan `SCHEDULED`** (między `IDLE` a `QUEUED`): portfel czeka na swój krok, zdarzenie niesie `scheduledAt`. Wznowienie po pauzie wysyła `SCHEDULED` jeszcze raz z nową godziną.
+  - **Pauza** (`pauseStairs`, `resumeStairs`, z grupą jak `stop`): wstrzymuje następne kroki i każde nowe `/order`, także portfeli już w kolejce. Transakcje wysłane kończą się normalnie. Wznowienie przesuwa wszystkie kroki jeszcze nierozpoczęte o czas pauzy. Pauza przebiegu Immediate albo po starcie ostatniego kroku nic nie zmienia. Nazwy różnią się od `resume` z BUNNDLY-52 (wznowienie zapamiętanej sesji).
+  - **STOP** pomija portfele z kroków jeszcze nierozpoczętych jako `SKIPPED:STOPPED`, bez zapytań.
+  - **Grupy:** harmonogram dotyczy jednej grupy (polecenie Andy'ego); pauza i STOP jednej grupy nie zmieniają kroków innej. Limiter `/order` jest nadal wspólny dla planu, więc krok większy niż budżet okna czeka na limiter jak przy Immediate.
+- Konsekwencje / alternatywy:
+  - Odrzucone: kroki liczone od końca poprzedniego kroku (jeden wolny portfel opóźniałby całą flotę) i kroki budowane ze wszystkich zaznaczonych portfeli (pominięte dawałyby puste kroki).
+  - Przełącznik Immediate / Stairs na pasku komend robi Mark w BUNNDLY-73; ekran postępu kroków, pauza i wznowienie w UI to PR 2 tego zadania.

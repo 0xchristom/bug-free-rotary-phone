@@ -108,6 +108,7 @@ const COLUMNS = 10;
 
 const STATE_LABELS: Record<WalletState, string> = {
   IDLE: 'Waiting',
+  SCHEDULED: 'Scheduled',
   QUEUED: 'Queued',
   QUOTING: 'Quoting',
   SIGNING: 'Signing',

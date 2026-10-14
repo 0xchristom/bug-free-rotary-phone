@@ -6,7 +6,7 @@
  * the encrypted file text and public data only; errors carry only a code (D-008).
  */
 import type { TargetKind } from '../chain/target.ts';
-import type { ExecutorEvent, Side } from '../executor/executor.ts';
+import type { ExecutorEvent, Side, StairsOptions } from '../executor/executor.ts';
 import type { WatchEvent, WatchStatus } from '../watcher/watch.ts';
 import type { RememberedView } from './remember.ts';
 
@@ -134,6 +134,8 @@ export type VaultRequest =
       /** Wallet indices; each at most once, all in the group. */
       readonly wallets?: readonly number[];
       readonly group?: string;
+      /** Stairs mode (BUNNDLY-61); absent: Immediate. */
+      readonly stairs?: StairsOptions;
     }
   /**
    * Sell `mint` for SOL with the listed wallets (SPEC 11.4, BUNNDLY-60). The token balances
@@ -150,9 +152,18 @@ export type VaultRequest =
       readonly percent?: number;
       /** The wallets must all be in this group. */
       readonly group?: string;
+      /** Stairs mode (BUNNDLY-61); absent: Immediate. */
+      readonly stairs?: StairsOptions;
     }
   /** STOP: no new `/order`; transactions already sent are followed to the end. */
   | { readonly type: 'stop'; readonly group?: string }
+  /**
+   * Stairs (BUNNDLY-61): no new step and no new `/order` until `resumeStairs`; sent transactions
+   * finish. Without a Stairs run, or once every step has started, nothing changes.
+   */
+  | { readonly type: 'pauseStairs'; readonly group?: string }
+  /** Stairs: the steps left start later by the time paused. */
+  | { readonly type: 'resumeStairs'; readonly group?: string }
   /**
    * Mode B (SPEC 3.4 B, BUNNDLY-34): watch `creator` and buy every token it creates, by
    * the `mode` setting. `wallets` as in startBuy, fixed until disarmed (BUNNDLY-59); the
@@ -164,6 +175,8 @@ export type VaultRequest =
       readonly creator: string;
       readonly wallets?: readonly number[];
       readonly group?: string;
+      /** Stairs mode for every buy of this arming (BUNNDLY-61); steps count from the detection. */
+      readonly stairs?: StairsOptions;
     }
   /** Closes the socket and empties the detection queue; a running buy goes on. */
   | { readonly type: 'disarm'; readonly group?: string }
@@ -231,6 +244,10 @@ export interface BuyStatus {
   readonly wallets: number;
   /** False after STOP, while sent transactions finish. */
   readonly accepting: boolean;
+  /** Present for a Stairs run only (BUNNDLY-61). */
+  readonly stairs?: StairsOptions;
+  /** Stairs: paused with `pause`. */
+  readonly paused?: boolean;
 }
 
 /** One wallet group's state (BUNNDLY-68). */
@@ -285,6 +302,8 @@ export interface VaultResultMap {
   readonly startBuy: BuyStatus;
   readonly startSell: BuyStatus;
   readonly stop: VaultStatus;
+  readonly pauseStairs: VaultStatus;
+  readonly resumeStairs: VaultStatus;
   readonly arm: VaultStatus;
   readonly disarm: VaultStatus;
   readonly activity: VaultStatus;

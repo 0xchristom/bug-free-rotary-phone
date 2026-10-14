@@ -166,9 +166,18 @@ export async function setup(
   // a buy below costs no extra RPC time.
   await withRpc(h.handle({ type: 'classifyTarget', address: USDC }));
   await withRpc(h.handle({ type: 'classifyTarget', address: MINT }));
-  const startBuy = async (id: string, mint = USDC) => {
+  const startBuy = async (
+    id: string,
+    mint = USDC,
+    stairs?: { intervalMs: number; perStep: number },
+  ) => {
     await withRpc(h.handle({ type: 'refreshBalances' }));
-    await h.handle({ type: 'startBuy', group: id, mint });
+    await h.handle({
+      type: 'startBuy',
+      group: id,
+      mint,
+      ...(stairs === undefined ? {} : { stairs }),
+    });
     await clock.runUntil(clock.now() + SPREAD_MS);
   };
   const arm = async (id: string) => {
