@@ -347,6 +347,7 @@ describe('lock and auto-lock', () => {
       info: null,
       buy: null,
       watch: null,
+      groups: [],
     });
     expect(buffers.every((b) => b.every((x) => x === 0))).toBe(true);
     expect(h.inspect().unlocked).toBeNull();
@@ -431,7 +432,7 @@ describe('settings and write-only API keys (BUNNDLY-15)', () => {
     };
     const res = await call<VaultFileResult>(h, { type: 'saveSettings', settings });
     // Without trade parameters in the request the saved ones stay: the defaults here.
-    const saved = { ...settings, trade: DEFAULT_TRADE_SETTINGS };
+    const saved = { ...settings, trade: DEFAULT_TRADE_SETTINGS, groups: [] };
     expect(res.info.settings).toEqual(saved);
 
     const other = createVaultHandler();
@@ -468,6 +469,7 @@ describe('settings and write-only API keys (BUNNDLY-15)', () => {
       active: [],
       global: DEFAULT_GLOBAL_SETTINGS,
       trade: DEFAULT_TRADE_SETTINGS,
+      groups: [],
     });
   });
 

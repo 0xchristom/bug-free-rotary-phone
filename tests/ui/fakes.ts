@@ -18,6 +18,7 @@ export const LOCKED: VaultStatus = {
   info: null,
   buy: null,
   watch: null,
+  groups: [],
 };
 
 export function fleetInfo(count = 3, fleetName = 'Flota testowa'): VaultInfo {
@@ -42,7 +43,7 @@ export function fleetInfo(count = 3, fleetName = 'Flota testowa'): VaultInfo {
 }
 
 export function unlocked(armed = false): VaultStatus {
-  return { locked: false, network: 'mainnet', armed, info: fleetInfo(), buy: null, watch: null };
+  return { locked: false, network: 'mainnet', armed, info: fleetInfo(), buy: null, watch: null, groups: [] };
 }
 
 type CreateHandler = (
@@ -96,6 +97,7 @@ export function mockVault(initial: VaultStatus, onCreate?: CreateHandler) {
                 info: (result as { info: VaultInfo }).info,
                 buy: null,
                 watch: null,
+                groups: [],
               };
               return result;
             });

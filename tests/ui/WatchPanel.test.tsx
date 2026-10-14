@@ -132,6 +132,7 @@ function setup(o: Setup = {}) {
     info,
     buy: null,
     watch,
+    groups: [],
   });
   const vault = mockVault(status());
   const requests: VaultRequest[] = [];

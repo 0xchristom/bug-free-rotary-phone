@@ -28,6 +28,7 @@ function setup({ count = 3, settings = {}, lamports = () => SOL, probe }: Setup 
     info,
     buy: null,
     watch: null,
+    groups: [],
   });
   const vault = mockVault(status());
   const saved: Extract<VaultRequest, { type: 'saveSettings' }>['settings'][] = [];
