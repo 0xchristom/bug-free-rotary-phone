@@ -5,7 +5,7 @@
  * Slippage badges, the "Trade settings" popover (row edit button and "Edit selected") and
  * the fleet defaults in Settings.
  */
-import { act, cleanup, render, screen, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 import { AppError } from '../../src/core/errors.ts';
 import { DEFAULT_TRADE_SETTINGS, type FleetSettingsV1 } from '../../src/core/index.ts';
@@ -208,6 +208,27 @@ function walletEvent(index: number, state: WalletEvent['state']): WalletEvent {
 const GLOBAL = fleetInfo().settings.global;
 
 describe('the buy amount in a row', () => {
+  it('leaving the field while its Enter save is on the way saves once (BUNNDLY-76)', async () => {
+    const { saved } = setup();
+    await ready();
+    const field = amount('W01');
+    // Enter, then the field is left before the saved value comes back: one change, one save
+    fireEvent.change(field, { target: { value: '0,75' } });
+    fireEvent.keyDown(field, { key: 'Enter' });
+    fireEvent.blur(field);
+    await eventually(() => {
+      expect(amount('W01').value).toBe('0.75');
+    });
+    expect(saved).toEqual([
+      {
+        maxSpend: [{ index: 0, lamports: 750_000_000n }],
+        active: [],
+        global: GLOBAL,
+        trade: DEFAULT_TRADE_SETTINGS,
+      },
+    ]);
+  });
+
   it('Enter saves the amount of that wallet: SOL in maxSpend, a percent in trade', async () => {
     const { user, saved } = setup();
     await ready();
