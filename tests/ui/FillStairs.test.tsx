@@ -297,7 +297,7 @@ describe('Fill column and fleet fill (BUNNDLY-56)', () => {
     await eventually(() => {
       expect(fillOf('W01')).toEqual({ now: '100', text: '100%, Simulated' });
     });
-    expect(screen.queryByText('Filled', { selector: '.fill .cap' })).toBeNull();
+    expect(screen.queryByText('Filled', { selector: '.fill-cap' })).toBeNull();
     expect(segmentTones()).toEqual(['sim', 'sim', 'sim']);
   });
 

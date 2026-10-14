@@ -1426,13 +1426,13 @@ button.top-chip {
   gap: 6px;
 }
 
-.fill .top {
+.fill .fill-top {
   display: flex;
   align-items: center;
   gap: 9px;
 }
 
-.fill .track {
+.fill .fill-track {
   flex: 1;
   height: 8px;
   border-radius: 4px;
@@ -1440,7 +1440,7 @@ button.top-chip {
   overflow: hidden;
 }
 
-.fill .bar {
+.fill .fill-bar {
   position: relative;
   height: 100%;
   border-radius: 4px;
@@ -1451,7 +1451,7 @@ button.top-chip {
     background-color var(--t-base);
 }
 
-.fill .pct {
+.fill .fill-pct {
   width: 38px;
   text-align: right;
   font-size: 13.5px;
@@ -1460,22 +1460,24 @@ button.top-chip {
   color: var(--fg-3);
 }
 
-.fill .cap {
-  max-width: none;
+.fill .fill-cap {
   min-height: 15px;
-  margin-top: 0;
+  overflow: hidden;
+  color: var(--fg-3);
+  font-size: var(--fs-caption);
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.fill[data-tone='run'] .pct {
+.fill[data-tone='run'] .fill-pct {
   color: var(--fg);
 }
 
-.fill[data-tone='run'] .cap {
+.fill[data-tone='run'] .fill-cap {
   color: var(--fg-2);
 }
 
-.fill[data-tone='run'] .bar::after {
+.fill[data-tone='run'] .fill-bar::after {
   content: '';
   position: absolute;
   inset: 0;
@@ -1484,54 +1486,54 @@ button.top-chip {
   animation: k-sheen 1.1s linear infinite;
 }
 
-.fill[data-tone='ok'] .bar {
+.fill[data-tone='ok'] .fill-bar {
   background: var(--ok);
 }
 
-.fill[data-tone='ok'] .pct {
+.fill[data-tone='ok'] .fill-pct {
   color: var(--ok);
 }
 
-.fill[data-tone='unverified'] .bar {
+.fill[data-tone='unverified'] .fill-bar {
   background: repeating-linear-gradient(135deg, var(--ok) 0 4px, var(--ok-bg) 4px 7px);
 }
 
-.fill[data-tone='unverified'] .pct,
-.fill[data-tone='unverified'] .cap {
+.fill[data-tone='unverified'] .fill-pct,
+.fill[data-tone='unverified'] .fill-cap {
   color: var(--ok);
 }
 
-.fill[data-tone='bad'] .track {
+.fill[data-tone='bad'] .fill-track {
   background: var(--danger-bg);
 }
 
-.fill[data-tone='bad'] .cap,
-.fill[data-tone='bad'] .pct {
+.fill[data-tone='bad'] .fill-cap,
+.fill[data-tone='bad'] .fill-pct {
   color: var(--danger);
 }
 
-.fill[data-tone='warn'] .track {
+.fill[data-tone='warn'] .fill-track {
   background: var(--warn-bg);
 }
 
-.fill[data-tone='warn'] .bar {
+.fill[data-tone='warn'] .fill-bar {
   background: var(--warn);
 }
 
-.fill[data-tone='warn'] .cap {
+.fill[data-tone='warn'] .fill-cap {
   color: var(--warn);
 }
 
-.fill[data-tone='watch'] .cap {
+.fill[data-tone='watch'] .fill-cap {
   color: var(--watch);
 }
 
-.fill[data-tone='sim'] .bar {
+.fill[data-tone='sim'] .fill-bar {
   background: repeating-linear-gradient(135deg, var(--sim) 0 4px, var(--sim-bg) 4px 7px);
 }
 
-.fill[data-tone='sim'] .pct,
-.fill[data-tone='sim'] .cap {
+.fill[data-tone='sim'] .fill-pct,
+.fill[data-tone='sim'] .fill-cap {
   color: var(--sim);
 }
 

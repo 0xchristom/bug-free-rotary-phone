@@ -403,7 +403,7 @@ describe('the buy amount in a row', () => {
     });
     // only W03 has an amount: its row is the one queued
     // the state chip says it; the Fill caption below says the same stage
-    expect(within(row('W03')).getByText('Queued', { selector: ':not(.fill .cap)' })).toBeTruthy();
+    expect(within(row('W03')).getByText('Queued', { selector: ':not(.fill-cap)' })).toBeTruthy();
     expect(within(row('W01')).queryAllByText('Queued')).toEqual([]);
   });
 
