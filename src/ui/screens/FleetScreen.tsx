@@ -512,7 +512,13 @@ export function FleetScreen({
                 : groupSelected.length === 0
                   ? 'Select the wallets that sell.'
                   : null,
-    stop: !running ? 'Nothing is running.' : stopping ? 'Stopping…' : null,
+    // STOP also disarms an armed group (BUNNDLY-87): on while it buys or is armed.
+    stop:
+      running && stopping && !groupArmed
+        ? 'Stopping…'
+        : running || groupArmed
+          ? null
+          : 'Nothing is running.',
   };
   const reasons: CommandReasons =
     commandGroup === null

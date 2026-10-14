@@ -399,7 +399,7 @@ describe('modes', () => {
     await t.h.handle({ type: 'disarm' });
   });
 
-  it('STOP stops the buy but leaves the watcher armed', async () => {
+  it('STOP stops the buy and disarms the watcher (D-059, was: stays armed)', async () => {
     const t = await setup({ mode: 'continuous' });
     await t.arm();
     t.socket().message(N.message);
@@ -408,9 +408,8 @@ describe('modes', () => {
     await t.untilNoBuy();
     const s = await t.status();
     expect(s.buy).toBeNull();
-    expect(s.watch?.armed).toBe(true);
-    expect(t.socket().closed).toBe(false);
-    await t.h.handle({ type: 'disarm' });
+    expect(s.watch?.armed).toBe(false);
+    expect(t.socket().closed).toBe(true);
   });
 
   it('DRY-RUN: a detection never calls /execute', async () => {

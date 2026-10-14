@@ -1200,3 +1200,14 @@ Rejestr decyzji i rozbieżności z dokumentacją zewnętrzną. Nowe wpisy dopisu
   - Wszystkie cztery zapisy pliku (kreator, flota, ustawienia, sieć) wysyłają `fileSaved` przed zdjęciem własnego znacznika ekranu. Żądania idą jedną kolejką, więc następne `pendingFile` widzi już zapis.
   - „Forget this device” na starcie i w ustawieniach oraz wyłączenie „Remember this fleet on this device” czytają znacznik od nowa i przy `unsaved` pytają zdaniem, że przeglądarka ma jedyną kopię zmian.
 - Konsekwencje: otwarcie innego pliku albo utworzenie nowej floty z zapamiętaniem nadal zastępuje zapamiętaną flotę bez pytania o znacznik; poza zakresem BUNNDLY-80.
+
+## D-059: STOP rozbraja grupę z uzbrojonym watcherem
+
+- Data: 2026-10-14
+- Zadanie: BUNNDLY-87 (z inwentarza makiety v2, BUNNDLY-77 cz. 3)
+- Kontekst: D-038 ustaliło, że STOP zatrzymuje tylko bieżący zakup, a watcher zostaje uzbrojony. Przy samym uzbrojeniu przycisk Stop był więc wyłączony („Nothing is running.”), Esc nic nie robił, a obserwację kończył tylko Disarm. Makieta v2 (linie 642, 722–729) ma Stop aktywny także przy uzbrojonej grupie: zatrzymuje przebieg i rozbraja.
+- Decyzja:
+  - STOP grupy najpierw rozbraja jej watcher (jak `disarm`: gniazdo zamknięte, kolejka wykryć opróżniona), a potem zatrzymuje jej zakup albo sprzedaż, jeśli trwa. Inne grupy nie są dotykane.
+  - Stop i Esc są aktywne, gdy grupa kupuje, sprzedaje albo jest uzbrojona.
+  - Disarm działa jak dotąd.
+- Konsekwencje: zmienia D-038 w części STOP („watcher zostaje uzbrojony, a kolejka rusza po jego końcu”). Kto chce przerwać zakup i dalej obserwować twórcę, uzbraja grupę od nowa.
