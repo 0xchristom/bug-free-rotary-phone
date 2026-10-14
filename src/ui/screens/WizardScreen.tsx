@@ -10,6 +10,7 @@ import {
 import type { VaultInfo } from '../../worker/protocol.ts';
 import { ExportDialog } from '../ExportDialog.tsx';
 import { passwordStrength } from '../password-strength.ts';
+import { reportSaved } from '../use-pending-file.ts';
 import { useVault } from '../vault-state.ts';
 import { Button, Checkbox, Input, ProgressBar } from '../kit/index.ts';
 import { RememberOption } from '../remember-ui.tsx';
@@ -210,6 +211,7 @@ export function WizardScreen({ storage, onBack, onDone, onUnsavedChange }: Wizar
       const result = await saveKeystoreFile(fileText, info.fleetName, storage, {
         confirmOverwrite,
       });
+      reportSaved(client, fileText);
       setPhase({ kind: 'saved', result, info });
     } catch (e) {
       setError(toUserMessage(e));

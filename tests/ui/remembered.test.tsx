@@ -189,6 +189,73 @@ describe('Settings, This device', () => {
   });
 });
 
+// BUNNDLY-80: a change not written to disk is still said after a reload.
+describe('a fleet file the disk lacks, after a refresh', () => {
+  const WARNING = /^The updated fleet file is not saved yet\. Only this browser holds/u;
+
+  /** Opens the file, then changes the fleet without writing the file (a screen left or a reload). */
+  async function changedNotSaved(store: MemoryRememberStore): Promise<string> {
+    const { handler, user } = load(store);
+    await openFile(user);
+    expect(screen.queryByText(WARNING)).toBeNull(); // opened from disk: nothing to save
+    const info = handler.inspect().unlocked;
+    if (info === null) throw new Error('not unlocked');
+    const changed = (await handler.handle({
+      type: 'saveSettings',
+      settings: { ...info.settings, maxSpend: [{ index: 0, lamports: 100_000_000n }] },
+      apiKeys: {},
+    })) as { fileText: string };
+    return changed.fileText;
+  }
+
+  it('the warning comes back after the refresh; saving writes the newest file and ends it', async () => {
+    const store = memoryRememberStore();
+    const newest = await changedNotSaved(store);
+
+    const next = refresh(store);
+    await findFleet();
+    expect((await screen.findByText(WARNING)).textContent).toBe(
+      'The updated fleet file is not saved yet. Only this browser holds the latest changes: save the fleet file to keep them.',
+    );
+    await next.user.click(screen.getByRole('button', { name: 'Save the fleet file' }));
+    await screen.findByText(`Saved ${FILE_NAME}.`);
+    expect(screen.queryByText(WARNING)).toBeNull();
+    expect((await store.get('account'))?.fileText).toBe(newest);
+    expect((await store.get('account'))?.unsaved).toBe(false);
+
+    refresh(store);
+    await findFleet();
+    await waitFor(async () => {
+      expect(await store.get('session')).toBeDefined();
+    });
+    expect(screen.queryByText(WARNING)).toBeNull();
+  });
+
+  it('Lock and Forget this device ask with the only copy named; No keeps the fleet', async () => {
+    const store = memoryRememberStore();
+    await changedNotSaved(store);
+    const next = refresh(store);
+    await screen.findByText(WARNING);
+
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValueOnce(true);
+    await next.user.click(screen.getByRole('button', { name: 'Lock' }));
+    expect(confirm).toHaveBeenLastCalledWith(
+      expect.stringMatching(/^The fleet file is not saved/u),
+    );
+    await screen.findByRole('heading', { name: 'Welcome back' });
+
+    confirm.mockReturnValueOnce(false);
+    await next.user.click(screen.getByRole('button', { name: 'Forget this device' }));
+    await waitFor(() => {
+      expect(confirm).toHaveBeenCalledTimes(2);
+    });
+    expect(confirm).toHaveBeenLastCalledWith(
+      'The fleet file on your disk is older than this fleet, or was never saved: only this browser holds the latest changes. Forgetting this device deletes them for good. Forget anyway?',
+    );
+    expect(store.keys()).toEqual(['account', 'prefs']);
+  });
+});
+
 describe('a browser that keeps no data', () => {
   it('the option is off and disabled with the reason; the fleet still opens', async () => {
     const { user } = load(failingRememberStore());

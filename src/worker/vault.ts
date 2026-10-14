@@ -111,6 +111,7 @@ import {
   sealSession,
   sessionValid,
   type RememberKey,
+  type RememberedAccountRecord,
   type RememberPrefs,
   type RememberRecords,
   type RememberStore,
@@ -119,6 +120,7 @@ import {
 import type {
   ApiKeyFlags,
   BuyStatus,
+  PendingFile,
   VaultBalances,
   VaultEventEnvelope,
   VaultFileResult,
@@ -537,6 +539,12 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
   let unlocked: UnlockedVault | null = null;
   /** Changes on every unlock and lock; settings changes keep it (unlike `unlocked`). */
   let session = 0;
+  /**
+   * The open fleet's newest file text while no file written to disk matches it (BUNNDLY-80):
+   * a new fleet, or a change not saved yet. Null once that text was saved or the fleet was
+   * opened from disk. Kept in the remembered record too, so a reload still knows.
+   */
+  let pending: string | null = null;
   /** SOL balances from the last refresh of this session (pre-check before `/order`). */
   let balances = new Map<number, bigint>();
   /** What one wallet group (BUNNDLY-68) is doing; groups run independently. */
@@ -611,16 +619,19 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
     tokenReads.clear();
     if (unlocked) wipeVault(unlocked);
     unlocked = null;
+    pending = null;
     session += 1;
     balances = new Map();
     groupRuns = new Map(); // none busy here: lock is refused while armed
     knownMints = new Map();
   };
 
-  const install = (opened: OpenedKeystore): void => {
+  /** `newer`: the opened file text when it is newer than the file on disk (BUNNDLY-80). */
+  const install = (opened: OpenedKeystore, newer: string | null = null): void => {
     const next = toUnlocked(opened);
     lock();
     unlocked = next;
+    pending = newer;
   };
 
   /** The open fleet's network; a locked vault touches no network at all. */
@@ -697,6 +708,7 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
     };
     unlocked = next;
     const fileText = serializeKeystoreFile(file);
+    pending = fileText;
     await keepRemembered(next, fileText);
     return { fileText, info: infoOf(next) };
   };
@@ -784,16 +796,26 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
       await forgetDevice();
       return;
     }
-    await stored((s) => s.put('account', { fileText, fileId: vault.fileId }));
+    await stored((s) => s.put('account', accountRecord(vault, fileText)));
     await writeSession(vault.session.key, vault.fileId, prefs.windowMs);
   };
+  /** The remembered record of the open fleet's file, marked when no disk file matches it. */
+  const accountRecord = (vault: UnlockedVault, fileText: string): RememberedAccountRecord => ({
+    fileText,
+    fileId: vault.fileId,
+    unsaved: pending === fileText,
+  });
   /** A saved change of the open fleet reaches the remembered copy too. */
   const keepRemembered = async (vault: UnlockedVault, fileText: string): Promise<void> => {
     const account = await read('account');
     if (account?.fileId === vault.fileId) {
-      await stored((s) => s.put('account', { fileText, fileId: vault.fileId }));
+      await stored((s) => s.put('account', accountRecord(vault, fileText)));
     }
   };
+  const pendingFile = (): PendingFile | null =>
+    unlocked === null || pending === null
+      ? null
+      : { fileText: pending, fleetName: unlocked.fleetName };
   const rememberedView = async (): Promise<RememberedView> => {
     const prefs = await prefsOf();
     const record = await read('account');
@@ -805,6 +827,7 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
           fleetName: file.fleetName,
           createdAt: file.createdAt,
           walletCount: file.public.wallets.length,
+          unsaved: record.unsaved === true,
         };
       } catch {
         await forgetDevice();
@@ -839,7 +862,7 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
       await dropSession();
       return;
     }
-    install(opened);
+    install(opened, account.unsaved === true ? account.fileText : null);
     touch();
     // The window starts again from now.
     await writeSession(session.key, account.fileId, prefs.windowMs);
@@ -1661,6 +1684,7 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
       request.type !== 'status' &&
       request.type !== 'preview' &&
       request.type !== 'remembered' &&
+      request.type !== 'pendingFile' &&
       request.type !== 'balanceFeed'
     ) {
       touch();
@@ -1690,9 +1714,9 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
           ...(request.mnemonic === undefined ? {} : { mnemonic: str(request.mnemonic) }),
           ...progress,
         });
-        install(opened);
-        touch();
         const fileText = serializeKeystoreFile(opened.file);
+        install(opened, fileText); // a new fleet has no file on disk yet
+        touch();
         await rememberOpened(requireUnlocked(), fileText, rememberFlag(request.remember));
         return { fileText, info: infoOf(requireUnlocked()) };
       }
@@ -1721,7 +1745,10 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
         const password = str(request.password);
         const account = await read('account');
         if (account === undefined) throw new AppError('NO_REMEMBERED_FLEET');
-        install(await openKeystore(parseKeystoreFile(account.fileText), password, progress));
+        install(
+          await openKeystore(parseKeystoreFile(account.fileText), password, progress),
+          account.unsaved === true ? account.fileText : null,
+        );
         touch();
         await rememberOpened(requireUnlocked(), account.fileText, true);
         return status();
@@ -1738,9 +1765,12 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
           const vault = unlocked;
           const account = await read('account');
           if (account?.fileId !== vault.fileId) {
-            // Remember the fleet as it is now: its file encrypted with the session key.
+            // Remember the fleet as it is now: its file encrypted with the session key. Same
+            // content as before, so it is newer than the disk only if that one already was.
+            const before = pending;
             const { fileText } = await rebuild(vault, vault.wallets, vault.settings, vault.apiKeys);
-            await stored((s) => s.put('account', { fileText, fileId: vault.fileId }));
+            if (before === null && pending === fileText) pending = null;
+            await stored((s) => s.put('account', accountRecord(vault, fileText)));
           }
           await writeSession(vault.session.key, vault.fileId, windowMs);
         } else {
@@ -1754,6 +1784,19 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
       case 'forget':
         await forgetDevice();
         return await rememberedView();
+      case 'pendingFile':
+        return pendingFile();
+      case 'fileSaved': {
+        // Only the newest text clears the mark: an older file on disk lacks the last change.
+        // The wizard may write its file after a lock, so the record is checked on its own.
+        const fileText = str(request.fileText);
+        if (pending === fileText) pending = null;
+        const account = await read('account');
+        if (account?.unsaved === true && account.fileText === fileText) {
+          await stored((s) => s.put('account', { ...account, unsaved: false }));
+        }
+        return pendingFile();
+      }
       case 'lock':
         lock();
         // Lock: the next visit needs the password.

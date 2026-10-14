@@ -13,6 +13,8 @@ import { BalanceFeedContext, RpcReadContext, type RpcRead } from './shell-status
 import { ToastProvider } from './kit/index.ts';
 import { StatusBar } from './StatusBar.tsx';
 import { useNetworkSwitch } from './use-network-switch.ts';
+import { PendingFileNotice } from './PendingFileNotice.tsx';
+import { usePendingFile } from './use-pending-file.ts';
 import { createOperationsLog } from './operations-log.ts';
 import { useBuyView } from './use-buy.ts';
 import { ActivityScreen } from './screens/ActivityScreen.tsx';
@@ -216,6 +218,16 @@ export function App({
   const switching = useNetworkSwitch(vault, status, unsavedFile, storage, refresh);
   const networkUnsaved = switching.unsaved;
   const dropNetworkFile = switching.drop;
+  // A file the vault holds and the disk does not, also after a reload (BUNNDLY-80). A screen
+  // or the network switch holding its own unsaved file holds the newer one.
+  const openInfo = status !== null && !status.locked ? status.info : null;
+  const pending = usePendingFile(
+    vault,
+    openInfo === null ? null : `${openInfo.fleetName}\n${openInfo.createdAt}`,
+    unsavedFile || networkUnsaved,
+    storage,
+  );
+  const pendingUnsaved = pending.file !== null;
   // A screen with an unsaved fleet file holds a newer one, which has the network too.
   const onScreenUnsaved = useCallback(
     (unsaved: boolean) => {
@@ -228,7 +240,7 @@ export function App({
   const lock = useCallback(async () => {
     // The wizard survives a lock with its file; added wallets on the fleet screen do not.
     if (
-      ((unsavedFile && screen !== 'wizard') || networkUnsaved) &&
+      ((unsavedFile && screen !== 'wizard') || networkUnsaved || pendingUnsaved) &&
       !window.confirm(UNSAVED_CONFIRM)
     ) {
       return;
@@ -242,7 +254,7 @@ export function App({
     } catch (e) {
       setNotice(toUserMessage(e));
     }
-  }, [vault, applyStatus, unsavedFile, screen, networkUnsaved, dropNetworkFile]);
+  }, [vault, applyStatus, unsavedFile, screen, networkUnsaved, pendingUnsaved, dropNetworkFile]);
 
   const navigate = useCallback(
     (next: Screen) => {
@@ -258,7 +270,7 @@ export function App({
 
   // Closing the tab with an unsaved fleet file asks the browser to confirm.
   useEffect(() => {
-    if (!unsavedFile && !networkUnsaved) return;
+    if (!unsavedFile && !networkUnsaved && !pendingUnsaved) return;
     const onBeforeUnload = (event: BeforeUnloadEvent): void => {
       event.preventDefault();
     };
@@ -266,7 +278,7 @@ export function App({
     return () => {
       window.removeEventListener('beforeunload', onBeforeUnload);
     };
-  }, [unsavedFile, networkUnsaved]);
+  }, [unsavedFile, networkUnsaved, pendingUnsaved]);
 
   const context = useMemo<VaultState>(
     () => ({ client: vault, status, refresh }),
@@ -310,6 +322,7 @@ export function App({
                 <main className={visible === 'fleet' ? 'content dash-content' : 'content'}>
                   {unlocked && <WatchGuard />}
                   {unlocked && <NetworkNotice switching={switching} storage={storage} />}
+                  {unlocked && <PendingFileNotice pending={pending} storage={storage} />}
                   {notice && (
                     <p className="notice" role="alert">
                       {notice}
