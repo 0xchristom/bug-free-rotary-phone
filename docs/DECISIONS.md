@@ -1034,7 +1034,7 @@ Rejestr decyzji i rozbieżności z dokumentacją zewnętrzną. Nowe wpisy dopisu
   - Kwoty max spend dalej pochodzą z zapisanych ustawień. Dopóki kwoty w tabeli nie są zapisane, zakup i uzbrojenie są wyłączone. Zmiana samego zaznaczenia ich nie blokuje.
   - Odrzucone: rozpoznanie rodzaju tylko w UI (worker przyjąłby żądanie wysłane z pominięciem paska) i zgadywanie po długości danych bez sprawdzenia właściciela.
 
-## D-049: Parametry handlu w tabeli (etap 2): zapis od razu, blokada w trakcie akcji, „Edit selected”
+## D-050: Parametry handlu w tabeli (etap 2): zapis od razu, blokada w trakcie akcji, „Edit selected”
 
 - Data: 2026-10-14
 - Zadanie: BUNNDLY-71
