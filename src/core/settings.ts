@@ -47,6 +47,15 @@ export const BUY_MODES = ['one-shot', 'continuous'] as const;
 /** one-shot (default): the watcher disarms after the first detected token. */
 export type BuyMode = (typeof BUY_MODES)[number];
 
+/** Auto-lock is off by default; when on, after one of these (Krystian, 12.10.2026, D-056). */
+export const AUTO_LOCK_CHOICES = [15, 60, 120] as const;
+export type AutoLockMinutes = (typeof AUTO_LOCK_CHOICES)[number];
+export const AUTO_LOCK_LABELS: Record<AutoLockMinutes, string> = {
+  15: '15 min',
+  60: '1 h',
+  120: '2 h',
+};
+
 /** Settings for the whole fleet (SPEC 3.3). Stored inside the encrypted keystore. */
 export interface GlobalSettingsV1 {
   /** MIN_RESERVE_SOL in lamports. */
@@ -61,7 +70,8 @@ export interface GlobalSettingsV1 {
   readonly noRouteBackoffMaxMs: number;
   readonly mode: BuyMode;
   readonly explorer: Explorer;
-  readonly autoLockMinutes: number;
+  /** Minutes of inactivity before the vault locks itself; null = off (BUNNDLY-51). */
+  readonly autoLockMinutes: AutoLockMinutes | null;
   readonly jupiterPlan: JupiterPlan;
   /** Jupiter `/order` limit per minute; ORDER_RPS = orderRpm / 60. */
   readonly orderRpm: number;
@@ -86,7 +96,7 @@ export const DEFAULT_GLOBAL_SETTINGS: GlobalSettingsV1 = {
   noRouteBackoffMaxMs: 2_000,
   mode: 'one-shot',
   explorer: 'solscan',
-  autoLockMinutes: 15,
+  autoLockMinutes: null,
   jupiterPlan: 'free',
   orderRpm: JUPITER_PLAN_RPM.free,
   dryRun: true,
@@ -103,7 +113,6 @@ export const SETTINGS_LIMITS = {
   noRouteWindowMs: { min: 1_000, max: 120_000 },
   noRouteBackoffMinMs: { min: 100, max: 10_000 },
   noRouteBackoffMaxMs: { min: 100, max: 30_000 },
-  autoLockMinutes: { min: 1, max: 120 },
   orderRpm: { min: 1, max: 100_000 },
 } as const;
 
@@ -188,8 +197,11 @@ export function validateGlobalSettings(g: GlobalSettingsV1): SettingsProblem[] {
   if (!oneOf(EXPLORERS, g.explorer)) add('explorer', 'Choose an explorer from the list.');
   if (typeof g.dryRun !== 'boolean') add('dryRun', 'Choose whether to run in DRY-RUN mode.');
   if (!oneOf(NETWORKS, g.network)) add('network', 'Choose the network: Mainnet or Devnet.');
-  if (!isIntIn(g.autoLockMinutes, L.autoLockMinutes)) {
-    add('autoLockMinutes', 'Auto-lock must be between 1 and 120 minutes.');
+  if (
+    g.autoLockMinutes !== null &&
+    !(AUTO_LOCK_CHOICES as readonly unknown[]).includes(g.autoLockMinutes)
+  ) {
+    add('autoLockMinutes', 'Choose the auto-lock from the list.');
   }
   if (!oneOf(JUPITER_PLANS, g.jupiterPlan)) {
     add('jupiterPlan', 'Choose a Jupiter plan from the list.');
