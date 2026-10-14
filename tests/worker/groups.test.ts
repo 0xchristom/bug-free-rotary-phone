@@ -174,6 +174,23 @@ describe('two groups at once', () => {
     expect(socket.closed).toBe(false);
   });
 
+  it('PAUSE of B holds only B’s Stairs steps; A’s steps go on (BUNNDLY-61)', async () => {
+    const t = await setup(100);
+    const stairs = { intervalMs: 60_000, perStep: 1 };
+    await t.startBuy('g1', USDC, stairs); // A's steps at a, a + 60 s, a + 120 s
+    await t.startBuy('g2', MINT, stairs); // B's step 1 began about 11 s after A's
+    expect(t.askedBy(USDC)).toEqual([0]);
+    expect(t.askedBy(MINT)).toEqual([3]);
+    await t.h.handle({ type: 'pause', group: 'g2' });
+    expect((await t.group('g2'))?.buy?.paused).toBe(true);
+    expect((await t.group('g1'))?.buy?.paused).toBe(false);
+    await t.clock.runUntil(t.clock.now() + 120_000);
+    expect(t.askedBy(USDC)).toEqual([0, 1, 2]);
+    expect(t.askedBy(MINT)).toEqual([3]);
+    await t.h.handle({ type: 'resume', group: 'g2' });
+    expect((await t.group('g2'))?.buy?.paused).toBe(false);
+  });
+
   it('DISARM of one group leaves the watcher of the other armed', async () => {
     const t = await setup();
     const a = await t.arm('g1');

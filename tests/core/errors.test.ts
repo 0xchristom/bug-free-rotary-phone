@@ -50,6 +50,7 @@ describe('ERROR_MESSAGES', () => {
         'WALLET_IN_RUN',
         'GROUP_RUNNING',
         'INVALID_MINT_ADDRESS',
+        'INVALID_STAIRS',
         'INVALID_CREATOR_ADDRESS',
         'WATCH_ARMED',
       ].sort(),

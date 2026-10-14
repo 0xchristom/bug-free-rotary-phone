@@ -40,6 +40,7 @@ export const ERROR_MESSAGES = {
   GROUP_RUNNING:
     'This group is buying, selling or armed: its wallets stay in it until that ends. Wait for it, press STOP or DISARM.',
   INVALID_MINT_ADDRESS: 'This is not a valid token mint address (base58, 32–44 characters).',
+  INVALID_STAIRS: 'Stairs needs a step every 1 second to 24 hours and at least 1 wallet per step.',
   INVALID_CREATOR_ADDRESS:
     'This is not a valid creator wallet address (base58, 32 bytes, not the SOL mint).',
   INVALID_TARGET_ADDRESS: 'This is not a valid Solana address (base58, 32 bytes).',

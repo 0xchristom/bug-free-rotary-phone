@@ -29,11 +29,14 @@ import {
   type WebSocketFactory,
 } from '../chain/index.ts';
 import {
+  STAIRS_INTERVAL_MAX_MS,
+  STAIRS_INTERVAL_MIN_MS,
   startRun,
   type ExecutorEvent,
   type ExecutorRun,
   type ExecutorWallet,
   type Side,
+  type StairsOptions,
 } from '../executor/executor.ts';
 import { fetchTarget, parseTargetAddress, type TargetKind } from '../chain/target.ts';
 import { isSellPercent, sellAmount } from '../executor/sell-plan.ts';
@@ -862,12 +865,14 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
     rawMint: unknown,
     trigger: BuyTrigger | null = null,
     list: readonly number[] | null = null,
+    stairs: StairsOptions | null = null,
   ): BuyStatus => {
     const vault = requireUnlocked();
     if (runOf(group.id).buy !== null) throw new AppError('BUY_RUNNING');
     requireBuyRoute(vault);
     const mint = mintOf(rawMint);
-    return launch(vault, group.id, 'buy', mint, buyWallets(vault, group, list), trigger);
+    const wallets = buyWallets(vault, group, list);
+    return launch(vault, group.id, 'buy', mint, wallets, trigger, stairs);
   };
 
   /**
@@ -903,12 +908,32 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
     const vault = requireUnlocked();
     const group = groupFor(vault, request.group);
     const list = walletListOf(request.wallets, group);
+    const stairs = stairsOf(request.stairs);
     if (runOf(group.id).buy !== null) throw new AppError('BUY_RUNNING');
     requireBuyRoute(vault);
     const mint = mintOf(request.mint);
     buyWallets(vault, group, list); // no RPC read for a buy that cannot start
     if ((await classify(vault, mint)).kind !== 'mint') throw new AppError('TARGET_KIND_MISMATCH');
-    return startBuy(group, mint, null, list);
+    return startBuy(group, mint, null, list, stairs);
+  };
+
+  /** Stairs parameters of a request (BUNNDLY-61); absent: Immediate. */
+  const stairsOf = (raw: unknown): StairsOptions | null => {
+    if (raw === undefined) return null;
+    if (!isRecord(raw)) return badRequest();
+    const { intervalMs, perStep } = raw;
+    if (
+      typeof intervalMs !== 'number' ||
+      !Number.isInteger(intervalMs) ||
+      intervalMs < STAIRS_INTERVAL_MIN_MS ||
+      intervalMs > STAIRS_INTERVAL_MAX_MS ||
+      typeof perStep !== 'number' ||
+      !Number.isInteger(perStep) ||
+      perStep < 1
+    ) {
+      throw new AppError('INVALID_STAIRS');
+    }
+    return { intervalMs, perStep };
   };
 
   const mintOf = (rawMint: unknown): string => {
@@ -950,8 +975,10 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
     rawMint: unknown,
     rawWallets: unknown,
     rawPercent: unknown,
+    rawStairs: unknown,
   ): Promise<BuyStatus> => {
     const vault = requireUnlocked();
+    const stairs = stairsOf(rawStairs);
     const run = runOf(group.id);
     // A sell is a command of its own; an armed watcher buys and must not meet one.
     if (watchActive(run)) throw new AppError('WATCH_ARMED');
@@ -1001,7 +1028,7 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
         ...(t.sellSlippageBps === null ? {} : { slippageBps: t.sellSlippageBps }),
       };
     });
-    return launch(unlocked, group.id, 'sell', mint, wallets, null);
+    return launch(unlocked, group.id, 'sell', mint, wallets, null, stairs);
   };
 
   /**
@@ -1090,6 +1117,7 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
     mint: string,
     wallets: readonly ExecutorWallet[],
     trigger: BuyTrigger | null,
+    stairs: StairsOptions | null,
   ): BuyStatus => {
     const selling = side === 'sell';
     const { global } = vault.settings;
@@ -1173,6 +1201,7 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
         noRouteBackoffMinMs: global.noRouteBackoffMinMs,
         noRouteBackoffMaxMs: global.noRouteBackoffMaxMs,
         ...(trigger === null ? {} : { triggeredAt: trigger.detectedAt }),
+        ...(stairs === null ? {} : { stairs }),
       },
     );
     const current = {
@@ -1184,6 +1213,7 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
         dryRun: global.dryRun,
         wallets: wallets.length,
         accepting: true,
+        ...(stairs === null ? {} : { stairs, paused: false }),
       },
     };
     group.buy = current;
@@ -1208,8 +1238,10 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
     group: WalletGroupV1,
     rawCreator: unknown,
     rawWallets: unknown,
+    rawStairs: unknown,
   ): Promise<VaultStatus> => {
     const vault = requireUnlocked();
+    const stairs = stairsOf(rawStairs);
     const run = runOf(group.id);
     if (run.buy !== null) throw new AppError('BUY_RUNNING');
     if (watchActive(run)) throw new AppError('WATCH_ARMED');
@@ -1256,7 +1288,7 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
         isBuying: () => run.buy !== null,
         // Only this group's wallets buy what its watcher detects.
         // with the wallets named at arming (BUNNDLY-59)
-        startBuy: (trigger) => startBuy(group, trigger.mint, trigger, list).runId,
+        startBuy: (trigger) => startBuy(group, trigger.mint, trigger, list, stairs).runId,
         emit,
       },
       {
@@ -1398,11 +1430,22 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
       case 'startSell': {
         const vault = requireUnlocked();
         const group = groupFor(vault, request.group);
-        return await startSell(group, request.mint, request.wallets, request.percent);
+        return await startSell(
+          group,
+          request.mint,
+          request.wallets,
+          request.percent,
+          request.stairs,
+        );
       }
       case 'arm': {
         const vault = requireUnlocked();
-        return await arm(groupFor(vault, request.group), request.creator, request.wallets);
+        return await arm(
+          groupFor(vault, request.group),
+          request.creator,
+          request.wallets,
+          request.stairs,
+        );
       }
       case 'disarm': {
         // Locked: nothing is armed (lock is refused while armed).
@@ -1417,6 +1460,19 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
         if (run?.buy) {
           run.buy.status = { ...run.buy.status, accepting: false };
           run.buy.run.stop();
+        }
+        return status();
+      }
+      case 'pause':
+      case 'resume': {
+        // Only the named group's run; the others go on. The run says whether anything
+        // changed: an Immediate one never pauses.
+        const id = unlocked === null ? null : groupFor(unlocked, request.group).id;
+        const run = id === null ? undefined : groupRuns.get(id);
+        if (run?.buy) {
+          const pausing = request.type === 'pause';
+          const changed = pausing ? run.buy.run.pause() : run.buy.run.resume();
+          if (changed) run.buy.status = { ...run.buy.status, paused: pausing };
         }
         return status();
       }

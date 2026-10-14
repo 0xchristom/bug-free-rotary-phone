@@ -1,11 +1,13 @@
 /**
  * Wallet state machine of the executor (SPEC 3.5, BUNNDLY-21 and 23, D-029, D-030):
  * IDLE → QUEUED → QUOTING → SIGNING → SUBMITTED → CONFIRMED | FAILED | UNKNOWN | SKIPPED.
+ * In Stairs mode (BUNNDLY-61) a wallet waits for its step in SCHEDULED, between IDLE and QUEUED.
  * The table lists every allowed move; anything else is a programming error.
  */
 
 export const WALLET_STATES = [
   'IDLE',
+  'SCHEDULED',
   'QUEUED',
   'QUOTING',
   'SIGNING',
@@ -24,7 +26,9 @@ export type WalletState = (typeof WALLET_STATES)[number];
  * (BUNNDLY-23).
  */
 export const TRANSITIONS: Readonly<Record<WalletState, readonly WalletState[]>> = {
-  IDLE: ['QUEUED', 'SKIPPED'],
+  IDLE: ['SCHEDULED', 'QUEUED', 'SKIPPED'],
+  // SCHEDULED → SCHEDULED: a resume after a pause moves the planned time (BUNNDLY-61).
+  SCHEDULED: ['SCHEDULED', 'QUEUED', 'SKIPPED'],
   // QUEUED → FAILED: the mint gate's window ended while the wallet waited (D-035).
   QUEUED: ['QUOTING', 'SKIPPED', 'FAILED'],
   QUOTING: ['SIGNING', 'QUEUED', 'SKIPPED', 'FAILED'],
