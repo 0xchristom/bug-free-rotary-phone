@@ -248,11 +248,12 @@ describe('reads after the switch', () => {
     expect(w.rpcUrls.at(-1)).toBe(MAINNET_HELIUS);
   });
 
-  it('with Helius down the fallback is the public RPC of the same network', async () => {
+  it('with Helius down: no fallback on mainnet (D-057); the public RPC of devnet on devnet', async () => {
     const w = world([MAINNET_HELIUS, DEVNET_HELIUS]);
     await fleet(w.h);
-    expect((await refresh(w.h)).source).toBe('fallback');
-    expect(w.rpcUrls.at(-1)).toBe(MAINNET_PUBLIC);
+    expect(await codeOf(refresh(w.h))).toBe('RPC_UNAVAILABLE');
+    expect(w.rpcUrls).not.toContain(MAINNET_PUBLIC);
+    expect(new Set(w.rpcUrls)).toEqual(new Set([MAINNET_HELIUS]));
 
     await toDevnet(w.h);
     w.rpcUrls.length = 0;

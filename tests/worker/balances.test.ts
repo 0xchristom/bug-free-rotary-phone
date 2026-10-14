@@ -20,7 +20,8 @@ const PASSWORD = 'correct horse battery staple';
 const MNEMONIC_12 = `${'abandon '.repeat(11)}about`;
 const KEY = 'heliusSecretKey777';
 const HELIUS_URL = `https://mainnet.helius-rpc.com/?api-key=${KEY}`;
-const PUBLIC_RPC_URL = publicRpcUrl('mainnet');
+const DEVNET_HELIUS_URL = `https://devnet.helius-rpc.com/?api-key=${KEY}`;
+const DEVNET_PUBLIC_URL = publicRpcUrl('devnet') ?? 'devnet has a public RPC';
 
 interface Payload {
   readonly id: unknown;
@@ -151,21 +152,54 @@ describe('refreshBalances in the vault worker', () => {
     expect(net.urls).toEqual([]);
   });
 
-  it('Helius 429/5xx: retries, then the public RPC; the UI learns about the fallback', async () => {
+  it('mainnet, Helius 429/5xx: retries, then RPC_UNAVAILABLE; the public RPC is never asked (D-057)', async () => {
     const net = network({ [HELIUS_URL]: () => Promise.reject(httpError(503)) });
     const h = createVaultHandler({ chain: net.chain });
     await fleet(h);
+    expect(await codeOf(refresh(h))).toBe('RPC_UNAVAILABLE');
+    expect(net.urls).toEqual([HELIUS_URL, HELIUS_URL, HELIUS_URL, HELIUS_URL]);
+  });
+
+  it('devnet, Helius 429/5xx: retries, then the public RPC; the UI learns about the fallback', async () => {
+    const net = network({ [DEVNET_HELIUS_URL]: () => Promise.reject(httpError(503)) });
+    const h = createVaultHandler({ chain: net.chain });
+    await fleet(h);
+    await h.handle({ type: 'setNetwork', network: 'devnet' });
     const res = await refresh(h);
-    expect(res.source).toBe('fallback');
-    expect(net.urls).toEqual([HELIUS_URL, HELIUS_URL, HELIUS_URL, HELIUS_URL, PUBLIC_RPC_URL]);
+    expect(res).toMatchObject({ network: 'devnet', source: 'fallback' });
+    expect(net.urls).toEqual([
+      DEVNET_HELIUS_URL,
+      DEVNET_HELIUS_URL,
+      DEVNET_HELIUS_URL,
+      DEVNET_HELIUS_URL,
+      DEVNET_PUBLIC_URL,
+    ]);
     expect(res.balances).toHaveLength(3);
+  });
+
+  it.each([
+    [401, 'PUBLIC_RPC_REFUSED'],
+    [403, 'PUBLIC_RPC_REFUSED'],
+    [503, 'RPC_UNAVAILABLE'],
+    [429, 'RPC_UNAVAILABLE'],
+  ] as const)('devnet, Helius down and the public RPC answers %i: %s', async (status, code) => {
+    const net = network({
+      [DEVNET_HELIUS_URL]: () => Promise.reject(httpError(503)),
+      [DEVNET_PUBLIC_URL]: () => Promise.reject(httpError(status)),
+    });
+    const h = createVaultHandler({ chain: net.chain });
+    await fleet(h);
+    await h.handle({ type: 'setNetwork', network: 'devnet' });
+    expect(await codeOf(refresh(h))).toBe(code);
+    expect(net.urls.at(-1)).toBe(DEVNET_PUBLIC_URL);
   });
 
   it('both down: RPC_UNAVAILABLE whose message and fields do not contain the key', async () => {
     const down: Behaviour = () => Promise.reject(new TypeError(`fetch failed ${HELIUS_URL}`));
-    const net = network({ [HELIUS_URL]: down, [PUBLIC_RPC_URL]: down });
+    const net = network({ [DEVNET_HELIUS_URL]: down, [DEVNET_PUBLIC_URL]: down });
     const h = createVaultHandler({ chain: net.chain });
     await fleet(h);
+    await h.handle({ type: 'setNetwork', network: 'devnet' });
     const err: unknown = await refresh(h).then(
       () => null,
       (e: unknown) => e,

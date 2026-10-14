@@ -1,6 +1,7 @@
 /**
  * RPC transport for reads (SPEC 2.2): Helius first, with backoff on 429 / 5xx / network
- * errors, then the network's public RPC as a read-only fallback (DECISIONS D-020).
+ * errors, then the network's public RPC as a read-only fallback (DECISIONS D-020) where
+ * the network has one (not mainnet, D-057).
  *
  * The Helius URL contains the API key, so no error leaving this module carries the URL,
  * the request or the original error: callers get AppError('RPC_UNAVAILABLE') only.
@@ -18,7 +19,8 @@ export type RpcSource = 'helius' | 'fallback';
 
 export interface ResilientTransportOptions {
   readonly primary: RpcTransport;
-  readonly fallback: RpcTransport;
+  /** Null where the network has no working public RPC (mainnet, D-057): Helius only. */
+  readonly fallback: RpcTransport | null;
   /** Injectable for tests. */
   readonly sleep?: (ms: number) => Promise<void>;
   /** Retries of the primary on 429 / 5xx / network errors before falling back. */
@@ -72,12 +74,17 @@ export function createResilientTransport(options: ResilientTransportOptions): Rp
         await sleep(baseDelay * 2 ** attempt);
       }
     }
+    if (options.fallback === null) throw new AppError('RPC_UNAVAILABLE');
     try {
       const response = await options.fallback(config);
       options.onSource?.('fallback');
       return response;
-    } catch {
-      throw new AppError('RPC_UNAVAILABLE');
+    } catch (e) {
+      // A refusal is not an outage: the public RPC will not answer this page (D-057).
+      const status = httpStatusOf(e);
+      throw new AppError(
+        status === 401 || status === 403 ? 'PUBLIC_RPC_REFUSED' : 'RPC_UNAVAILABLE',
+      );
     }
   };
   return transport as RpcTransport;

@@ -896,6 +896,12 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
     );
   };
 
+  /** The network's public read fallback; none on mainnet, which refuses the page (D-057). */
+  const fallbackOf = (network: Network): RpcTransport | null => {
+    const url = publicRpcUrl(network);
+    return url === null ? null : createTransport(url);
+  };
+
   /** Buying needs a route on the fleet's network; devnet has none yet (D-041). */
   const requireBuyRoute = (vault: UnlockedVault): void => {
     if (buyRouteOf(networkOf(vault)) === null) throw new AppError('NO_BUY_ROUTE_ON_NETWORK');
@@ -918,7 +924,7 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
       let source: RpcSource = 'helius';
       const transport = createResilientTransport({
         primary: createTransport(url),
-        fallback: createTransport(publicRpcUrl(network)),
+        fallback: fallbackOf(network),
         ...(options.chain?.sleep ? { sleep: options.chain.sleep } : {}),
         onSource: (s) => {
           if (s === 'fallback') source = 'fallback';
@@ -1074,7 +1080,7 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
     const rpc = createBalancesRpc(
       createResilientTransport({
         primary: createTransport(url),
-        fallback: createTransport(publicRpcUrl(network)),
+        fallback: fallbackOf(network),
         ...(options.chain?.sleep ? { sleep: options.chain.sleep } : {}),
       }),
     );
@@ -1204,7 +1210,8 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
 
   /**
    * Kind of a pasted address (BUNNDLY-59), read through Helius with the public RPC as the
-   * fallback (or the public RPC alone without a key: DRY-RUN may run without Helius).
+   * fallback (on devnet the public RPC alone without a key).
+   * Mainnet has no public fallback (D-057): without a key nothing is asked at all.
    */
   const classify = async (vault: UnlockedVault, target: string): Promise<TargetKind> => {
     const network = networkOf(vault);
@@ -1213,9 +1220,11 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
     if (known !== undefined) return known;
     const readSession = session;
     const publicUrl = publicRpcUrl(network);
+    const primaryUrl = rpcUrlOf(vault) ?? publicUrl;
+    if (primaryUrl === null) throw new AppError('HELIUS_KEY_MISSING');
     const transport = createResilientTransport({
-      primary: createTransport(rpcUrlOf(vault) ?? publicUrl),
-      fallback: createTransport(publicUrl),
+      primary: createTransport(primaryUrl),
+      fallback: fallbackOf(network),
       ...(options.chain?.sleep ? { sleep: options.chain.sleep } : {}),
     });
     let kind: TargetKind;
@@ -1278,7 +1287,7 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
       ? null
       : createResilientTransport({
           primary: createTransport(rpcUrl),
-          fallback: createTransport(publicRpcUrl(networkOf(vault))),
+          fallback: fallbackOf(networkOf(vault)),
           ...(options.chain?.sleep ? { sleep: options.chain.sleep } : {}),
         });
   };
@@ -1604,7 +1613,7 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
     const rpc = createWatchRpc(
       createResilientTransport({
         primary: createTransport(rpcUrl),
-        fallback: createTransport(publicRpcUrl(network)),
+        fallback: fallbackOf(network),
         ...(options.chain?.sleep ? { sleep: options.chain.sleep } : {}),
       }),
     );

@@ -25,12 +25,13 @@ export const ERROR_MESSAGES = {
     'The unencrypted part of the fleet file does not match the encrypted part. The file may have been modified.',
   INVALID_SETTINGS:
     'The settings are invalid. Fix the marked fields and try again. Nothing was saved.',
-  RPC_UNAVAILABLE:
-    'Could not read data from the Solana network (neither through Helius nor through the public RPC). Try again in a moment.',
+  RPC_UNAVAILABLE: 'Could not read data from the Solana network. Try again in a moment.',
+  PUBLIC_RPC_REFUSED:
+    'The public Solana RPC refuses requests from this page. Add the Helius API key in Settings to read the network.',
   NOT_A_TOKEN_MINT:
     'This address is not a token mint (neither SPL Token nor Token-2022). Check the token address.',
   HELIUS_KEY_MISSING:
-    'The Helius API key is missing. Add it in Settings: balances, live buys and the watcher need it.',
+    'The Helius API key is missing. Add it in Settings: balances, live buys and the watcher need it, and on Mainnet so does checking a target (the public Solana RPC refuses requests from this page).',
   VAULT_LOCKED: 'The fleet is locked. Unlock it with the password to continue.',
   BUY_RUNNING: 'A buy is running. Stop it with STOP and wait until the sent transactions finish.',
   NO_WALLETS_TO_BUY: 'No wallet can buy: mark wallets as active and set their max spend.',
