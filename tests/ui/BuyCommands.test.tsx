@@ -362,7 +362,7 @@ describe('mode A', () => {
 
     // The row says the state and the wallet's last message; the transaction has its column
     // with the time since the start (sinceStartMs 1 200).
-    expect(within(row('W01')).getByText('Bought')).toBeTruthy();
+    expect(row('W01').querySelector('.c-status .k-chip')?.textContent).toBe('Filled');
     expect(within(row('W01')).getByText('Chain: confirmed')).toBeTruthy();
     const tx = within(row('W01')).getByRole('link', { name: SIG_SHORT });
     expect(tx.getAttribute('href')).toBe(`https://orbmarkets.io/tx/${SIG}`);

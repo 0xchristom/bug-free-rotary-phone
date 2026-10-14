@@ -406,6 +406,80 @@ describe('state chip: Sold, Stopped, Retrying (BUNNDLY-89)', () => {
   });
 });
 
+/** The state chip element of a wallet. */
+function chipEl(label: string): HTMLElement {
+  const bar = screen.getByRole('progressbar', { name: `Fill of ${label}` });
+  const chip = bar.closest('tr')?.querySelector<HTMLElement>('.c-status .k-chip');
+  if (!chip) throw new Error(`no state chip in ${label}`);
+  return chip;
+}
+
+describe('state chip words of mockup v2 (BUNNDLY-94)', () => {
+  it('Filled only for a buy the Filled tab counts; Bought before or against the chain read', async () => {
+    const { vault, user } = setup({ dryRun: false });
+    await showMint(user);
+    act(() => {
+      vault.emit(runEvent('started', false));
+      for (const i of [0, 1, 2]) vault.emit(walletEvent(i, 'CONFIRMED'));
+    });
+    // CONFIRMED by Jupiter, no chain read yet: not in the Filled tab, so not "Filled"
+    await eventually(() => {
+      expect(chipOf('W01')).toEqual({ text: 'Bought', tone: 'ok' });
+    });
+    act(() => {
+      vault.emit(verifyEvent(0, 'MATCH'));
+      vault.emit(verifyEvent(1, 'INCREASED'));
+      vault.emit(verifyEvent(2, 'MISMATCH'));
+    });
+    await eventually(() => {
+      expect(chipOf('W01')).toEqual({ text: 'Filled', tone: 'ok' });
+    });
+    expect(chipOf('W02')).toEqual({ text: 'Filled', tone: 'ok' });
+    expect(chipOf('W03')).toEqual({ text: 'Bought', tone: 'ok' });
+    // the rows that say Filled are the rows of the Filled tab
+    await user.click(
+      within(screen.getByRole('group', { name: 'Wallet filters' })).getByRole('button', {
+        name: /^Filled \d+$/u,
+      }),
+    );
+    expect(screen.queryByRole('progressbar', { name: 'Fill of W01' })).not.toBeNull();
+    expect(screen.queryByRole('progressbar', { name: 'Fill of W02' })).not.toBeNull();
+    expect(screen.queryByRole('progressbar', { name: 'Fill of W03' })).toBeNull();
+  });
+
+  it('a DRY-RUN skip says Simulated in the sim tone', async () => {
+    const { vault, user } = setup({ dryRun: true });
+    await showMint(user);
+    act(() => {
+      vault.emit(runEvent('started', true));
+      vault.emit(
+        walletEvent(0, 'SKIPPED', { reason: { kind: 'SKIPPED', code: 'DRY_RUN', detail: null } }),
+      );
+    });
+    await eventually(() => {
+      expect(chipOf('W01')).toEqual({ text: 'Simulated', tone: 'sim' });
+    });
+  });
+
+  it('Scheduled has a clock instead of the running dot; its text stays', async () => {
+    const { vault, user } = setup({ dryRun: false });
+    await showMint(user);
+    act(() => {
+      vault.emit(runEvent('started', false));
+      vault.emit(walletEvent(0, 'QUEUED'));
+      vault.emit(walletEvent(1, 'SCHEDULED', { scheduledAt: 0 }));
+    });
+    await eventually(() => {
+      expect(chipOf('W02').text).toBe('Scheduled');
+    });
+    expect(chipEl('W02').querySelector('svg.k-i')?.getAttribute('aria-hidden')).toBe('true');
+    expect(chipEl('W02').querySelector('.k-dot')).toBeNull();
+    // a running wallet keeps its dot and has no icon
+    expect(chipEl('W01').querySelector('.k-dot')).not.toBeNull();
+    expect(chipEl('W01').querySelector('svg')).toBeNull();
+  });
+});
+
 /** The text of a wallet's cell in the column with this header. */
 function cellOf(label: string, header: string): string {
   const th = screen.getByRole('columnheader', { name: header });
