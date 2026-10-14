@@ -114,6 +114,36 @@ describe('GET /order request', () => {
     ]);
   });
 
+  it('slippage 2.5 % is slippageBps=250 at the end; without it the URL has no slippage', async () => {
+    const manual = client(() => ({ status: 200, json: fixture('metisSuccess').response.body }));
+    await manual.jupiter.getOrder({
+      outputMint: USDC,
+      amount: 10_000_000n,
+      taker: TAKER,
+      slippageBps: 250,
+    });
+    expect([...new URL(manual.net.calls[0]?.url ?? '').searchParams.entries()]).toEqual([
+      ['inputMint', SOL_MINT],
+      ['outputMint', USDC],
+      ['amount', '10000000'],
+      ['taker', TAKER],
+      ['slippageBps', '250'],
+    ]);
+    // 0 is a value of its own (no slippage at all), not "Auto"
+    const zero = client(() => ({ status: 200, json: fixture('metisSuccess').response.body }));
+    await zero.jupiter.getOrder({ outputMint: USDC, amount: 1n, slippageBps: 0 });
+    expect(new URL(zero.net.calls[0]?.url ?? '').searchParams.get('slippageBps')).toBe('0');
+  });
+
+  it('slippage outside 0–10000 or not a whole number is refused without a call', async () => {
+    const { net, jupiter } = client(() => ({ status: 200 }));
+    for (const slippageBps of [-1, 10_001, 2.5, Number.NaN]) {
+      const result = await jupiter.getOrder({ outputMint: USDC, amount: 1n, slippageBps });
+      expect(failed(result).code, String(slippageBps)).toBe('BAD_REQUEST');
+    }
+    expect(net.calls).toHaveLength(0);
+  });
+
   it('a sell names the token as inputMint and SOL as outputMint, amount in token units', async () => {
     const quote = (
       JSON.parse(readFileSync('tests/fixtures/jupiter-order-sell.mainnet.json', 'utf8')) as {

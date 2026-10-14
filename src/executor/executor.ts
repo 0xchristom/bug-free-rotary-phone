@@ -73,6 +73,11 @@ export interface ExecutorWallet {
   readonly maxSpend: bigint;
   /** Last read SOL balance, null when never read. */
   readonly balance: bigint | null;
+  /**
+   * Slippage of this wallet's orders on the run's side, in basis points (BUNNDLY-58).
+   * Absent: Auto, the order has no `slippageBps` and Jupiter picks it.
+   */
+  readonly slippageBps?: number;
 }
 
 /** The vault's signer (BUNNDLY-22): checks, then signs. Never throws. */
@@ -245,10 +250,12 @@ export function startRun(deps: ExecutorDeps, options: RunOptions): ExecutorRun {
   const selling = options.side === 'sell';
   const sideField = selling ? ({ side: 'sell' } as const) : {};
   /** What is asked of `/order` for a wallet; the signer checks the answer against it. */
-  const askOf = (wallet: ExecutorWallet): Omit<OrderRequest, 'taker'> =>
-    selling
+  const askOf = (wallet: ExecutorWallet): Omit<OrderRequest, 'taker'> => ({
+    ...(selling
       ? { inputMint: options.mint, outputMint: SOL_MINT, amount: wallet.maxSpend }
-      : { outputMint: options.mint, amount: wallet.maxSpend };
+      : { outputMint: options.mint, amount: wallet.maxSpend }),
+    ...(wallet.slippageBps === undefined ? {} : { slippageBps: wallet.slippageBps }),
+  });
   const startedAt = Math.min(options.triggeredAt ?? clock.now(), clock.now());
   const slots = new Map<number, Slot>(
     options.wallets.map((wallet) => [
@@ -706,7 +713,11 @@ export function startRun(deps: ExecutorDeps, options: RunOptions): ExecutorRun {
         }
       } else if (wallet.balance === null) {
         skip(wallet.index, 'BALANCE_UNKNOWN');
-      } else if (wallet.balance < wallet.maxSpend + options.minReserveLamports) {
+      } else if (
+        // 0: a percent of a balance that does not exceed the reserve (BUNNDLY-58)
+        wallet.maxSpend <= 0n ||
+        wallet.balance < wallet.maxSpend + options.minReserveLamports
+      ) {
         skip(wallet.index, 'INSUFFICIENT_SOL');
       } else {
         move(wallet.index, 'QUEUED');

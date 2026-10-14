@@ -7,7 +7,12 @@ import { base58 } from '@scure/base';
 import type { RpcTransport } from '@solana/kit';
 import { getBase64Encoder, getTransactionDecoder } from '@solana/kit';
 import { describe, expect, it, vi } from 'vitest';
-import { AppError, defaultFleetSettings, type FleetSettingsV1 } from '../../src/core/index.ts';
+import {
+  AppError,
+  DEFAULT_TRADE_SETTINGS,
+  defaultFleetSettings,
+  type FleetSettingsV1,
+} from '../../src/core/index.ts';
 import {
   logEntry,
   toCsv,
@@ -208,6 +213,38 @@ async function codeOf(p: Promise<unknown>): Promise<string> {
 }
 
 describe('money path: amount in /order', () => {
+  it('without a percent in the request each wallet sells its own part, with the sell slippage (BUNNDLY-58)', async () => {
+    const t = await setup({
+      walletCount: 3,
+      settings: {
+        trade: {
+          fleet: { ...DEFAULT_TRADE_SETTINGS.fleet, sellPercent: 50, buySlippageBps: 300 },
+          wallets: [
+            { index: 0, sellPercent: 25, sellSlippageBps: 1000 },
+            { index: 2, sellSlippageBps: null },
+          ],
+        },
+      },
+    });
+    t.hold(0, 1_000_001n);
+    t.hold(1, 999n);
+    t.hold(2, 10n);
+    await t.sell([0, 1, 2]);
+    await runToEnd(t.clock, t.events);
+    // By hand: 1 000 001 / 4 = 250 000,25 → 250 000; 999 / 2 = 499,5 → 499; 10 / 2 = 5.
+    // The buy slippage (300) never goes into a sell.
+    expect(
+      t.jupiter
+        .orderRequests()
+        .map((r) => [t.asked().find(([, a]) => a === r.amount)?.[0], r.amount, r.slippageBps])
+        .sort((a, b) => Number(a[0]) - Number(b[0])),
+    ).toEqual([
+      [0, 250_000n, 1000],
+      [1, 499n, undefined],
+      [2, 5n, undefined],
+    ]);
+  });
+
   it('25 %, 50 % and 100 % of the balance, 6 and 9 decimals, rounded down', async () => {
     const t = await setup({ walletCount: 2 });
     t.hold(0, 1_234_567_891n); // 1234.567891 of a 6-decimal token

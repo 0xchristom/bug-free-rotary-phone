@@ -42,6 +42,7 @@ describe('ERROR_MESSAGES', () => {
         'BUY_RUNNING',
         'NO_WALLETS_TO_BUY',
         'NO_WALLETS_TO_SELL',
+        'WALLET_IN_RUN',
         'INVALID_MINT_ADDRESS',
         'INVALID_CREATOR_ADDRESS',
         'WATCH_ARMED',

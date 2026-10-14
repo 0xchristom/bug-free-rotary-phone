@@ -35,7 +35,8 @@ import {
   type ExecutorWallet,
   type Side,
 } from '../executor/executor.ts';
-import { DEFAULT_SELL_PERCENT, isSellPercent, sellAmount } from '../executor/sell-plan.ts';
+import { isSellPercent, sellAmount } from '../executor/sell-plan.ts';
+import { percentBuyAmount } from '../executor/buy-plan.ts';
 import { startWatch, type BuyTrigger, type Watch } from '../watcher/watch.ts';
 import type { LandingChecker } from '../executor/landing.ts';
 import { createVerifier, type SolReader, type TokenReader } from '../executor/verify.ts';
@@ -73,8 +74,13 @@ import {
   publicRpcUrl,
   effectiveJupiterPlan,
   validateGlobalSettings,
+  validateTradeSettings,
+  walletTrade,
   wipe,
   type ApiKeyName,
+  type BuyAmount,
+  type TradeSettingsV1,
+  type WalletTradeV1,
   type ApiKeysV1,
   type ConnectionReport,
   type FetchLike,
@@ -261,8 +267,61 @@ function isIndexIn(value: unknown, indices: ReadonlySet<number>): value is numbe
   return typeof value === 'number' && indices.has(value);
 }
 
-/** Full settings from the UI; anything malformed or out of range is INVALID_SETTINGS. */
-function parseSettings(value: unknown, walletIndices: ReadonlySet<number>): FleetSettingsV1 {
+const SLIPPAGE_KEYS = ['buySlippageBps', 'sellSlippageBps'] as const;
+const FEE_KEYS = ['buyPriorityFeeLamports', 'sellPriorityFeeLamports'] as const;
+
+/** A buy amount from the UI: null, or exactly one of the two kinds. */
+function buyAmountOf(value: unknown): BuyAmount | null {
+  if (value === null) return null;
+  if (!isRecord(value)) return invalidSettings();
+  if (value.kind === 'percent' && typeof value.percent === 'number') {
+    return { kind: 'percent', percent: value.percent };
+  }
+  if (value.kind === 'lamports' && typeof value.lamports === 'bigint') {
+    return { kind: 'lamports', lamports: value.lamports };
+  }
+  return invalidSettings();
+}
+
+/**
+ * Trade parameters from the UI (BUNNDLY-58), copied field by field; the ranges are
+ * checked with the rest of the settings in `parseSettings`.
+ */
+function parseTrade(value: unknown, walletIndices: ReadonlySet<number>): TradeSettingsV1 {
+  if (!isRecord(value) || !isRecord(value.fleet) || !Array.isArray(value.wallets)) {
+    return invalidSettings();
+  }
+  const f = value.fleet;
+  const fleet = {
+    buyAmount: buyAmountOf(f.buyAmount),
+    sellPercent: f.sellPercent,
+    buySlippageBps: f.buySlippageBps,
+    sellSlippageBps: f.sellSlippageBps,
+    buyPriorityFeeLamports: f.buyPriorityFeeLamports,
+    sellPriorityFeeLamports: f.sellPriorityFeeLamports,
+  } as TradeSettingsV1['fleet'];
+  const items: unknown[] = value.wallets;
+  const wallets = items.map((item): WalletTradeV1 => {
+    if (!isRecord(item) || !isIndexIn(item.index, walletIndices)) return invalidSettings();
+    const entry: Record<string, unknown> = { index: item.index };
+    for (const key of ['buyPercent', 'sellPercent', ...SLIPPAGE_KEYS, ...FEE_KEYS]) {
+      if (item[key] !== undefined) entry[key] = item[key];
+    }
+    return entry as unknown as WalletTradeV1;
+  });
+  if (new Set(wallets.map((w) => w.index)).size !== wallets.length) invalidSettings();
+  return { fleet, wallets };
+}
+
+/**
+ * Full settings from the UI; anything malformed or out of range is INVALID_SETTINGS.
+ * Without `trade` the current trade parameters stay.
+ */
+function parseSettings(
+  value: unknown,
+  walletIndices: ReadonlySet<number>,
+  currentTrade: TradeSettingsV1,
+): FleetSettingsV1 {
   if (!isRecord(value) || !Array.isArray(value.maxSpend) || !Array.isArray(value.active)) {
     return invalidSettings();
   }
@@ -306,7 +365,11 @@ function parseSettings(value: unknown, walletIndices: ReadonlySet<number>): Flee
     network: g.network,
   } as FleetSettingsV1['global'];
   if (validateGlobalSettings(global).length > 0) return invalidSettings();
-  return { maxSpend, active, global };
+  const trade = value.trade === undefined ? currentTrade : parseTrade(value.trade, walletIndices);
+  // Checked against this request's maxSpend: a SOL amount and a percent never both.
+  const withSol = new Set(maxSpend.filter((m) => m.lamports > 0n).map((m) => m.index));
+  if (validateTradeSettings(trade, walletIndices, withSol).length > 0) return invalidSettings();
+  return { maxSpend, active, global, trade };
 }
 
 /** Applies write-only key changes: missing keeps, null removes, a string replaces. */
@@ -396,11 +459,15 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
   let balances = new Map<number, bigint>();
   let buy: { readonly run: ExecutorRun; status: BuyStatus } | null = null;
   /**
-   * The running sell: the mint and what each wallet may put in, from the balance read at
-   * its start. The signer checks every sell order against it (BUNNDLY-60).
+   * The running buy or sell: its mint and what each wallet may put in, fixed at its start
+   * (a sell: from the balance read then, BUNNDLY-60; a buy: the SOL amount or the percent
+   * of the balance, BUNNDLY-58). The signer checks every order against it.
    */
-  let sellPlan: { readonly mint: string; readonly amounts: ReadonlyMap<number, bigint> } | null =
-    null;
+  let runPlan: {
+    readonly side: Side;
+    readonly mint: string;
+    readonly amounts: ReadonlyMap<number, bigint>;
+  } | null = null;
   let nextRunId = 1;
   const listeners = new Set<(event: WorkerEvent) => void>();
   /** Limiters live across runs, so a new buy respects the window of the last one. */
@@ -632,18 +699,41 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
     return pair;
   };
 
-  /** Active wallets with a max spend, with their last read balance. */
-  const buyWallets = (vault: UnlockedVault) => {
-    const inactive = new Set(vault.settings.active.filter((a) => !a.active).map((a) => a.index));
-    const spend = new Map(vault.settings.maxSpend.map((m) => [m.index, m.lamports]));
-    const wallets = vault.publicWallets
-      .filter((w) => !inactive.has(w.index) && (spend.get(w.index) ?? 0n) > 0n)
-      .map((w) => ({
-        index: w.index,
-        address: w.address,
-        maxSpend: spend.get(w.index) ?? 0n,
-        balance: balances.get(w.index) ?? null,
-      }));
+  /**
+   * Active wallets with a buy amount: their own (SOL or a percent) or the fleet default
+   * (BUNNDLY-58). A percent becomes lamports from the last balance read, never into the
+   * reserve; an unread balance is skipped by the executor before the amount matters.
+   */
+  const buyWallets = (vault: UnlockedVault): ExecutorWallet[] => {
+    const { settings } = vault;
+    const inactive = new Set(settings.active.filter((a) => !a.active).map((a) => a.index));
+    const spend = new Map(settings.maxSpend.map((m) => [m.index, m.lamports]));
+    const wallets = vault.publicWallets.flatMap((w): ExecutorWallet[] => {
+      if (inactive.has(w.index)) return [];
+      const sol = spend.get(w.index);
+      const t = walletTrade(
+        settings.trade,
+        w.index,
+        sol !== undefined && sol > 0n ? sol : undefined,
+      );
+      if (t.buyAmount === null) return [];
+      const balance = balances.get(w.index) ?? null;
+      const maxSpend =
+        t.buyAmount.kind === 'lamports'
+          ? t.buyAmount.lamports
+          : balance === null
+            ? 0n
+            : percentBuyAmount(balance, t.buyAmount.percent, settings.global.minReserveLamports);
+      return [
+        {
+          index: w.index,
+          address: w.address,
+          maxSpend,
+          balance,
+          ...(t.buySlippageBps === null ? {} : { slippageBps: t.buySlippageBps }),
+        },
+      ];
+    });
     if (wallets.length === 0) throw new AppError('NO_WALLETS_TO_BUY');
     // Live mode never retries without the chain check, which needs the RPC.
     if (
@@ -712,8 +802,9 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
     if (buy !== null) throw new AppError('BUY_RUNNING');
     requireBuyRoute(vault);
     const mint = mintOf(rawMint);
-    const percent = rawPercent === undefined ? DEFAULT_SELL_PERCENT : rawPercent;
-    if (!isSellPercent(percent) || !Array.isArray(rawWallets)) return badRequest();
+    // Without a percent in the request each wallet sells its own part (BUNNDLY-58).
+    if (rawPercent !== undefined && !isSellPercent(rawPercent)) return badRequest();
+    if (!Array.isArray(rawWallets)) return badRequest();
     const known = new Map(vault.publicWallets.map((w) => [w.index, w]));
     const indices: unknown[] = rawWallets;
     const picked = indices.map((i) => known.get(int(i)) ?? badRequest());
@@ -741,13 +832,36 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
     // Auto-lock runs outside the request queue and may lock the vault while it reads. A buy
     // cannot start meanwhile: requests are queued and a watcher armed before is refused.
     if (session !== readSession || unlocked === null) throw new AppError('VAULT_LOCKED');
-    const wallets = picked.map((w, i) => ({
-      index: w.index,
-      address: w.address,
-      maxSpend: sellAmount(amounts[i] ?? 0n, percent),
-      balance: balances.get(w.index) ?? null,
-    }));
+    const { trade } = unlocked.settings;
+    const wallets = picked.map((w, i): ExecutorWallet => {
+      const t = walletTrade(trade, w.index, undefined);
+      return {
+        index: w.index,
+        address: w.address,
+        maxSpend: sellAmount(amounts[i] ?? 0n, rawPercent ?? t.sellPercent),
+        balance: balances.get(w.index) ?? null,
+        ...(t.sellSlippageBps === null ? {} : { slippageBps: t.sellSlippageBps }),
+      };
+    });
     return launch(unlocked, 'sell', mint, wallets, null);
+  };
+
+  /**
+   * True when the new settings change what a wallet of the running buy or sell trades
+   * with: its own value or a fleet default it takes (BUNNDLY-58). The run keeps the
+   * amounts of its start either way; the refusal keeps the table honest about them.
+   */
+  const changesRunWallets = (before: FleetSettingsV1, after: FleetSettingsV1): boolean => {
+    if (runPlan === null) return false;
+    const solOf = (s: FleetSettingsV1, index: number): bigint | undefined => {
+      const lamports = s.maxSpend.find((m) => m.index === index)?.lamports;
+      return lamports !== undefined && lamports > 0n ? lamports : undefined;
+    };
+    const key = (s: FleetSettingsV1, index: number): string =>
+      JSON.stringify(walletTrade(s.trade, index, solOf(s, index)), (_k, v: unknown) =>
+        typeof v === 'bigint' ? v.toString() : v,
+      );
+    return [...runPlan.amounts.keys()].some((i) => key(before, i) !== key(after, i));
   };
 
   /** Starts the executor for a buy or a sell and keeps it as the running one. */
@@ -815,9 +929,7 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
     // Without a Jupiter key the API applies Keyless limits, not the plan in the settings.
     const effective = effectiveJupiterPlan(global, vault.apiKeys.jupiter !== undefined);
     const pair = limitersFor(effective.plan, effective.orderRpm);
-    sellPlan = selling
-      ? { mint, amounts: new Map(wallets.map((w) => [w.index, w.maxSpend])) }
-      : null;
+    runPlan = { side, mint, amounts: new Map(wallets.map((w) => [w.index, w.maxSpend])) };
     const run = startRun(
       {
         jupiter,
@@ -858,7 +970,7 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
     const finish = (): void => {
       if (buy === current) {
         buy = null;
-        sellPlan = null;
+        runPlan = null;
       }
       touch(); // the user was busy with the buy: the auto-lock timer starts now
       watch?.buyFinished(); // the next queued detection, if any
@@ -996,10 +1108,11 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
       case 'saveSettings': {
         const vault = requireUnlocked();
         const indices = new Set(vault.wallets.map((w) => w.index));
-        const settings = parseSettings(request.settings, indices);
+        const settings = parseSettings(request.settings, indices, vault.settings.trade);
         const switched = settings.global.network !== networkOf(vault);
         // A running buy keeps its network to the end (an armed watcher is refused above).
         if (switched && buy !== null) throw new AppError('BUY_RUNNING');
+        if (changesRunWallets(vault.settings, settings)) throw new AppError('WALLET_IN_RUN');
         const result = await rebuild(
           vault,
           vault.wallets,
@@ -1097,17 +1210,22 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
     }
     let limit: bigint;
     if (request.inputMint === undefined) {
-      limit = vault.settings.maxSpend.find((m) => m.index === walletIndex)?.lamports ?? 0n;
+      // A buy: up to what the running buy fixed for the wallet at its start; outside a run
+      // (nothing signs there today) the SOL amount of the settings.
+      limit =
+        runPlan?.side === 'buy'
+          ? (runPlan.amounts.get(walletIndex) ?? 0n)
+          : (vault.settings.maxSpend.find((m) => m.index === walletIndex)?.lamports ?? 0n);
     } else {
       // A sell: only the running one, only its mint for SOL, only up to the wallet's plan.
       if (
-        sellPlan === null ||
-        sellPlan.mint !== request.inputMint ||
+        runPlan?.side !== 'sell' ||
+        runPlan.mint !== request.inputMint ||
         request.outputMint !== SOL_MINT
       ) {
         return { ok: false, problem: 'NO_SELL_PLAN' };
       }
-      limit = sellPlan.amounts.get(walletIndex) ?? 0n;
+      limit = runPlan.amounts.get(walletIndex) ?? 0n;
     }
     const check = checkOrderTransaction(order, {
       taker: wallet.address,
