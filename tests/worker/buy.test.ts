@@ -104,7 +104,7 @@ async function setup(o: Setup = {}) {
   });
   const events: ExecutorEvent[] = [];
   h.onEvent((e) => {
-    if (e.kind !== 'watch') events.push(e);
+    if (e.kind !== 'watch' && e.kind !== 'balance') events.push(e);
   });
   await h.handle({
     type: 'create',
@@ -543,7 +543,7 @@ describe('events over the message port', () => {
     const client = createVaultClient(port(0));
     const received: ExecutorEvent[] = [];
     const off = client.onEvent((e) => {
-      if (e.kind !== 'watch') received.push(e);
+      if (e.kind !== 'watch' && e.kind !== 'balance') received.push(e);
     });
     await client.request({ type: 'create', fleetName: 'Port', walletCount: 1, password: PASSWORD });
     const base = defaultFleetSettings();

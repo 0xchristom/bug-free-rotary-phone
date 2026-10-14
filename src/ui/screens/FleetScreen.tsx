@@ -763,6 +763,7 @@ export function FleetScreen({
       <FleetTable
         wallets={info.wallets}
         lamports={balances.lamports}
+        feed={balances.feed}
         token={balances.token}
         maxSpend={savedMaxSpend}
         trade={info.settings.trade}

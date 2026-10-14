@@ -36,6 +36,8 @@ import {
   type Side,
 } from '../executor/executor.ts';
 import { fetchTarget, parseTargetAddress, type TargetKind } from '../chain/target.ts';
+import { startBalanceStream, type BalanceStream } from '../chain/balance-stream.ts';
+import { createBatchQueue, type BatchQueue } from './batch-queue.ts';
 import { isSellPercent, sellAmount } from '../executor/sell-plan.ts';
 import { percentBuyAmount } from '../executor/buy-plan.ts';
 import { startWatch, type BuyTrigger, type Watch } from '../watcher/watch.ts';
@@ -489,6 +491,12 @@ function infoOf(vault: UnlockedVault): VaultInfo {
   };
 }
 
+/**
+ * Token reads after landed transactions are at least this far apart (BUNNDLY-57): with
+ * two HTTP requests per read they stay well inside the 10 requests/s of Helius Free.
+ */
+export const TOKEN_READ_GAP_MS = 1_000;
+
 export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
   const now = options.now ?? (() => Date.now());
   const autoLockMs = (): number =>
@@ -540,12 +548,34 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
   const isArmed = (): boolean => allRuns().some(groupBusy);
   let lastActivity = now();
   let tail: Promise<unknown> = Promise.resolve();
+  /**
+   * Live balances (BUNNDLY-57, D-051) while the UI asks for them: one socket for the open
+   * fleet's network and key, replaced when either changes, closed by a lock.
+   */
+  let feedWanted = false;
+  let feed: {
+    readonly stream: BalanceStream;
+    readonly url: string;
+    readonly network: Network;
+    readonly session: number;
+  } | null = null;
+  /** Token balances to read after a wallet's transaction landed: mint → wallet indices. */
+  const tokenReads: BatchQueue<string, number> = createBatchQueue({
+    clock: options.executor?.clock ?? realClock,
+    gapMs: TOKEN_READ_GAP_MS,
+    // readTokens is declared below; the queue calls it only after an add
+    run: (batch) => readTokens(batch),
+  });
 
   const touch = (): void => {
     lastActivity = now();
   };
 
   const lock = (): void => {
+    feed?.stream.stop();
+    feed = null;
+    feedWanted = false;
+    tokenReads.clear();
     if (unlocked) wipeVault(unlocked);
     unlocked = null;
     session += 1;
@@ -775,6 +805,111 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
 
   const emit = (event: WorkerEvent): void => {
     for (const listener of listeners) listener(event);
+  };
+
+  /**
+   * Opens, replaces or closes the live balance feed (BUNNDLY-57) to match the vault now:
+   * on while the UI asks and a Helius WebSocket URL exists for the fleet's network.
+   * Wallets added to the fleet get their own subscriptions on the same socket.
+   */
+  const syncFeed = (): void => {
+    const vault = unlocked;
+    const url = vault !== null && feedWanted ? wsUrlOf(vault) : null;
+    const network = networkOf(vault);
+    if (
+      feed !== null &&
+      (feed.url !== url || feed.network !== network || feed.session !== session)
+    ) {
+      feed.stream.stop(); // closes the socket and every subscription on it
+      feed = null;
+    }
+    if (vault === null || url === null) return;
+    const wallets = vault.publicWallets.map((w) => ({ index: w.index, address: w.address }));
+    if (feed !== null) {
+      feed.stream.add(wallets);
+      return;
+    }
+    const feedSession = session;
+    const stream: BalanceStream = startBalanceStream(
+      {
+        createWebSocket: options.net?.createWebSocket ?? ((u) => new WebSocket(u)),
+        clock: options.executor?.clock ?? realClock,
+        random: options.watch?.random ?? Math.random,
+        emit: (event) => {
+          // Network guard (as in BUNNDLY-44): only the feed of the vault as it is now. A
+          // replaced stream is closed already; this drops anything it still delivers.
+          if (
+            feed?.stream !== stream ||
+            session !== feedSession ||
+            networkOf(unlocked) !== network
+          ) {
+            return;
+          }
+          if (event.kind === 'feed') {
+            emit({ kind: 'balance', network, type: 'feed', state: event.state });
+            return;
+          }
+          balances.set(event.index, event.lamports); // the pre-check of the next buy
+          emit({
+            kind: 'balance',
+            network,
+            type: 'sol',
+            index: event.index,
+            lamports: event.lamports,
+          });
+        },
+      },
+      { url, wallets },
+    );
+    feed = { stream, url, network, session: feedSession };
+  };
+
+  /**
+   * The token balance of a wallet whose transaction landed, read at once rather than at
+   * the next poll (BUNNDLY-57). Wallets landing close together share one read, and reads
+   * are at least TOKEN_READ_GAP_MS apart: two HTTP requests (mint, accounts) per read.
+   */
+  const readTokens = async (batch: ReadonlyMap<string, ReadonlySet<number>>): Promise<void> => {
+    const vault = unlocked;
+    if (vault === null) return;
+    const readSession = session;
+    const url = rpcUrlOf(vault);
+    if (url === null) return;
+    const network = networkOf(vault);
+    const rpc = createBalancesRpc(
+      createResilientTransport({
+        primary: createTransport(url),
+        fallback: createTransport(publicRpcUrl(network)),
+        ...(options.chain?.sleep ? { sleep: options.chain.sleep } : {}),
+      }),
+    );
+    for (const [tokenMint, wanted] of batch) {
+      const wallets = vault.publicWallets.filter((w) => wanted.has(w.index));
+      let amounts: readonly bigint[];
+      try {
+        amounts = (
+          await fetchTokenBalances(
+            rpc,
+            tokenMint,
+            wallets.map((w) => w.address),
+          )
+        ).amounts;
+      } catch {
+        continue; // the next full read has it
+      }
+      // Locked or switched while reading: the answer belongs to no fleet on screen.
+      if (session !== readSession || networkOf(unlocked) !== network) return;
+      wallets.forEach((w, i) => {
+        emit({
+          kind: 'balance',
+          network,
+          type: 'token',
+          mint: tokenMint,
+          index: w.index,
+          amount: amounts[i] ?? 0n,
+        });
+      });
+    }
   };
 
   const limitersFor = (plan: FleetSettingsV1['global']['jupiterPlan'], orderRpm: number) => {
@@ -1121,6 +1256,9 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
         : null;
     const runEmit = (event: ExecutorEvent): void => {
       emit(event);
+      if (event.kind === 'wallet' && event.state === 'CONFIRMED') {
+        tokenReads.add(mint, event.index);
+      }
       if (verifier !== null && event.kind === 'wallet' && event.state === 'CONFIRMED') {
         // What moved the token balance: the output of a buy, the input of a sell.
         const moved = selling ? event.result?.totalInputAmount : event.result?.totalOutputAmount;
@@ -1280,8 +1418,10 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
     if (!isRecord(raw)) return badRequest();
     const request = raw as VaultRequest;
     checkAutoLock();
-    // Reading the status or previewing a file is not user activity on the fleet.
-    if (request.type !== 'status' && request.type !== 'preview') touch();
+    // Reading the status, previewing a file or the balance feed is not user activity.
+    if (request.type !== 'status' && request.type !== 'preview' && request.type !== 'balanceFeed') {
+      touch();
+    }
 
     // Keys must stay while a buy signs or the watcher may start one: no lock and no other
     // fleet until it ends or is disarmed.
@@ -1349,6 +1489,7 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
         }
         const result = await rebuild(vault, vault.wallets, settings, apiKeys);
         if (switched) balances = new Map(); // they were read on the other network
+        syncFeed(); // a new network or key: a new socket
         return result;
       }
       case 'setNetwork': {
@@ -1363,6 +1504,7 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
           vault.apiKeys,
         );
         balances = new Map(); // they were read on the other network
+        syncFeed();
         return result;
       }
       case 'addWallets': {
@@ -1380,12 +1522,14 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
         const derived = deriveWallets(new TextDecoder().decode(vault.mnemonic), fromIndex, count);
         const added = derived.map((d) => ({ index: d.index, secretKey: d.secretKey }));
         try {
-          return await rebuild(
+          const result = await rebuild(
             vault,
             [...vault.wallets, ...added],
             { ...vault.settings, groups },
             vault.apiKeys,
           );
+          syncFeed(); // the new wallets get their subscriptions
+          return result;
         } catch (e) {
           for (const w of added) wipe(w.secretKey);
           throw e;
@@ -1440,6 +1584,14 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
       }
       case 'activity':
         return status();
+      case 'balanceFeed': {
+        const rawOn: unknown = request.on;
+        if (typeof rawOn !== 'boolean') return badRequest();
+        // Locked: nothing to watch; the UI asks again after the next unlock.
+        feedWanted = rawOn && unlocked !== null;
+        syncFeed();
+        return { network: networkOf(unlocked), state: feed?.stream.state() ?? 'polling' };
+      }
       default:
         return badRequest();
     }

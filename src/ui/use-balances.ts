@@ -3,10 +3,16 @@ import { isAppError, toUserMessage } from '../core/errors.ts';
 import { DEFAULT_NETWORK, type Network } from '../core/network.ts';
 import type { VaultBalances } from '../worker/protocol.ts';
 import type { VaultClient } from '../worker/vault-client.ts';
-import { useReportRpcRead } from './shell-status.ts';
+import type { FeedState } from '../chain/balance-stream.ts';
+import { useReportBalanceFeed, useReportRpcRead } from './shell-status.ts';
 
 /** SPEC 3.2: every 10–15 s. Each refresh costs Helius credits (D-020). */
 export const DEFAULT_BALANCE_REFRESH_MS = 12_000;
+/**
+ * While the balances are live (BUNNDLY-57), a full read only reconciles them with the chain:
+ * at most this often. Polling keeps the interval above.
+ */
+export const LIVE_RECONCILE_MS = 30_000;
 
 export interface TokenState {
   readonly mint: string;
@@ -37,9 +43,12 @@ function visible(): boolean {
 }
 
 /**
- * Periodic SOL balance reads through the vault worker. Runs only while the component is
- * mounted (the fleet screen exists only with an unlocked fleet) and the tab is visible;
- * a tab coming back to view refreshes at once. One request at a time.
+ * SOL balances through the vault worker. Live (BUNNDLY-57, D-051): the worker's account
+ * subscriptions change one wallet at a time, and a full read reconciles every 30 s and once
+ * each time the feed comes back. Polling (no socket, or not every wallet subscribed): a full
+ * read every `intervalMs`. Runs only while the component is mounted (the fleet screen exists
+ * only with an unlocked fleet) and the tab is visible; a tab coming back to view refreshes
+ * at once. One request at a time.
  */
 export function useBalances(
   client: VaultClient,
@@ -56,14 +65,18 @@ export function useBalances(
    * and read again; an answer read on another network is never shown (BUNNDLY-44).
    */
   network: Network = DEFAULT_NETWORK,
-): BalancesState & { readonly refresh: () => void } {
+): BalancesState & { readonly refresh: () => void; readonly feed: FeedState } {
   const [state, setState] = useState<BalancesState>(EMPTY);
+  /** Polling until the worker says every wallet is subscribed: never shown live early. */
+  const [feed, setFeed] = useState<FeedState>('polling');
   const [shownNetwork, setShownNetwork] = useState(network);
   if (shownNetwork !== network) {
     setShownNetwork(network);
     setState(EMPTY);
+    setFeed('polling'); // the worker opens a new socket for the new network
   }
   const reportRead = useReportRpcRead();
+  const reportFeed = useReportBalanceFeed();
   const inflight = useRef(false);
   const mounted = useRef(true);
   /** A refresh asked for while one was running (e.g. a new mint): run it afterwards. */
@@ -144,10 +157,14 @@ export function useBalances(
     latest.current = refresh;
   }, [refresh]);
 
+  // A full read now and then periodically. It runs again when the feed changes: going live
+  // it is the one reconciliation after the socket came back; going to polling, the first
+  // read of the fallback.
+  const live = feed === 'live';
   useEffect(() => {
     mounted.current = true;
     refresh();
-    const timer = setInterval(refresh, intervalMs);
+    const timer = setInterval(refresh, live ? Math.max(intervalMs, LIVE_RECONCILE_MS) : intervalMs);
     const onVisibility = (): void => {
       if (visible()) refresh();
     };
@@ -157,7 +174,65 @@ export function useBalances(
       clearInterval(timer);
       document.removeEventListener('visibilitychange', onVisibility);
     };
-  }, [refresh, intervalMs]);
+  }, [refresh, intervalMs, live]);
 
-  return { ...state, refresh };
+  // The worker's account subscriptions while this screen is open.
+  useEffect(() => {
+    let alive = true;
+    client.request({ type: 'balanceFeed', on: true }).then(
+      (res) => {
+        if (alive && res.network === currentNetwork.current) setFeed(res.state);
+      },
+      () => undefined, // no feed: the balances keep polling
+    );
+    return () => {
+      alive = false;
+      client.request({ type: 'balanceFeed', on: false }).catch(() => undefined);
+    };
+  }, [client]);
+
+  // One wallet's change at a time: only its row gets a new value (FleetRow is memoized).
+  useEffect(
+    () =>
+      client.onEvent((event) => {
+        if (event.kind !== 'balance') return;
+        // Network guard (as in BUNNDLY-44): a change read on a network no longer on
+        // screen never lands in the table.
+        if (event.network !== currentNetwork.current) return;
+        if (event.type === 'feed') {
+          setFeed(event.state);
+        } else if (event.type === 'sol') {
+          setState((s) =>
+            s.lamports === null || s.lamports.get(event.index) === event.lamports
+              ? s // before the first full read there is no row value to change
+              : { ...s, lamports: new Map(s.lamports).set(event.index, event.lamports) },
+          );
+        } else {
+          setState((s) =>
+            s.token?.mint !== event.mint || s.token.amounts.get(event.index) === event.amount
+              ? s
+              : {
+                  ...s,
+                  token: {
+                    ...s.token,
+                    amounts: new Map(s.token.amounts).set(event.index, event.amount),
+                  },
+                },
+          );
+        }
+      }),
+    [client],
+  );
+
+  useEffect(() => {
+    reportFeed(feed);
+  }, [feed, reportFeed]);
+  useEffect(
+    () => () => {
+      reportFeed(null); // no screen reads balances now
+    },
+    [reportFeed],
+  );
+
+  return { ...state, refresh, feed };
 }

@@ -191,7 +191,8 @@ describe('fleet table', () => {
     ).toEqual([
       '',
       'Wallet',
-      'Balance',
+      // where the balances come from, next to the sort button (BUNNDLY-57)
+      'BalancePolling',
       'Buy amount',
       'Priority fee',
       'Slippage',
