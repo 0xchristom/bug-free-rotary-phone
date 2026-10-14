@@ -134,6 +134,8 @@ function startedText(side: 'Buy' | 'Sell', run: BuyStatus): string {
   return `${side} started on ${walletsText(run.wallets)} · ${mode}${run.dryRun ? ' · DRY-RUN' : ''}`;
 }
 const PICK_GROUP = 'Pick a group tab: the commands act on one group at a time.';
+/** Why Immediate / Stairs cannot change now (BUNNDLY-93, the mockup's words). */
+const MODE_LOCKED = 'The mode can change once the current run ends.';
 /** Why a running group keeps its wallets, its amounts and its name (BUNNDLY-68). */
 const runningText = (name: string): string =>
   `${name} is running: wait for it to end or press STOP.`;
@@ -454,8 +456,9 @@ export function FleetScreen({
   const [commandBusy, setCommandBusy] = useState(false);
   const [commandError, setCommandError] = useState<string | null>(null);
   // Immediate or Stairs for the bar's BUY, SELL and ARM (BUNNDLY-61, mockup v2); a row
-  // action trades its one wallet at once.
-  const [execMode, setExecMode] = useState<'immediate' | 'stairs'>('immediate');
+  // action trades its one wallet at once. Stairs, every 6 s, 1 per step, like the mockup
+  // (BUNNDLY-93, Andy's interim decision).
+  const [execMode, setExecMode] = useState<'immediate' | 'stairs'>('stairs');
   const [everyText, setEveryText] = useState('6');
   const [perStepText, setPerStepText] = useState('1');
   const stairsBad = execMode === 'stairs' ? stairsProblem(everyText, perStepText) : null;
@@ -1058,7 +1061,8 @@ export function FleetScreen({
     });
   });
   const fleet = fleetFill(fleetFills);
-  const fill = viewRun && {
+  // Before the first run too: "0 of N filled" over N grey segments (BUNNDLY-93).
+  const fill = {
     text: fleet.text,
     bar: <FleetSegments tones={fleetFills.map((f) => f.tone)} />,
   };
@@ -1285,6 +1289,8 @@ export function FleetScreen({
             <Segmented
               label="Execution mode"
               value={execMode}
+              disabled={running}
+              title={running ? MODE_LOCKED : undefined}
               options={[
                 { value: 'immediate', label: 'Immediate', title: 'Every selected wallet at once' },
                 { value: 'stairs', label: 'Stairs', title: 'The selected wallets in timed steps' },

@@ -168,6 +168,8 @@ async function ready(): Promise<void> {
 
 /** The mint in the command bar, checked by the worker (BUNNDLY-59). */
 async function pasteMint(user: ReturnType<typeof setupUser>): Promise<void> {
+  // these tests send to every wallet at once; Stairs is the default since BUNNDLY-93
+  await user.click(screen.getByRole('button', { name: 'Immediate' }));
   await user.type(screen.getByLabelText(TARGET_LABEL), MINT);
   await screen.findByRole('columnheader', { name: 'Tokens (SPL)' }, TARGET_WAIT);
 }
