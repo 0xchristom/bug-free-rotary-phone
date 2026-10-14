@@ -110,6 +110,7 @@ function detection(extra: Partial<WatchDetection> = {}): WatchDetection {
     mint: MINT,
     source: 'pump.fun',
     path: 'log',
+    slot: null,
     signature: SIG,
     detectedAt: Date.UTC(2026, 9, 3, 12, 0, 5),
     runId: 1,
@@ -225,7 +226,7 @@ function setup(o: Setup = {}) {
 
 /** The fleet screen with its balances read: the command bar is ready. */
 async function openTabB(): Promise<void> {
-  await screen.findByText(/^Balances as of /u);
+  await screen.findByText(/^Slot \S+ · /u);
 }
 
 /** Types a creator into the command bar and waits until the worker named it a wallet. */
@@ -460,6 +461,33 @@ describe('connection, alarm and Wake Lock', () => {
     expect(audio.tones).toHaveLength(after);
   });
 
+  it('armed: the time since arming as mm:ss from the worker armedAt, next to the connection (BUNNDLY-91)', async () => {
+    const { user, update } = setup();
+    await arm(user);
+    const clock = () => screen.getByTitle('Time since arming');
+    // Armed 65 s ago by the worker's record; the bar ticks once a second, so 1 s of lag.
+    update({ connection: 'connected', armedAt: new Date(Date.now() - 65_000).toISOString() });
+    await waitFor(() => {
+      expect(clock().textContent).toMatch(/^01:0[456]$/u);
+    });
+    const line = clock().closest('.watchtext');
+    expect(line?.textContent).toMatch(/^Armed · watching \S+ for 01:0[456] · Connected/u);
+    // Past an hour the minutes go on: 61:05, not 01:05.
+    update({ armedAt: new Date(Date.now() - 3_665_000).toISOString() });
+    await waitFor(() => {
+      expect(clock().textContent).toMatch(/^61:0[456]$/u);
+    });
+    // The clock moves on its own while armed.
+    const shown = clock().textContent;
+    await waitFor(
+      () => {
+        expect(clock().textContent).not.toBe(shown);
+      },
+      { timeout: 2_500 },
+    );
+    expect(screen.getByText('Connected')).toBeTruthy();
+  });
+
   it('the tone repeats until "Mute"; the banner stays', async () => {
     const { user, update, audio } = setup({ alarmRepeatMs: 20 });
     await arm(user);
@@ -610,6 +638,25 @@ describe('detections and progress', () => {
       expect(screen.getByRole('button', { name: 'Buy' })).toHaveProperty('disabled', false);
     });
     expect(screen.getByLabelText(`Detected token ${usable}`)).toBeTruthy();
+  });
+
+  it('after a detection: its slot and the time to the first send, from the worker (BUNNDLY-91)', async () => {
+    const { user, update } = setup();
+    await arm(user);
+    // The worker's record: slot of the log notification, 37.6 ms from the log to /order.
+    update({
+      connection: 'connected',
+      detections: [detection({ slot: 452_762_723, reactionMs: 37.6 })],
+    });
+    const line = await screen.findByText(/^Token detected/u);
+    expect(line.textContent).toBe('Token detected in slot 452762723 · first buy sent +38 ms');
+    // Nothing reported yet: said so, not a slot 0 or a time from the UI clock.
+    update({ detections: [detection({ slot: null, reactionMs: null })] });
+    await waitFor(() => {
+      expect(screen.getByText(/^Token detected/u).textContent).toBe(
+        'Token detected, slot unknown · first buy not sent yet',
+      );
+    });
   });
 
   it('a buy started by a detection: the shared progress view counts from the detection', async () => {

@@ -96,7 +96,7 @@ const rail = (): string => screen.getByRole('contentinfo', { name: 'Status' }).t
 const columnTag = (): string | null => document.querySelector('.feed-tag')?.textContent ?? null;
 
 async function ready(): Promise<void> {
-  await eventually(() => screen.getByText(/^Balances as of /u));
+  await eventually(() => screen.getByText(/^Slot \S+ · /u));
 }
 
 afterEach(() => {

@@ -9,8 +9,14 @@ export {
   redactUrl,
 } from './rpc.ts';
 export type { ResilientTransportOptions, RpcSource } from './rpc.ts';
-export { MAX_ACCOUNTS_PER_CALL, chunk, createBalancesRpc, fetchSolBalances } from './balances.ts';
-export type { BalancesRpc } from './balances.ts';
+export {
+  MAX_ACCOUNTS_PER_CALL,
+  chunk,
+  createBalancesRpc,
+  fetchSolBalances,
+  fetchSolBalancesAt,
+} from './balances.ts';
+export type { BalancesRpc, SolBalancesRead } from './balances.ts';
 export {
   ASSOCIATED_TOKEN_PROGRAM_ADDRESS,
   MINT_SIZE,

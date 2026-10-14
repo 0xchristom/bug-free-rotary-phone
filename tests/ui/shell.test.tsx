@@ -33,13 +33,24 @@ function slowVault(source: VaultBalances['source'], delayMs: number) {
   const vault = mockVault(unlocked());
   const plain = vault.request.getMockImplementation();
   if (!plain) throw new Error('mockVault has no implementation');
-  const answer = { source, delayMs, network: 'mainnet' as Network };
+  const answer: {
+    source: VaultBalances['source'];
+    delayMs: number;
+    network: Network;
+    slot?: number;
+  } = { source, delayMs, network: 'mainnet' };
   vault.request.mockImplementation((req, options) =>
     req.type === 'refreshBalances'
       ? new Promise((resolve) => {
-          const { source: from, network } = answer;
+          const { source: from, network, slot } = answer;
           setTimeout(() => {
-            resolve({ network, balances: [], source: from, fetchedAt: '2026-10-12T12:00:00.000Z' });
+            resolve({
+              network,
+              balances: [],
+              source: from,
+              fetchedAt: '2026-10-12T12:00:00.000Z',
+              ...(slot === undefined ? {} : { slot }),
+            });
           }, answer.delayMs);
         })
       : plain(req, options),
@@ -132,6 +143,27 @@ describe('status rail: where the last read came from', () => {
     expect(rail().textContent).not.toContain('Helius');
     await tick(900);
     expect(rail().textContent).toContain('Fallback RPC (public) 900 ms');
+  });
+
+  it('the slot of the last balance read, as the worker gave it; "—" without one, never 0', async () => {
+    const { vault, answer } = slowVault('helius', 10);
+    // The slot from the mainnet fixture (tests/fixtures/detectors.mainnet.json).
+    answer.slot = 452_762_723;
+    await renderShell(vault);
+    const slot = (): HTMLElement => within(rail()).getByText(/^Slot /u);
+    expect(slot().textContent).toBe('Slot —');
+    expect(slot().title).toBe('No balance read yet');
+    await tick(10);
+    const time = new Date('2026-10-12T12:00:00.000Z').toLocaleTimeString('en-GB');
+    expect(slot().textContent).toBe(`Slot 452762723 · ${time}`);
+    expect(slot().title).toBe(`Balances read at slot 452762723, ${time}`);
+
+    // A read without a slot (no wallets read) says so; the old slot does not stay.
+    delete answer.slot;
+    await tick(60_000 + 10);
+    expect(slot().textContent).toBe(`Slot — · ${time}`);
+    expect(slot().title).toBe(`Balances read at slot unknown, ${time}`);
+    expect(rail().textContent).not.toMatch(/Slot 0/u);
   });
 
   it('forgets the read when the fleet is locked: the next fleet starts from "no read yet"', async () => {

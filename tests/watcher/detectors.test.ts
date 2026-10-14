@@ -294,6 +294,28 @@ describe('detector (both paths)', () => {
     ]);
   });
 
+  it('a fast-path detection carries the log notification slot', () => {
+    const n = F.notifications[0];
+    if (!n) throw new Error('no fixture');
+    // Read straight from the recorded mainnet notification, not from the detector.
+    const recorded = (n.message.params.result as unknown as { context: { slot: number } }).context
+      .slot;
+    expect(recorded).toBe(452_762_723);
+    const events: DetectorEvent[] = [];
+    const detector = createDetector(
+      {
+        getTransaction: () => new Promise(() => undefined),
+        clock: new FakeClock(true),
+        emit: (e) => events.push(e),
+      },
+      { watched: n.watched },
+    );
+    detector.onSignature({ ...live(n), slot: recorded });
+    const first = events[0];
+    expect(first?.kind === 'detection' && first.detection.path).toBe('log');
+    expect(first?.kind === 'detection' && first.detection.slot).toBe(452_762_723n);
+  });
+
   it('getTransaction with null three times, then the transaction: detected (slow path)', async () => {
     const [, f] = positives.find(([, x]) => x.expectedSource === 'raydium-launchlab') ?? [];
     if (!f) throw new Error('no fixture');

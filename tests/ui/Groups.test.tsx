@@ -198,7 +198,7 @@ function tabText(name: string): { count: string; sol: string; state: string } {
 }
 
 async function ready(): Promise<void> {
-  await eventually(() => screen.getByText(/^Balances as of /u));
+  await eventually(() => screen.getByText(/^Slot \S+ · /u));
 }
 
 async function typeMint(user: UserEvent): Promise<void> {

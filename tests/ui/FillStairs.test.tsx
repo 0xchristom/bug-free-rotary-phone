@@ -185,7 +185,7 @@ function verifyEvent(index: number, status: VerifyEvent['status']): VerifyEvent 
 }
 
 async function showMint(user: UserEvent): Promise<void> {
-  await eventually(() => screen.getByText(/^Balances as of /u));
+  await eventually(() => screen.getByText(/^Slot \S+ · /u));
   await user.type(screen.getByLabelText(TARGET_LABEL), MINT);
   await screen.findByRole('columnheader', { name: 'Tokens (SPL)' }, TARGET_WAIT);
 }
