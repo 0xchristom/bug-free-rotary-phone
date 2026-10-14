@@ -163,7 +163,7 @@ function amount(label: string): HTMLInputElement {
 }
 
 async function ready(): Promise<void> {
-  await eventually(() => screen.getByText(/^Balances as of /u));
+  await eventually(() => screen.getByText(/^Slot \S+ · /u));
 }
 
 /** The mint in the command bar, checked by the worker (BUNNDLY-59). */

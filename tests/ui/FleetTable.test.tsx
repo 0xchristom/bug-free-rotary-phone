@@ -159,7 +159,7 @@ function row(label: string): HTMLElement {
  * to build, so the wait is longer than the default one.
  */
 async function ready(): Promise<void> {
-  await eventually(() => screen.getByText(/^Balances as of /u));
+  await eventually(() => screen.getByText(/^Slot \S+ · /u));
 }
 
 function cells(label: string): string[] {

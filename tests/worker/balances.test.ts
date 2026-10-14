@@ -30,6 +30,9 @@ interface Payload {
 
 type Behaviour = (payload: Payload) => Promise<unknown>;
 
+/** The slot `answer` reads at (from the mainnet fixture tests/fixtures/detectors.mainnet.json). */
+const READ_SLOT = 452_762_723n;
+
 /** Mock transports per URL; `answer` gives each address 1 SOL + its position. */
 function network(behaviour: Partial<Record<string, Behaviour>> = {}) {
   const urls: string[] = [];
@@ -38,7 +41,7 @@ function network(behaviour: Partial<Record<string, Behaviour>> = {}) {
       jsonrpc: '2.0',
       id: payload.id,
       result: {
-        context: { slot: 1n },
+        context: { slot: READ_SLOT },
         value: payload.params[0].map((_, i) => ({
           lamports: 1_000_000_000n + BigInt(i),
           owner: '11111111111111111111111111111111',
@@ -125,7 +128,9 @@ describe('refreshBalances in the vault worker', () => {
     );
     expect(text).not.toContain(KEY);
     expect(text).not.toContain('helius-rpc');
-    expect(Object.keys(res).sort()).toEqual(['balances', 'fetchedAt', 'network', 'source']);
+    expect(Object.keys(res).sort()).toEqual(['balances', 'fetchedAt', 'network', 'slot', 'source']);
+    // The slot of the read (BUNNDLY-91), as a number for the UI.
+    expect(res.slot).toBe(452_762_723);
   });
 
   it('a custom RPC URL wins over the key', async () => {

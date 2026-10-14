@@ -123,7 +123,7 @@ afterEach(cleanup);
 describe('stale mint answers', () => {
   it('a late NOT_A_TOKEN_MINT for the old mint does not drop the new, valid mint', async () => {
     const { pending, user } = setup();
-    await screen.findByText(/^Balances as of /u);
+    await screen.findByText(/^Slot \S+ · /u);
     await submitMint(user, M.WrongMint);
     await waitFor(() => {
       expect(pending.has(M.WrongMint)).toBe(true);
@@ -147,7 +147,7 @@ describe('stale mint answers', () => {
 
   it('a late answer for the old mint is not shown under the new mint', async () => {
     const { pending, user } = setup();
-    await screen.findByText(/^Balances as of /u);
+    await screen.findByText(/^Slot \S+ · /u);
     await submitMint(user, M.MintA);
     await waitFor(() => {
       expect(pending.has(M.MintA)).toBe(true);
@@ -170,7 +170,7 @@ describe('stale mint answers', () => {
 
   it('after clearing the field, late answers for the old mint (success or error) are ignored', async () => {
     const { pending, user, vault } = setup();
-    await screen.findByText(/^Balances as of /u);
+    await screen.findByText(/^Slot \S+ · /u);
     await submitMint(user, M.MintC);
     await waitFor(() => {
       expect(pending.has(M.MintC)).toBe(true);
@@ -204,7 +204,7 @@ describe('stale mint answers', () => {
 
   it('a NOT_A_TOKEN_MINT for the current mint is still shown at the field', async () => {
     const { pending, user } = setup();
-    await screen.findByText(/^Balances as of /u);
+    await screen.findByText(/^Slot \S+ · /u);
     await submitMint(user, M.Bad);
     await waitFor(() => {
       expect(pending.has(M.Bad)).toBe(true);

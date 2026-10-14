@@ -13,6 +13,8 @@ export interface RpcRead {
   readonly ms: number;
   /** When the worker read the balances (ISO time), shown in the rail (BUNNDLY-73). */
   readonly at: string;
+  /** The slot the worker read the balances at (BUNNDLY-91); null when it reported none. */
+  readonly slot: number | null;
 }
 
 export type ReportRpcRead = (read: RpcRead) => void;

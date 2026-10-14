@@ -154,6 +154,11 @@ describe('one-shot (default)', () => {
       reactionMs: 12,
       problem: null,
     });
+    // BUNNDLY-91: the slot of the recorded notification, as a number (JSON-safe for the UI).
+    const recorded = (N.message as unknown as { params: { result: { context: { slot: number } } } })
+      .params.result.context.slot;
+    expect(recorded).toBeGreaterThan(450_000_000);
+    expect(detections[0]?.detection.slot).toBe(recorded);
     // the slow path still verifies the log
     await t.clock.runUntil(t.clock.now() + 1_000);
     expect(t.of('verified')).toMatchObject([{ mint: MINT, match: true }]);

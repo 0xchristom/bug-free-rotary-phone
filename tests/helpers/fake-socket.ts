@@ -38,14 +38,20 @@ export class FakeSocket implements WebSocketLike {
   reply(id: unknown): void {
     this.fire('message', JSON.stringify({ jsonrpc: '2.0', id, error: { code: -32601 } }));
   }
-  notify(signature: string, err: unknown = null, logs: string[] = ['Program log: x']): void {
+  /** `context` is the notification's context (BUNNDLY-91: its slot); `{ slot: 1 }` by default. */
+  notify(
+    signature: string,
+    err: unknown = null,
+    logs: string[] = ['Program log: x'],
+    context: unknown = { slot: 1 },
+  ): void {
     this.fire(
       'message',
       JSON.stringify({
         jsonrpc: '2.0',
         method: 'logsNotification',
         params: {
-          result: { context: { slot: 1 }, value: { signature, err, logs } },
+          result: { context, value: { signature, err, logs } },
           subscription: 7,
         },
       }),

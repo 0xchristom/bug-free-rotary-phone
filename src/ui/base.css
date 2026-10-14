@@ -1253,6 +1253,11 @@ dl.summary div.wide dd {
   font-weight: 600;
 }
 
+/* The clock does not jitter the line as digits change (BUNNDLY-91). */
+.watchline .armed-for {
+  font-variant-numeric: tabular-nums;
+}
+
 .watchline .conn[data-tone='ok'] {
   color: var(--ok);
 }
@@ -1296,6 +1301,11 @@ dl.summary div.wide dd {
 .dash-notes p {
   margin: 0;
   font-size: var(--fs-note);
+}
+
+.detect-line {
+  color: var(--watch);
+  font-variant-numeric: tabular-nums;
 }
 
 .warn-line {

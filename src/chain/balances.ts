@@ -30,12 +30,30 @@ export async function fetchSolBalances(
   rpc: BalancesRpc,
   addresses: readonly string[],
 ): Promise<bigint[]> {
+  return (await fetchSolBalancesAt(rpc, addresses)).lamports;
+}
+
+export interface SolBalancesRead {
+  readonly lamports: bigint[];
+  /**
+   * The lowest `context.slot` of the batches (BUNNDLY-91): every balance is at least this
+   * fresh. Null when nothing was read (no addresses).
+   */
+  readonly slot: bigint | null;
+}
+
+/** Like fetchSolBalances, with the slot the read is as of. */
+export async function fetchSolBalancesAt(
+  rpc: BalancesRpc,
+  addresses: readonly string[],
+): Promise<SolBalancesRead> {
   const result: bigint[] = [];
+  let slot: bigint | null = null;
   for (const batch of chunk(
     addresses.map((a) => address(a)),
     MAX_ACCOUNTS_PER_CALL,
   )) {
-    const { value } = await rpc
+    const { context, value } = await rpc
       .getMultipleAccounts(batch, {
         encoding: 'base64',
         // Only lamports are needed: skip the account data.
@@ -45,6 +63,8 @@ export async function fetchSolBalances(
       .send();
     if (value.length !== batch.length) throw new Error('getMultipleAccounts: wrong length');
     for (const account of value) result.push(account ? BigInt(account.lamports) : 0n);
+    const at = context.slot;
+    if (slot === null || at < slot) slot = at;
   }
-  return result;
+  return { lamports: result, slot };
 }

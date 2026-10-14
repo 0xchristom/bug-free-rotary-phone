@@ -9,6 +9,7 @@ import {
   createBalancesRpc,
   createResilientTransport,
   fetchSolBalances,
+  fetchSolBalancesAt,
   redactUrl,
 } from '../../src/chain/index.ts';
 import { AppError, isAppError } from '../../src/core/errors.ts';
@@ -30,7 +31,10 @@ interface Payload {
 }
 
 /** Fake Solana RPC: answers getMultipleAccounts from BALANCE and records each call. */
-function fakeTransport(lamportsOf: (a: string) => bigint | null = (a) => BALANCE.get(a) ?? 0n) {
+function fakeTransport(
+  lamportsOf: (a: string) => bigint | null = (a) => BALANCE.get(a) ?? 0n,
+  slots: readonly bigint[] = [],
+) {
   const calls: Payload[] = [];
   const transport = vi.fn((config: { payload: unknown }) => {
     const payload = config.payload as Payload;
@@ -51,7 +55,8 @@ function fakeTransport(lamportsOf: (a: string) => bigint | null = (a) => BALANCE
     return Promise.resolve({
       jsonrpc: '2.0',
       id: payload.id,
-      result: { context: { slot: 1n }, value },
+      // Call n answers at slots[n - 1] (BUNNDLY-91); 1 when not given.
+      result: { context: { slot: slots[calls.length - 1] ?? 1n }, value },
     });
   });
   return { transport: transport as unknown as RpcTransport, calls };
@@ -101,6 +106,22 @@ describe('fetchSolBalances', () => {
     const result = await fetchSolBalances(createBalancesRpc(fake.transport), [present, missing]);
     expect(result).toEqual([huge, 0n]);
     expect(typeof result[0]).toBe('bigint');
+  });
+
+  it('the read is as of the lowest slot of its batches, not the last or the highest', async () => {
+    // Three batches (250 addresses) answered at different slots; the middle one is lowest.
+    const fake = fakeTransport(undefined, [452_762_725n, 452_762_723n, 452_762_724n]);
+    const read = await fetchSolBalancesAt(createBalancesRpc(fake.transport), ADDRESSES);
+    expect(fake.calls).toHaveLength(3);
+    expect(read.slot).toBe(452_762_723n);
+    expect(read.lamports).toHaveLength(250);
+  });
+
+  it('no addresses: no call and no slot (null, not 0)', async () => {
+    const fake = fakeTransport();
+    const read = await fetchSolBalancesAt(createBalancesRpc(fake.transport), []);
+    expect(fake.calls).toHaveLength(0);
+    expect(read).toEqual({ lamports: [], slot: null });
   });
 
   it('rejects an invalid address before any call', async () => {

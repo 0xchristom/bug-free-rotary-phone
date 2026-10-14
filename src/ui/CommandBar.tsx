@@ -11,8 +11,10 @@ import type { TargetKind } from '../chain/target.ts';
 import { toUserMessage } from '../core/errors.ts';
 import type { WatchDetection, WatchStatus } from '../watcher/watch.ts';
 import {
+  armedForLabel,
   connectionLabel,
   connectionTone,
+  detectionLine,
   isCreatorAddress,
   SOURCE_LABELS,
 } from './watch-labels.ts';
@@ -176,7 +178,7 @@ export function CommandBar({
 
   const armed = watch?.armed ?? false;
   const [now, setNow] = useState(() => Date.now());
-  // "Last message N s ago" moves while the watcher is armed.
+  // "Last message N s ago" and the time since arming move while the watcher is armed.
   useEffect(() => {
     if (!armed) return;
     const timer = setInterval(() => {
@@ -190,6 +192,7 @@ export function CommandBar({
     watch?.lastMessageAt == null
       ? null
       : Math.max(0, Math.round((now - watch.lastMessageAt) / 1000));
+  const armedAt = watch === null ? Number.NaN : Date.parse(watch.armedAt);
   const helpId = `${ids}-help`;
   // One sentence under the strip: why the command that fits the target is off.
   const why =
@@ -242,7 +245,17 @@ export function CommandBar({
         <span className="watchtext">
           {armed && watch ? (
             <>
-              <b>Armed</b> · watching {shortAddress(watch.creator)} ·{' '}
+              <b>Armed</b> · watching {shortAddress(watch.creator)}
+              {Number.isFinite(armedAt) && (
+                <>
+                  {' '}
+                  for{' '}
+                  <span className="armed-for" title="Time since arming">
+                    {armedForLabel(now - armedAt)}
+                  </span>
+                </>
+              )}{' '}
+              ·{' '}
               <span className="conn" data-tone={tone}>
                 {connectionLabel(watch.connection, watch.attempt)}
               </span>
@@ -300,6 +313,7 @@ export function CommandBar({
           </p>
         )}
         {why && <p className="muted cmd-why">{why}</p>}
+        {detected && <p className="detect-line">{detectionLine(detected)}</p>}
         {armed && (
           <p className="muted" role="status">
             The watcher is armed. Do not close or reload this tab: the watcher and the buy live only
