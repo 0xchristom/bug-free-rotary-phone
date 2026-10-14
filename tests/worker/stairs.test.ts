@@ -74,7 +74,7 @@ async function setup(autoLockMinutes?: AutoLockMinutes) {
   const events: ExecutorEvent[] = [];
   h.onEvent((e) => {
     // Watcher and live balance events are not the executor's (BUNNDLY-57)
-    if (e.kind !== 'watch' && e.kind !== 'balance') events.push(e);
+    if (e.kind !== 'watch' && e.kind !== 'balance' && e.kind !== 'backup') events.push(e);
   });
   await h.handle({
     type: 'create',

@@ -225,7 +225,7 @@ describe('status rail: the rest of the line', () => {
   ] as const)('an open fleet with auto-lock %s says "%s" and no socket', (minutes, label) => {
     const text = show(unlocked(), minutes).textContent;
     expect(text).toContain(label);
-    expect(text).toContain('Backup: manual');
+    expect(text).toContain('Backup: off');
     expect(text).toContain('WebSocket: off');
   });
 

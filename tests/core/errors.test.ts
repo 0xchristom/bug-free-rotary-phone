@@ -51,6 +51,7 @@ describe('ERROR_MESSAGES', () => {
         'NO_WALLETS_TO_BUY',
         'NO_WALLETS_TO_SELL',
         'WALLET_IN_RUN',
+        'WALLET_NOT_BACKED_UP',
         'GROUP_RUNNING',
         'INVALID_MINT_ADDRESS',
         'INVALID_STAIRS',

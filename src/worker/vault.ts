@@ -106,6 +106,12 @@ import {
   type WalletGroupV1,
 } from '../core/index.ts';
 import {
+  createBackup,
+  type BackupDirectory,
+  type BackupFleet,
+  type BackupStore,
+} from './backup.ts';
+import {
   DEFAULT_PREFS,
   fileIdOf,
   isWindowChoice,
@@ -195,6 +201,8 @@ export interface VaultOptions {
    * IndexedDB in the worker. Without it nothing is remembered on the device.
    */
   readonly remember?: RememberStore | null;
+  /** Where the backup folder's handle is kept (BUNNDLY-62); without it there is no folder. */
+  readonly backup?: BackupStore | null;
 }
 
 interface SecretWallet {
@@ -614,6 +622,7 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
   };
 
   const lock = (): void => {
+    backup.locked();
     feed?.stream.stop();
     feed = null;
     feedWanted = false;
@@ -711,7 +720,51 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
     const fileText = serializeKeystoreFile(file);
     pending = fileText;
     await keepRemembered(next, fileText);
+    await backup.changed(backupFleet(next, fileText));
     return { fileText, info: infoOf(next) };
+  };
+
+  // --- The backup folder (BUNNDLY-62): backup.ts writes, the vault only calls it ---
+  const backup = createBackup({
+    store: options.backup ?? null,
+    now,
+    onChange: (view) => {
+      emit({ kind: 'backup', view });
+    },
+  });
+  /** The fleet as the backup writes it; its secrets only while it is still open. */
+  const backupFleet = (vault: UnlockedVault, fileText: string): BackupFleet => {
+    const at = session;
+    const alive = (): boolean => session === at && unlocked?.fileId === vault.fileId;
+    return {
+      fileId: vault.fileId,
+      fleetName: vault.fleetName,
+      fileText,
+      indices: vault.publicWallets.map((w) => w.index),
+      secrets: () => {
+        const open = unlocked;
+        if (open === null || !alive()) throw new AppError('VAULT_LOCKED');
+        return toSecrets(open, open.wallets, open.settings, open.apiKeys);
+      },
+      alive,
+    };
+  };
+  /** The open fleet's state encrypted with the session key, as `rebuild` writes it. */
+  const sealedNow = async (vault: UnlockedVault) => {
+    const labels = new Map(vault.publicWallets.map((w) => [w.index, w.label]));
+    const file = await buildKeystoreWithSession(
+      toSecrets(vault, vault.wallets, vault.settings, vault.apiKeys),
+      { fleetName: vault.fleetName, createdAt: vault.createdAt, labels },
+      vault.session,
+    );
+    if (unlocked !== vault) throw new AppError('VAULT_LOCKED');
+    return { file, fleet: backupFleet(vault, serializeKeystoreFile(file)) };
+  };
+  /** After a fleet opened: its folder, if it has one, gets the files now. */
+  const backupOpened = async (): Promise<void> => {
+    const vault = unlocked;
+    if (vault === null) return;
+    await backup.opened((await sealedNow(vault)).fleet, pending === null);
   };
 
   // --- The fleet remembered on this device and the passwordless window (BUNNDLY-52) ---
@@ -1174,8 +1227,13 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
     const spend = new Map(settings.maxSpend.map((m) => [m.index, m.lamports]));
     const members = new Set(group.wallets);
     const listed = list === null ? null : new Set(list);
+    // A wallet without a confirmed backup buys and arms with nothing (BUNNDLY-62).
+    if (list?.some((i) => !backup.backedUp(i))) throw new AppError('WALLET_NOT_BACKED_UP');
+    const unsafe = group.wallets.some((i) => !inactive.has(i) && !backup.backedUp(i));
     const takes = (index: number): boolean =>
-      members.has(index) && (listed === null ? !inactive.has(index) : listed.has(index));
+      members.has(index) &&
+      backup.backedUp(index) &&
+      (listed === null ? !inactive.has(index) : listed.has(index));
     const wallets = vault.publicWallets.flatMap((w): ExecutorWallet[] => {
       if (!takes(w.index)) return [];
       const sol = spend.get(w.index);
@@ -1202,7 +1260,9 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
         },
       ];
     });
-    if (wallets.length === 0) throw new AppError('NO_WALLETS_TO_BUY');
+    if (wallets.length === 0) {
+      throw new AppError(unsafe ? 'WALLET_NOT_BACKED_UP' : 'NO_WALLETS_TO_BUY');
+    }
     // Live mode never retries without the chain check, which needs the RPC.
     if (
       !vault.settings.global.dryRun &&
@@ -1696,7 +1756,8 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
       request.type !== 'preview' &&
       request.type !== 'remembered' &&
       request.type !== 'pendingFile' &&
-      request.type !== 'balanceFeed'
+      request.type !== 'balanceFeed' &&
+      request.type !== 'backupStatus'
     ) {
       touch();
     }
@@ -1729,6 +1790,7 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
         install(opened, fileText); // a new fleet has no file on disk yet
         touch();
         await rememberOpened(requireUnlocked(), fileText, rememberFlag(request.remember));
+        await backupOpened();
         return { fileText, info: infoOf(requireUnlocked()) };
       }
       case 'preview': {
@@ -1745,12 +1807,16 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
         install(await openKeystore(parseKeystoreFile(fileText), password, progress));
         touch();
         await rememberOpened(requireUnlocked(), fileText, rememberFlag(request.remember));
+        await backupOpened();
         return status();
       }
       case 'remembered':
         return await rememberedView();
       case 'resume':
-        if (unlocked === null) await resume();
+        if (unlocked === null) {
+          await resume();
+          await backupOpened();
+        }
         return status();
       case 'unlockRemembered': {
         const password = str(request.password);
@@ -1762,6 +1828,7 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
         );
         touch();
         await rememberOpened(requireUnlocked(), account.fileText, true);
+        await backupOpened();
         return status();
       }
       case 'setRemember': {
@@ -1964,6 +2031,27 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
         syncFeed();
         return { network: networkOf(unlocked), state: feed?.stream.state() ?? 'polling' };
       }
+      case 'backupStatus':
+        return backup.view();
+      case 'enableBackup': {
+        const vault = requireUnlocked();
+        const handle: unknown = request.handle;
+        if (!isRecord(handle) || typeof handle.getFileHandle !== 'function') return badRequest();
+        const password = str(request.password);
+        // The password as for the plain export: a full derivation and decryption of the
+        // fleet as it is now. A wrong one fails here and nothing is turned on.
+        const { file, fleet } = await sealedNow(vault);
+        await openKeystore(file, password, progress);
+        if (unlocked !== vault) throw new AppError('VAULT_LOCKED');
+        return await backup.enable(fleet, handle as unknown as BackupDirectory);
+      }
+      case 'backupHandle':
+        return unlocked === null ? null : backup.handle();
+      case 'backupRetry':
+        return await backup.retry((await sealedNow(requireUnlocked())).fleet);
+      case 'disableBackup':
+        requireUnlocked();
+        return await backup.disable();
       default:
         return badRequest();
     }
