@@ -16,7 +16,7 @@ import type { ExecutorEvent, WalletEvent } from '../../src/executor/index.ts';
 import type { VaultStatus } from '../../src/worker/protocol.ts';
 import { createVaultHandler } from '../../src/worker/vault.ts';
 import { FakeClock } from '../helpers/fake-clock.ts';
-import { FakeJupiter } from '../helpers/fake-jupiter.ts';
+import { FakeJupiter, type FakeJupiterScript } from '../helpers/fake-jupiter.ts';
 import { USDC, buildTransaction } from '../helpers/tx-fakes.ts';
 
 vi.setConfig({ testTimeout: 60_000 });
@@ -25,7 +25,7 @@ const PASSWORD = 'correct horse battery staple';
 const MNEMONIC_12 = `${'abandon '.repeat(11)}about`;
 const SOL = 1_000_000_000n;
 
-async function setup(walletCount = 3) {
+async function setup(walletCount = 3, script: FakeJupiterScript = {}) {
   /** SOL balance by address; 1 SOL when not set. */
   const lamports = new Map<string, bigint>();
   const chain = {
@@ -53,6 +53,7 @@ async function setup(walletCount = 3) {
   const clock = new FakeClock();
   const jupiter = new FakeJupiter(clock, {
     transaction: (taker) => buildTransaction({ feePayer: taker }),
+    ...script,
   });
   const h = createVaultHandler({
     chain,
@@ -94,9 +95,11 @@ async function setup(walletCount = 3) {
       .orderRequests()
       .map((r) => [addresses.indexOf(r.taker ?? ''), r.amount, r.slippageBps] as const)
       .sort((a, b) => a[0] - b[0]);
-  const buy = async (): Promise<WalletEvent[]> => {
+  const start = async (): Promise<void> => {
     await h.handle({ type: 'refreshBalances' });
     await h.handle({ type: 'startBuy', mint: USDC });
+  };
+  const finish = async (): Promise<WalletEvent[]> => {
     const finished = () => events.some((e) => e.kind === 'run' && e.phase === 'finished');
     for (let i = 0; i < 400 && !finished(); i++) {
       await clock.runUntil();
@@ -110,7 +113,11 @@ async function setup(walletCount = 3) {
       )
       .sort((a, b) => a.index - b.index);
   };
-  return { h, jupiter, status, balance, save, asked, buy };
+  const buy = async (): Promise<WalletEvent[]> => {
+    await start();
+    return finish();
+  };
+  return { h, jupiter, status, balance, save, asked, start, finish, buy };
 }
 
 const trade = (
@@ -247,5 +254,34 @@ describe('saveSettings with trade parameters', () => {
     await t.save({}, saved);
     await t.save({ maxSpend: [{ index: 1, lamports: 9n }] });
     expect((await t.status()).info?.settings.trade).toEqual(saved);
+  });
+});
+
+describe('trade settings of wallets in a running buy are locked (WALLET_IN_RUN)', () => {
+  it('refused for a wallet of the run, also through a fleet default; others stay editable; free after STOP', async () => {
+    const t = await setup(3, { orderDelayMs: () => 600_000 });
+    const before = trade({ buySlippageBps: 300 }, [{ index: 2, buySlippageBps: 100 }]);
+    const sol = (lamports: bigint, extra: { index: number; lamports: bigint }[] = []) => ({
+      maxSpend: [{ index: 0, lamports }, ...extra],
+      active: [{ index: 2, active: false }], // 2 does not buy
+    });
+    await t.save(sol(5_000_000n), before);
+    await t.start();
+    // wallet 0 is in the run: its amount, its slippage (via the default) are locked
+    expect(await codeOf(t.save(sol(6_000_000n), before))).toBe('WALLET_IN_RUN');
+    expect(
+      await codeOf(
+        t.save(sol(5_000_000n), { ...before, fleet: { ...before.fleet, buySlippageBps: 200 } }),
+      ),
+    ).toBe('WALLET_IN_RUN');
+    // wallet 2 is not: its own values and its SOL amount change
+    const other = trade({ buySlippageBps: 300 }, [{ index: 2, buySlippageBps: 50 }]);
+    expect(await codeOf(t.save(sol(5_000_000n, [{ index: 2, lamports: 1n }]), other))).toBe('ok');
+    expect((await t.status()).info?.settings.trade).toEqual(other);
+    // the run still asks for the amount of its start
+    expect(t.asked()).toEqual([[0, 5_000_000n, 300]]);
+    await t.h.handle({ type: 'stop' });
+    await t.finish();
+    expect(await codeOf(t.save(sol(6_000_000n), before))).toBe('ok');
   });
 });

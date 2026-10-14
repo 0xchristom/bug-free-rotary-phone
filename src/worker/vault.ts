@@ -847,6 +847,24 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
     return launch(unlocked, 'sell', mint, wallets, null);
   };
 
+  /**
+   * True when the new settings change what a wallet of the running buy or sell trades
+   * with: its own value or a fleet default it takes (BUNNDLY-58). The run keeps the
+   * amounts of its start either way; the refusal keeps the table honest about them.
+   */
+  const changesRunWallets = (before: FleetSettingsV1, after: FleetSettingsV1): boolean => {
+    if (runPlan === null) return false;
+    const solOf = (s: FleetSettingsV1, index: number): bigint | undefined => {
+      const lamports = s.maxSpend.find((m) => m.index === index)?.lamports;
+      return lamports !== undefined && lamports > 0n ? lamports : undefined;
+    };
+    const key = (s: FleetSettingsV1, index: number): string =>
+      JSON.stringify(walletTrade(s.trade, index, solOf(s, index)), (_k, v: unknown) =>
+        typeof v === 'bigint' ? v.toString() : v,
+      );
+    return [...runPlan.amounts.keys()].some((i) => key(before, i) !== key(after, i));
+  };
+
   /** Starts the executor for a buy or a sell and keeps it as the running one. */
   const launch = (
     vault: UnlockedVault,
@@ -1095,6 +1113,7 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
         const switched = settings.global.network !== networkOf(vault);
         // A running buy keeps its network to the end (an armed watcher is refused above).
         if (switched && buy !== null) throw new AppError('BUY_RUNNING');
+        if (changesRunWallets(vault.settings, settings)) throw new AppError('WALLET_IN_RUN');
         const result = await rebuild(
           vault,
           vault.wallets,
