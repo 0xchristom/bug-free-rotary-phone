@@ -6,7 +6,7 @@
  * a detection. Events and status from a mock worker.
  */
 import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
+import type { UserEvent } from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { FleetSettingsV1 } from '../../src/core/index.ts';
 import type { RunEvent } from '../../src/executor/index.ts';
@@ -21,6 +21,7 @@ import {
 import type { WatchDetection, WatchStatus } from '../../src/watcher/watch.ts';
 import type { VaultInfo, VaultRequest, VaultStatus } from '../../src/worker/protocol.ts';
 import { fleetInfo, mockStorage, mockVault } from './fakes.ts';
+import { setupUser } from './user.ts';
 
 afterEach(cleanup);
 
@@ -204,17 +205,17 @@ function setup(o: Setup = {}) {
       });
     });
   };
-  return { vault, requests, audio, wake, update, user: userEvent.setup() };
+  return { vault, requests, audio, wake, update, user: setupUser() };
 }
 
-async function openTabB(user: ReturnType<typeof userEvent.setup>): Promise<void> {
+async function openTabB(user: UserEvent): Promise<void> {
   await screen.findByText(/^Balances as of /u);
   await user.click(screen.getByRole('button', { name: 'Mode B: watch a creator' }));
 }
 
 const armButton = () => screen.getByRole('button', { name: 'ARM' });
 
-async function arm(user: ReturnType<typeof userEvent.setup>): Promise<void> {
+async function arm(user: UserEvent): Promise<void> {
   await openTabB(user);
   await user.type(screen.getByLabelText('Creator address'), CREATOR);
   await user.click(armButton());
