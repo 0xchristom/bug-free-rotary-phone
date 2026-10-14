@@ -1,7 +1,7 @@
 import { useId, useState, type SyntheticEvent } from 'react';
 import { toUserMessage } from '../../core/errors.ts';
 import { Button, Input, ProgressBar } from '../kit/index.ts';
-import { useRememberedView } from '../remember-view.ts';
+import { confirmForget, useRememberedView } from '../remember-view.ts';
 import { useVault } from '../vault-state.ts';
 
 export interface StartScreenProps {
@@ -46,7 +46,7 @@ export function StartScreen({ onCreate, onOpen }: StartScreenProps) {
   };
 
   const forget = async (): Promise<void> => {
-    if (!window.confirm(FORGET_CONFIRM)) return;
+    if (!(await confirmForget(client, FORGET_CONFIRM))) return;
     setProblem(null);
     try {
       await client.request({ type: 'forget' });

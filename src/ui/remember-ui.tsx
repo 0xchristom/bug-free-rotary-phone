@@ -7,7 +7,12 @@ import { useId, useState } from 'react';
 import { toUserMessage } from '../core/errors.ts';
 import type { RememberedView, VaultRequest } from '../worker/protocol.ts';
 import { Button, Checkbox } from './kit/index.ts';
-import { UNAVAILABLE_HINT, WINDOW_OPTIONS, useRememberedView } from './remember-view.ts';
+import {
+  UNAVAILABLE_HINT,
+  WINDOW_OPTIONS,
+  confirmForget,
+  useRememberedView,
+} from './remember-view.ts';
 import { useVault } from './vault-state.ts';
 
 export interface RememberOptionProps {
@@ -59,7 +64,14 @@ export function DeviceSettings() {
           checked={remember && !unavailable}
           disabled={busy || unavailable}
           onChange={(checked) => {
-            void run({ type: 'setRemember', remember: checked, windowMs });
+            if (checked) {
+              void run({ type: 'setRemember', remember: checked, windowMs });
+              return;
+            }
+            // Turning it off forgets the device: the same question when only it holds the file.
+            void confirmForget(client, null).then((yes) => {
+              if (yes) void run({ type: 'setRemember', remember: false, windowMs });
+            });
           }}
         />
         Remember this fleet on this device
@@ -101,7 +113,9 @@ export function DeviceSettings() {
           variant="ghost"
           disabled={busy || unavailable || view.account === null}
           onClick={() => {
-            if (window.confirm(FORGET_CONFIRM_SETTINGS)) void run({ type: 'forget' });
+            void confirmForget(client, FORGET_CONFIRM_SETTINGS).then((yes) => {
+              if (yes) void run({ type: 'forget' });
+            });
           }}
         >
           Forget this device

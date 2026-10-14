@@ -5,6 +5,7 @@
  */
 import { useCallback, useEffect, useState } from 'react';
 import type { RememberedView } from '../worker/protocol.ts';
+import type { VaultClient } from '../worker/vault-client.ts';
 import { useVault } from './vault-state.ts';
 
 const MINUTE_MS = 60_000;
@@ -52,6 +53,26 @@ export function useRememberedView(): {
     setVersion((v) => v + 1);
   }, []);
   return { view, reload };
+}
+
+export const FORGET_UNSAVED_CONFIRM =
+  'The fleet file on your disk is older than this fleet, or was never saved: only this browser holds the latest changes. Forgetting this device deletes them for good. Forget anyway?';
+
+/**
+ * Asks before the remembered fleet is removed: `usual` while the disk holds its file (null:
+ * no question then), the stronger question while only the browser does (BUNNDLY-80). Read
+ * fresh from the vault, since a change made after the view was read may have left the disk
+ * behind.
+ */
+export async function confirmForget(client: VaultClient, usual: string | null): Promise<boolean> {
+  let unsaved = true; // unknown is treated as the risky case
+  try {
+    unsaved = (await client.request({ type: 'remembered' })).account?.unsaved ?? false;
+  } catch {
+    // keep the stronger question
+  }
+  if (unsaved) return window.confirm(FORGET_UNSAVED_CONFIRM);
+  return usual === null || window.confirm(usual);
 }
 
 /**

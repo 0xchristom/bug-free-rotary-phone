@@ -4,6 +4,7 @@ import type { Network } from '../core/network.ts';
 import { saveKeystoreFile, type StorageEnv } from '../storage/keystore-file.ts';
 import type { VaultClient } from '../worker/vault-client.ts';
 import type { VaultStatus } from '../worker/protocol.ts';
+import { reportSaved } from './use-pending-file.ts';
 
 const BUY_RUNNING =
   'The network cannot change during a buy. Wait until it ends or stop it with STOP.';
@@ -127,6 +128,7 @@ export function useNetworkSwitch(
     setFile({ ...current, saving: true });
     saveKeystoreFile(current.fileText, current.fleetName, storage, { confirmOverwrite }).then(
       (result) => {
+        reportSaved(client, current.fileText);
         setFile((f) => (f === null ? null : { kind: 'saved', fileName: result.fileName }));
       },
       (e: unknown) => {

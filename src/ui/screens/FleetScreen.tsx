@@ -33,6 +33,7 @@ import { formatSol } from '../sol.ts';
 import { LOCKED_HINT, applyWalletPatch, plannedSpend, type WalletPatch } from '../trade-edit.ts';
 import { useBalances } from '../use-balances.ts';
 import { EMPTY_BUY, type BuyRow, type BuyView } from '../use-buy.ts';
+import { reportSaved } from '../use-pending-file.ts';
 import { useVault } from '../vault-state.ts';
 import { WATCH_FROZEN } from '../watch-labels.ts';
 import { useWatchRuntime } from '../watch-runtime.ts';
@@ -797,6 +798,7 @@ export function FleetScreen({
       const result = await saveKeystoreFile(current.fileText, current.fleetName, storage, {
         confirmOverwrite,
       });
+      reportSaved(client, current.fileText);
       setPhase({ kind: 'saved', result, savedNote: current.savedNote });
     } catch (e) {
       setError(toUserMessage(e));

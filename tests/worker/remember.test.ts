@@ -217,7 +217,7 @@ describe('remembered fleet: what is stored', () => {
     expect(resumed.info?.settings.maxSpend).toEqual([{ index: 1, lamports: 250_000_000n }]);
   });
 
-  it('the view tells the UI the fleet name and the wallet count only', async () => {
+  it('the view tells the UI the fleet name, the wallet count and whether the disk lags', async () => {
     const store = memoryRememberStore();
     await create(vault(store), true);
     const view = await call<RememberedView>(vault(store), { type: 'remembered' });
@@ -227,9 +227,119 @@ describe('remembered fleet: what is stored', () => {
         fleetName: 'Device fleet',
         createdAt: expect.any(String) as string,
         walletCount: 3,
+        unsaved: true, // a new fleet: its file was never written
       },
       prefs: { remember: true, windowMs: 15 * MINUTE },
     });
+  });
+});
+
+// BUNNDLY-80: the browser may hold the only copy; a reload must still know it.
+describe('remembered fleet: a file the disk lacks', () => {
+  type Pending = { fileText: string; fleetName: string } | null;
+  const pendingOf = (h: VaultHandler) => call<Pending>(h, { type: 'pendingFile' });
+  const viewUnsaved = async (h: VaultHandler) =>
+    (await call<RememberedView>(h, { type: 'remembered' })).account?.unsaved;
+
+  it('a new fleet is pending until its text is saved; a reload in between still says so', async () => {
+    const store = memoryRememberStore();
+    const h = vault(store);
+    const created = await create(h, true);
+    expect(await pendingOf(h)).toEqual({ fileText: created.fileText, fleetName: 'Device fleet' });
+
+    const reloaded = vault(store);
+    await call(reloaded, { type: 'resume' });
+    expect(await pendingOf(reloaded)).toEqual({
+      fileText: created.fileText,
+      fleetName: 'Device fleet',
+    });
+    expect(await viewUnsaved(reloaded)).toBe(true);
+
+    expect(await call<Pending>(reloaded, { type: 'fileSaved', fileText: created.fileText })).toBe(
+      null,
+    );
+    expect((await store.get('account'))?.unsaved).toBe(false);
+    const again = vault(store);
+    await call(again, { type: 'resume' });
+    expect(await pendingOf(again)).toBeNull();
+  });
+
+  it('a change after the save is pending again; saving the older text does not clear it', async () => {
+    const store = memoryRememberStore();
+    const h = vault(store);
+    const created = await create(h, true);
+    await call(h, { type: 'fileSaved', fileText: created.fileText });
+    expect(await pendingOf(h)).toBeNull();
+
+    const changed = await call<VaultFileResult>(h, {
+      type: 'saveSettings',
+      settings: { ...created.info.settings, maxSpend: [{ index: 0, lamports: 100_000_000n }] },
+      apiKeys: {},
+    });
+    expect((await pendingOf(h))?.fileText).toBe(changed.fileText);
+    expect((await store.get('account'))?.unsaved).toBe(true);
+
+    // The old file written again (e.g. a second click on an old button): still behind.
+    expect(await call<Pending>(h, { type: 'fileSaved', fileText: created.fileText })).toEqual({
+      fileText: changed.fileText,
+      fleetName: 'Device fleet',
+    });
+    expect((await store.get('account'))?.unsaved).toBe(true);
+  });
+
+  it('unlocking the remembered fleet with the password keeps the mark', async () => {
+    const store = memoryRememberStore();
+    const created = await create(vault(store), true);
+    const h = vault(store);
+    await call(h, { type: 'unlockRemembered', password: PASSWORD });
+    expect((await pendingOf(h))?.fileText).toBe(created.fileText);
+    expect((await store.get('account'))?.unsaved).toBe(true);
+  });
+
+  it('opened from a file on disk: nothing is pending, and the record says so', async () => {
+    const store = memoryRememberStore();
+    const created = await create(vault(null), undefined);
+    const h = vault(store);
+    await call(h, {
+      type: 'unlock',
+      fileText: created.fileText,
+      password: PASSWORD,
+      remember: true,
+    });
+    expect(await pendingOf(h)).toBeNull();
+    expect((await store.get('account'))?.unsaved).toBe(false);
+  });
+
+  it('a wizard file written after a lock still clears the record', async () => {
+    const store = memoryRememberStore();
+    const h = vault(store);
+    const created = await create(h, true);
+    await call(h, { type: 'lock' });
+    expect(await pendingOf(h)).toBeNull(); // locked: nothing to offer
+    await call(h, { type: 'fileSaved', fileText: created.fileText });
+    expect((await store.get('account'))?.unsaved).toBe(false);
+  });
+
+  it('a record from before the mark reads as saved', async () => {
+    const store = memoryRememberStore();
+    await create(vault(store), true);
+    const account = await store.get('account');
+    if (account === undefined) throw new Error('no account record');
+    await store.put('account', { fileText: account.fileText, fileId: account.fileId });
+    const h = vault(store);
+    await call(h, { type: 'resume' });
+    expect(await pendingOf(h)).toBeNull();
+    expect(await viewUnsaved(h)).toBe(false);
+  });
+
+  it('turning remember on for a fleet opened from disk does not mark it unsaved', async () => {
+    const store = memoryRememberStore();
+    const created = await create(vault(null), undefined);
+    const h = vault(store);
+    await call(h, { type: 'unlock', fileText: created.fileText, password: PASSWORD });
+    await call(h, { type: 'setRemember', remember: true, windowMs: 15 * MINUTE });
+    expect(await pendingOf(h)).toBeNull();
+    expect((await store.get('account'))?.unsaved).toBe(false);
   });
 });
 

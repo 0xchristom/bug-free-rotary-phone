@@ -29,6 +29,7 @@ import { formatSol, parseSol } from '../sol.ts';
 import { ConnectionTest } from '../ConnectionTest.tsx';
 import { SettingsResetNotice } from '../SettingsResetNotice.tsx';
 import { PLAN_LABELS } from '../plan-labels.ts';
+import { reportSaved } from '../use-pending-file.ts';
 import { useVault } from '../vault-state.ts';
 import {
   DEFAULT,
@@ -315,6 +316,7 @@ export function SettingsScreen({ info, storage, onUnsavedChange }: SettingsScree
       const result = await saveKeystoreFile(fileText, info.fleetName, storage, {
         confirmOverwrite,
       });
+      reportSaved(client, fileText);
       setPhase({ kind: 'written', fileName: result.fileName });
     } catch (e) {
       setError(toUserMessage(e));

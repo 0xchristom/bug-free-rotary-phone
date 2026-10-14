@@ -15,6 +15,11 @@ import type { AesKey } from '../core/index.ts';
 export interface RememberedAccountRecord {
   readonly fileText: string;
   readonly fileId: string;
+  /**
+   * True when this file is newer than any written to disk (BUNNDLY-80): the browser holds
+   * the only copy. Missing in records from before: read as written.
+   */
+  readonly unsaved?: boolean;
 }
 
 export interface SessionRecord {
@@ -128,6 +133,8 @@ export interface RememberedView {
     readonly fleetName: string;
     readonly createdAt: string;
     readonly walletCount: number;
+    /** The remembered file is newer than the one on disk (BUNNDLY-80). */
+    readonly unsaved: boolean;
   } | null;
   readonly prefs: RememberPrefs;
 }

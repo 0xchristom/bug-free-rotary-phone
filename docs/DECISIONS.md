@@ -1187,3 +1187,16 @@ Rejestr decyzji i rozbieżności z dokumentacją zewnętrzną. Nowe wpisy dopisu
 - Konsekwencje / alternatywy:
   - Na mainnecie klucz Helius jest potrzebny do każdego odczytu z sieci. Zmienia D-020 i D-025 w części mainnetu; tabela usług w SPEC sekcja 2 dalej wymienia publiczny mainnet jako zapas; według Andy'ego (BUNNDLY-78) ta zmiana SPEC nie zmienia.
   - Odrzucone: inny publiczny dostawca albo drugi klucz (SPEC 2.2), własny serwer pośredniczący (brak backendu, SPEC 2.1).
+
+## D-058: Zapamiętana flota wie, że pliku na dysku brakuje albo jest starszy
+
+- Data: 2026-10-14
+- Zadanie: BUNNDLY-80 (znalezione w odbiorze BUNNDLY-77)
+- Kontekst: ekrany wiedziały o niezapisanym pliku floty tylko w pamięci karty. Po odświeżeniu strony flota otwierała się z zapisu w przeglądarce bez żadnego ostrzeżenia, choć zapis w przeglądarce bywał jedyną kopią zmian, a „Forget this device” usuwał go bez śladu.
+- Decyzja (tymczasowa z 14.10.2026, do potwierdzenia przy odbiorze):
+  - Worker trzyma w pamięci najnowszy tekst pliku otwartej floty, dopóki żaden zapis na dysk mu nie odpowiada. Tekst powstaje przy utworzeniu floty i przy każdej przebudowie pliku. Znacznik znika przy otwarciu floty z pliku i po żądaniu `fileSaved` z dokładnie tym tekstem. Starszy tekst znacznika nie zdejmuje.
+  - Rekord `account` w IndexedDB (D-051) dostaje pole `unsaved: boolean`, bez sekretów. Rekord bez pola czyta się jako zapisany. `resume` i `unlockRemembered` przywracają znacznik z rekordu.
+  - Nowe żądanie `pendingFile` zwraca tekst i nazwę floty albo `null`. App pyta o nie po każdym otwarciu floty i za każdym razem, gdy żaden ekran ani przełącznik sieci nie trzyma własnego, nowszego pliku. Pokazuje wtedy ostrzeżenie z przyciskiem zapisu; Lock pyta, a zamknięcie karty prosi przeglądarkę o potwierdzenie.
+  - Wszystkie cztery zapisy pliku (kreator, flota, ustawienia, sieć) wysyłają `fileSaved` przed zdjęciem własnego znacznika ekranu. Żądania idą jedną kolejką, więc następne `pendingFile` widzi już zapis.
+  - „Forget this device” na starcie i w ustawieniach oraz wyłączenie „Remember this fleet on this device” czytają znacznik od nowa i przy `unsaved` pytają zdaniem, że przeglądarka ma jedyną kopię zmian.
+- Konsekwencje: otwarcie innego pliku albo utworzenie nowej floty z zapamiętaniem nadal zastępuje zapamiętaną flotę bez pytania o znacznik; poza zakresem BUNNDLY-80.
