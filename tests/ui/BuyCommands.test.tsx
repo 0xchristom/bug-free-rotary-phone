@@ -204,6 +204,8 @@ function walletEvent(
 
 async function showMint(user: UserEvent): Promise<void> {
   await eventually(() => screen.getByText(/^Balances as of /u));
+  // these tests send to every wallet at once; Stairs is the default since BUNNDLY-93
+  await user.click(screen.getByRole('button', { name: 'Immediate' }));
   await user.type(screen.getByLabelText(TARGET_LABEL), MINT);
   // the worker checks the address after a pause: a wait by the clock, not by turns
   await screen.findByRole('columnheader', { name: 'Tokens (SPL)' }, TARGET_WAIT);
@@ -718,17 +720,26 @@ describe('100 wallets', () => {
     // works out the accessible name of every control of 100 rows. And the address is
     // pasted, because every typed character renders the screen again (BUNNDLY-65).
     await eventually(() => screen.getByText(/^Balances as of /u));
+    // every wallet at once; Stairs is the default since BUNNDLY-93
+    await user.click(within(part('.table-bar')).getByRole('button', { name: 'Immediate' }));
     const bar = within(part('section.target'));
     await user.click(bar.getByLabelText(TARGET_LABEL));
     await user.paste(MINT);
     await screen.findByRole('columnheader', { name: 'Tokens (SPL)' }, TARGET_WAIT);
     await user.click(within(part('.table-bar')).getByRole('button', { name: 'Buy' }));
     const panel = within(part('dl.summary'));
+    renders.clear();
     act(() => {
       vault.emit(runEvent('started', 100));
       for (let i = 0; i < 100; i++) vault.emit(walletEvent(i, 'QUEUED'));
     });
-    await eventually(() => panel.getByText(/Fleet fill · 0 of 100 filled · 100 in flight/u));
+    // The rows clicked are shown queued at once, so the fleet fill says "100 in flight"
+    // before the events arrive (and since BUNNDLY-93 it is there before any run): wait for
+    // the frame of the events, in which every row takes its own event.
+    await eventually(() => {
+      expect(renders.size).toBe(100);
+    });
+    expect(panel.getByText(/Fleet fill · 0 of 100 filled · 100 in flight/u)).toBeTruthy();
     renders.clear();
     act(() => {
       vault.emit(walletEvent(5, 'QUOTING'));

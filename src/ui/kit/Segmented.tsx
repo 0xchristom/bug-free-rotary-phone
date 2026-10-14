@@ -14,6 +14,8 @@ export interface SegmentedProps<T extends string> {
   readonly value: T;
   readonly onChange: (value: T) => void;
   readonly disabled?: boolean;
+  /** Says why the whole group is off, when it is. */
+  readonly title?: string | undefined;
   readonly className?: string;
 }
 
@@ -24,10 +26,11 @@ export function Segmented<T extends string>({
   value,
   onChange,
   disabled = false,
+  title,
   className,
 }: SegmentedProps<T>) {
   return (
-    <div role="group" aria-label={label} className={cx('k-seg', className)}>
+    <div role="group" aria-label={label} title={title} className={cx('k-seg', className)}>
       {options.map((option) => (
         <button
           key={option.value}
