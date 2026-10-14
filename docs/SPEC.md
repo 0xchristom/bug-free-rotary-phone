@@ -86,7 +86,7 @@ Narzędzie do zarządzania flotą (domyślnie 30, konfigurowalnie 1–100) portf
   Część `public` jest jawna, żeby dało się podglądać adresy bez hasła.
 - **Eksport jawny** (mnemonik i klucze prywatne w czystym tekście, `.txt`/`.json`): tylko po ponownym wpisaniu hasła i potwierdzeniu ostrzeżenia. Nigdy domyślnie.
 - Otwieranie istniejącego keystore: wybór pliku, hasło, odszyfrowanie do pamięci.
-- **Auto-lock** po X minutach bezczynności (domyślnie 15). Czyści klucze z pamięci. Nie działa podczas uzbrojonej operacji.
+- **Auto-lock** jest opcjonalny i domyślnie wyłączony (decyzja Krystiana, 12.10.2026; D-056). Po włączeniu w ustawieniach blokuje po 15 minutach, 1 godzinie albo 2 godzinach bezczynności i czyści klucze z pamięci. Nie działa podczas uzbrojonej operacji.
 
 ### 3.2 Panel floty (tabela)
 
@@ -200,7 +200,7 @@ Moduły `core`, `executor` i `jupiter` piszemy tak, by dało się je testować w
 8. Brak telemetrii.
 9. **Zapamiętana flota i okno bez hasła** (BUNNDLY-52, D-051, zgoda Krystiana 12.10 i 14.10.2026):
    - Na życzenie użytkownika przeglądarka przechowuje w IndexedDB zaszyfrowany plik konta (ten sam szyfrogram co plik na dysku). Nie przechowuje hasła ani niczego jawnego: po powrocie na stronę konto odblokowuje się hasłem. Skutek: kto ma dostęp do profilu przeglądarki, ma dostęp do szyfrogramu, tak samo jak do pliku na dysku; ochroną jest hasło i scrypt. Użytkownik może w każdej chwili usunąć zapis z urządzenia.
-   - Na życzenie użytkownika przeglądarka może przez wybrany czas (15 min, 1 h lub 2 h, domyślnie 15 min) otwierać konto po odświeżeniu strony bez hasła. Przechowuje wtedy w IndexedDB klucz pliku konta jako nieeksportowalny klucz WebCrypto; nie przechowuje hasła, mnemonika ani kluczy prywatnych. Skutek: w tym czasie kod uruchomiony na tej stronie albo osoba z dostępem do profilu przeglądarki może otworzyć konto bez hasła. Lock, automatyczna blokada i „Forget this device” natychmiast usuwają ten zapis.
+   - Na życzenie użytkownika przeglądarka może przez wybrany czas (15 min, 1 h, 2 h albo bez limitu czasu, domyślnie 15 min) otwierać konto po odświeżeniu strony bez hasła. Przechowuje wtedy w IndexedDB klucz pliku konta jako nieeksportowalny klucz WebCrypto; nie przechowuje hasła, mnemonika ani kluczy prywatnych. Skutek: w tym czasie kod uruchomiony na tej stronie albo osoba z dostępem do profilu przeglądarki może otworzyć konto bez hasła. Lock, automatyczna blokada i „Forget this device” natychmiast usuwają ten zapis.
    - Użytkownik może w Ustawieniach wybrać okno bez limitu czasu: wtedy rekord zostaje do Lock, »Forget this device«, otwarcia innego pliku albo błędu odszyfrowania, a każdy, kto ma dostęp do tego profilu przeglądarki, otwiera konto bez hasła. Ustawienia pokazują to ostrzeżenie przy wyborze tej opcji.
 
 ---
