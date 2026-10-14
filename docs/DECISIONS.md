@@ -1034,6 +1034,22 @@ Rejestr decyzji i rozbieżności z dokumentacją zewnętrzną. Nowe wpisy dopisu
   - Kwoty max spend dalej pochodzą z zapisanych ustawień. Dopóki kwoty w tabeli nie są zapisane, zakup i uzbrojenie są wyłączone. Zmiana samego zaznaczenia ich nie blokuje.
   - Odrzucone: rozpoznanie rodzaju tylko w UI (worker przyjąłby żądanie wysłane z pominięciem paska) i zgadywanie po długości danych bez sprawdzenia właściciela.
 
+## D-049: Grupy portfeli w dashboardzie
+
+- Data: 2026-10-14
+- Zadanie: BUNNDLY-69
+- Kontekst: silnik (D-046) uruchamia, zatrzymuje i uzbraja każdą grupę osobno, a dashboard pokazywał jedną flotę. Pasek komend (D-048) wysyłał żądania bez grupy, więc przy więcej niż jednej grupie worker je odrzucał.
+- Decyzja:
+  - Nad tabelą jest zakładka na grupę: nazwa, liczba portfeli, suma znanych sald SOL i stan z `status.groups`: Idle, Armed, Buying, Selling albo Stopped (przebieg po STOP, którego wysłane transakcje jeszcze się kończą). Zakładka **All** pokazuje wszystkie portfele z kolumną Group.
+  - Pasek komend działa w wybranej zakładce. BUY, SELL i ARM wysyłają `group` i zaznaczone portfele tej grupy, a STOP i DISARM wysyłają tylko `group`. Okno potwierdzenia trybu na żywo podaje nazwę grupy. Każda zakładka pamięta własny tekst pola celu, a przełączenie zakładki nie wysyła żadnego żądania.
+  - W **All** przy kilku grupach ARM, BUY, SELL i STOP są wyłączone z powodem „Pick a group tab”. Przy jednej grupie działają na nią. Przycisk ▶ w wierszu zawsze kupuje w grupie swojego portfela.
+  - **Move to group** przenosi zaznaczone portfele widoczne w zakładce do istniejącej albo nowej grupy (nowa dostaje kolejny identyfikator). **Rename** zmienia nazwę pokazanej grupy. **Delete group** oddaje jej portfele pierwszej grupie, więc pierwszej grupy nie da się usunąć. Każda zmiana idzie przez `saveSettings.groups` i czeka na zapis pliku floty jak inne zmiany ustawień. Pusta grupa zostaje.
+  - Dla grupy, która kupuje, sprzedaje albo jest uzbrojona, te akcje są wyłączone i podają powód. Worker zabrania zmiany składu takiej grupy (`GROUP_RUNNING`). UI blokuje też zmianę jej nazwy. Przycisk ▶ jest wyłączony tylko w wierszach tej grupy. Pole kwoty blokuje się według D-050: portfele z przebiegu i cała grupa z uzbrojonym watcherem.
+- Konsekwencje / alternatywy:
+  - Postęp w tabeli dalej pokazuje najnowszy przebieg (D-032). Gdy dwie grupy kupują naraz, wiersze starszego przebiegu wracają do stanu spoczynku, a jego stan widać na zakładce grupy.
+  - Domyślna grupa floty sprzed grup nazywa się „All wallets” (D-046) i po pierwszym podziale zostaje pod tą nazwą, dopóki właściciel jej nie zmieni.
+  - Odrzucone: komendy w **All** dla wszystkich grup naraz (jedno kliknięcie uruchamiałoby kilka grup z jednym celem) i usuwanie grupy razem z jej portfelami (portfel musi należeć do grupy, D-046).
+
 ## D-050: Parametry handlu w tabeli (etap 2): zapis od razu, blokada w trakcie akcji, „Edit selected”
 
 - Data: 2026-10-14

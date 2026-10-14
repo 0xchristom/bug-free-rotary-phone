@@ -355,6 +355,7 @@ describe('the buy amount in a row', () => {
         type: 'startBuy',
         mint: MINT,
         wallets: [0, 1, 2],
+        group: 'g1',
       });
     });
     // only W03 has an amount: its row is the one queued
