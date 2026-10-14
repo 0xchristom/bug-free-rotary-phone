@@ -225,6 +225,7 @@ src/
   jupiter/     klient Swap API V2
   watcher/     WebSocket, detektory launchpadów (detectors/), deduplikacja
   executor/    kolejka, limiter, potok, retry, idempotencja
+  direct/      zakup bezpośredni przez program launchpadu (meteora-dbc/: wycena i instrukcje, D-053)
   worker/      Web Worker sejfu (klucze tylko tutaj)
   storage/     File System Access API + fallback
   ui/          komponenty React
