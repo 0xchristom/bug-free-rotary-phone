@@ -9,7 +9,10 @@ import type { FeedState } from '../chain/balance-stream.ts';
 import type { TargetKind } from '../chain/target.ts';
 import type { ExecutorEvent, Side, StairsOptions } from '../executor/executor.ts';
 import type { WatchEvent, WatchStatus } from '../watcher/watch.ts';
+import type { BackupDirectory, BackupView } from './backup.ts';
 import type { RememberedView } from './remember.ts';
+
+export type { BackupDirectory, BackupState, BackupView } from './backup.ts';
 
 export type { RememberedView, RememberPrefs } from './remember.ts';
 
@@ -198,7 +201,23 @@ export type VaultRequest =
    * per wallet, `off` closes it. Changes arrive as `balance` events. Locking closes it too.
    * Not user activity. Without a Helius key the feed stays `polling`.
    */
-  | { readonly type: 'balanceFeed'; readonly on: boolean };
+  | { readonly type: 'balanceFeed'; readonly on: boolean }
+  /** The backup folder of the open fleet (BUNNDLY-62): state and wallets without a backup. */
+  | { readonly type: 'backupStatus' }
+  /**
+   * Turns the backup folder on for the open fleet: the password is checked by a full
+   * derivation, as for the plain export, then the files are written at once.
+   */
+  | {
+      readonly type: 'enableBackup';
+      readonly handle: BackupDirectory;
+      readonly password: string;
+    }
+  /** The folder's handle, for the page to ask the browser for access with a click. */
+  | { readonly type: 'backupHandle' }
+  /** The page got the access back: write now. */
+  | { readonly type: 'backupRetry' }
+  | { readonly type: 'disableBackup' };
 
 export type VaultRequestType = VaultRequest['type'];
 
@@ -355,6 +374,11 @@ export interface VaultResultMap {
   readonly disarm: VaultStatus;
   readonly activity: VaultStatus;
   readonly balanceFeed: BalanceFeedStatus;
+  readonly backupStatus: BackupView;
+  readonly enableBackup: BackupView;
+  readonly backupHandle: BackupDirectory | null;
+  readonly backupRetry: BackupView;
+  readonly disableBackup: BackupView;
 }
 
 export type VaultRequestOf<T extends VaultRequestType> = Extract<VaultRequest, { type: T }>;
@@ -370,8 +394,17 @@ export interface VaultProgressEnvelope {
   readonly progress: number;
 }
 
-/** Everything the worker pushes on its own: executor progress, the watcher, live balances. */
-export type WorkerEvent = ExecutorEvent | WatchEvent | BalanceEvent;
+/**
+ * Everything the worker pushes on its own: executor progress, the watcher, live balances,
+ * the backup folder.
+ */
+export type WorkerEvent = ExecutorEvent | WatchEvent | BalanceEvent | BackupEvent;
+
+/** The backup folder's state changed (BUNNDLY-62): no file content, no handle. */
+export interface BackupEvent {
+  readonly kind: 'backup';
+  readonly view: BackupView;
+}
 
 /**
  * Executor and watcher progress, pushed by the worker without a request id (BUNNDLY-21,

@@ -121,7 +121,7 @@ function world(down: readonly string[] = [], perNetwork?: PerNetwork) {
     },
   });
   h.onEvent((e) => {
-    if (e.kind !== 'watch' && e.kind !== 'balance') events.push(e);
+    if (e.kind !== 'watch' && e.kind !== 'balance' && e.kind !== 'backup') events.push(e);
   });
   return {
     h,
