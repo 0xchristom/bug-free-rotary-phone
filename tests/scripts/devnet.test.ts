@@ -161,6 +161,23 @@ describe('buyRow', () => {
   });
 });
 
+describe('createRpc', () => {
+  it('rides out 9 answers of HTTP 429 in a row (public devnet limit window)', async () => {
+    let calls = 0;
+    const fetchFn: Fetch = () => {
+      calls++;
+      return Promise.resolve(
+        calls <= 9
+          ? new Response('', { status: 429 })
+          : new Response(JSON.stringify({ jsonrpc: '2.0', id: 1, result: 42 })),
+      );
+    };
+    const rpc = createRpc('http://rpc.test', fetchFn, () => Promise.resolve());
+    await expect(rpc.call<number>('getSlot')).resolves.toBe(42);
+    expect(calls).toBe(10);
+  }, 20_000);
+});
+
 describe('waitForAllConfirmed (cycle)', () => {
   it('polls every pending signature in one request and reports a failed one without throwing', async () => {
     const asked: string[][] = [];
