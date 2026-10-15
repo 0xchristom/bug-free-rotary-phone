@@ -65,8 +65,16 @@ export interface Rpc {
   call<T>(method: string, params?: unknown[]): Promise<T>;
 }
 
-/** Plain JSON-RPC over fetch. Retries HTTP 429 (devnet: 100 requests per 10 s per IP). */
-export function createRpc(url: string, fetchFn: Fetch = fetch): Rpc {
+/**
+ * Plain JSON-RPC over fetch. Retries HTTP 429 (devnet: 100 requests per 10 s per IP, less
+ * per method) up to 10 times, about 27 s in all, so a full 10 s window can pass; 5 retries
+ * (7.5 s) stopped a repetition halfway on 15.10.2026.
+ */
+export function createRpc(
+  url: string,
+  fetchFn: Fetch = fetch,
+  wait: (ms: number) => Promise<unknown> = sleep,
+): Rpc {
   let id = 0;
   return {
     async call<T>(method: string, params: unknown[] = []): Promise<T> {
@@ -76,8 +84,8 @@ export function createRpc(url: string, fetchFn: Fetch = fetch): Rpc {
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify({ jsonrpc: '2.0', id: ++id, method, params }),
         });
-        if (res.status === 429 && attempt < 5) {
-          await sleep(500 * (attempt + 1));
+        if (res.status === 429 && attempt < 10) {
+          await wait(500 * (attempt + 1));
           continue;
         }
         if (!res.ok) throw new DevnetError(`${method}: HTTP ${String(res.status)}`);

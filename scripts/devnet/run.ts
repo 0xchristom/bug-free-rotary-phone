@@ -317,7 +317,8 @@ async function main(): Promise<void> {
           );
         }
         for (const x of r.failures) console.log(`FAILED ${x.wallet}: ${x.error}`);
-        if (rep < repeat) await sleep(3000);
+        // A full 10 s rate-limit window between repetitions (public devnet RPC).
+        if (rep < repeat) await sleep(10_000);
       }
       const all = results.flatMap((r) => r.rows);
       const byDelta = new Map<number, number>();
