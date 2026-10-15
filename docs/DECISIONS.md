@@ -1118,7 +1118,7 @@ Rejestr decyzji i rozbieżności z dokumentacją zewnętrzną. Nowe wpisy dopisu
   - **Bez podpisu i bez wysyłki w etapie 1:** `src/worker/**` nietknięte. Devnet sprawdzony `simulateTransaction` bez podpisów (`sigVerify: false`) z publicznym adresem portfela głównego devnet jako płatnikiem.
 - Konsekwencje / alternatywy:
   - Fixtures (`tests/fixtures/meteora-dbc.mainnet.json`: 4 zakupy, opłata z tokenu; `meteora-dbc.devnet.json`: 2 zakupy, opłata z SOL, tryb PartialFill, który przy kwocie mieszczącej się na krzywej daje to samo co ExactIn): stan puli odczytany po jej najnowszej sygnaturze i pierwsza udana transakcja po tym odczycie. Oczekiwana liczba tokenów pochodzi z sald płatnika w meta transakcji. Przy zbieraniu każda wycena zgadzała się też z `output_amount` i `next_sqrt_price` ze zdarzenia `EvtSwap2`.
-  - Sprzedaż (od BUNNDLY-63: D-054), pule po migracji (DAMM) i tokeny z hookiem transferowym są poza zakresem.
+  - Sprzedaż (od BUNNDLY-63: D-063), pule po migracji (DAMM) i tokeny z hookiem transferowym są poza zakresem.
   - Odrzucone: SDK jako zależność (drugi stos Solany, `bn.js`), `swap` v1 (prawdziwe zakupy używają `swap2`).
 
 ## D-054: Dashboard w układzie makiety v2, dziennik i wykrycia na ekranie Activity
@@ -1260,9 +1260,27 @@ Rejestr decyzji i rozbieżności z dokumentacją zewnętrzną. Nowe wpisy dopisu
   - **DRY-RUN** symuluje podpisaną transakcję (`simulateTransaction`, `sigVerify: true`); błąd symulacji kończy portfel jako `CHECK_FAILED`. `sendTransaction` w DRY-RUN nie pada nigdy.
   - **Pula w trybie B** pochodzi z instrukcji tworzącej (konto 5, sprawdzone w teście jako PDA configu i obu mintów), a `getProgramAccounts` jest zapasem; droga podaje, którą drogą znalazła pulę (`detection` albo `program-accounts`).
   - **RPC:** z kluczem Helius jego adres Devnet, bez klucza publiczne `api.devnet.solana.com` (jest w CSP), także w trybie na żywo.
-  - **Decyzje tymczasowe z 14.10.2026, do potwierdzenia (komentarz w BUNNDLY-48):** kwota do krzywej = kwota wiersza; Auto slippage drogi bezpośredniej 500 bps; limit 200 000 jednostek, cena 10 000 µlamportów; sprzedaż na Devnecie wyłączona do BUNNDLY-63 (`NO_SELL_ROUTE_ON_NETWORK`); uzbrajanie na żywo na Devnecie poza zakresem tego zadania (decyzja Andy'ego).
+  - **Decyzje tymczasowe z 14.10.2026, do potwierdzenia (komentarz w BUNNDLY-48):** kwota do krzywej = kwota wiersza; Auto slippage drogi bezpośredniej 500 bps; limit 200 000 jednostek, cena 10 000 µlamportów; sprzedaż na Devnecie wyłączona do BUNNDLY-63 (`NO_SELL_ROUTE_ON_NETWORK`; zniesione w D-063); uzbrajanie na żywo na Devnecie poza zakresem tego zadania (decyzja Andy'ego).
   - **Skrypt `scripts/fund-devnet.ts`** zasila portfele testowe z portfela głównego Devnet. Ścieżka klucza tylko ze zmiennej `BUNNDLY_DEVNET_KEYPAIR`, sprawdzenie genesis przed każdym podpisem, limity 0,5 SOL na adres i 10 adresów, klucz nigdy nie jest wypisywany.
 - Konsekwencje / alternatywy:
   - Na Mainnecie droga bezpośrednia pozostaje wyłączona do osobnego testu i zgody właściciela (SPEC 2.2).
   - Rent na Devnecie jest inny niż na Mainnecie (165 B: 1 488 440 wobec 2 039 280 lamportów, odczyt 14.10.2026 22:35 UTC), dlatego nie ma go w stałej.
   - Odrzucone: ponowna wysyłka tej samej podpisanej transakcji przy braku odpowiedzi (wymaga pewności, że poprzednia nie weszła, czyli tego samego sprawdzenia łańcucha) i Jupiter jako jedyna droga (brak Devnetu).
+
+## D-063: Droga bezpośrednia Meteora DBC, sprzedaż na Devnecie
+
+- Data: 2026-10-15
+- Zadanie: BUNNDLY-63 (zakup: D-053, D-062)
+- Kontekst: na Devnecie nie ma Jupitera, więc **Sell** był tam wyłączony (D-062). Flota testowa ma sprzedać token kupiony drogą bezpośrednią.
+- Decyzja:
+  - **Sprzedaż idzie drogą zakupu, czyli z sieci** (`buyRouteOf`): Mainnet przez Jupitera, Devnet z krzywej DBC. Kod `NO_SELL_ROUTE_ON_NETWORK` znika.
+  - **Wycena i instrukcje:** sprzedaż ExactIn token → SOL z SDK Meteory (MIT, ten sam commit co w D-053), opłata w obu trybach `collectFeeMode`. Transakcja: budżet obliczeń, idempotentne konto wrapped SOL portfela, `swap2` z konta tokenu portfela na to konto, zamknięcie konta do portfela. Minimum SOL = ⌊wycena × (10 000 − slippage) / 10 000⌋ ze slippage sprzedaży portfela (BUNNDLY-58); Auto to 500 bps, jak przy zakupie. Wycena z minimum 0 nie jest budowana (`BAD_REQUEST`).
+  - **Koszt:** saldo SOL ≥ rent konta wrapped SOL (z łańcucha) + opłaty, bez rezerwy (sprzedaż saldo podnosi). Za mało: zamówienie bez transakcji z powodem `INSUFFICIENT_SOL_FOR_GAS`, portfel pominięty.
+  - **Sprawdzenie przed podpisem** (`src/direct/check.ts`), sprzedaż: jeden `swap2` ExactIn z konta tokenu portfela na jego konto wrapped SOL, ilość = plan sprzedaży, minimum = minimum zamówienia (> 0), zero przelewów System. Zakup od tej zmiany też: wyjście `swap2` to konto tokenu portfela, a minimum równa się minimum zamówienia (`MINIMUM_OUT_MISMATCH`).
+  - **Rozjazd krzywej:** tuż przed wysyłką sprzedaży droga czyta pulę jeszcze raz. Gdy krzywa daje mniej niż minimum (albo puli już nie ma), transakcja nie idzie (`PRICE_MOVED`), a executor zaczyna nową próbę z nową wyceną (próba się liczy). Nieczytelna pula: `NOT_SENT`. Zakup nie ma tego odczytu (liczy się czas snajpera); chroni go minimum w `swap2`.
+  - **Salda na Devnecie bez klucza Helius** czyta publiczne RPC sieci (źródło `fallback`), tak jak droga bezpośrednia. Wcześniej odczyt kończył się `HELIUS_KEY_MISSING`, a zakup bez odczytanego salda pomijał każdy portfel (`BALANCE_UNKNOWN`). Ten bloker wyszedł przy próbie floty w tym zadaniu.
+- Konsekwencje / alternatywy:
+  - Fixtures sprzedaży: `tests/fixtures/meteora-dbc-sell.mainnet.json` (3 sprzedaże, opłata z wyjścia, `collectFeeMode` 1) i `meteora-dbc-sell.devnet.json` (3 sprzedaże floty testowej BUNNDLY-63, opłata z SOL, `collectFeeMode` 0). Oczekiwany SOL pochodzi z meta: zmiana salda płatnika + opłata sieci.
+  - Na Mainnecie sprzedaż drogą bezpośrednią pozostaje wyłączona, jak zakup (SPEC 2.2); sejf odmawia tam podpisu (`DIRECT_ROUTE_OFF`).
+  - Publiczne RPC Devnetu bywa przeciążone (HTTP 429). W pierwszej próbie floty 2 z 3 wysyłek zakupu zostały bez odpowiedzi i skończyły jako `UNKNOWN`, a łańcuch nie pokazał ich transakcji. Klucz Helius usuwa ten problem.
+  - Odrzucone: ponowny odczyt puli przed wysyłką zakupu (dodatkowe zapytania na ścieżce czasu) i osobny kod błędu zamiast usuniętego `NO_SELL_ROUTE_ON_NETWORK`.
