@@ -1,6 +1,7 @@
 /**
- * Checks before signing a direct DBC buy (BUNNDLY-48): the route's own transaction passes,
- * and each change a wrong or hostile build could make is refused before the key is used.
+ * Checks before signing a direct DBC buy (BUNNDLY-48) or sell (BUNNDLY-63): the route's own
+ * transaction passes, and each change a wrong or hostile build could make is refused before
+ * the key is used.
  */
 import {
   AccountRole,
@@ -18,8 +19,11 @@ import {
 import { describe, expect, it } from 'vitest';
 import { deriveWallets } from '../../src/core/index.ts';
 import { checkDirectTransaction } from '../../src/direct/check.ts';
+import { findAssociatedTokenAddress } from '../../src/chain/tokens.ts';
 import {
+  WSOL_MINT,
   buildBuyInstructions,
+  buildSellInstructions,
   setComputeUnitLimit,
   setComputeUnitPrice,
   transferSol,
@@ -180,6 +184,29 @@ describe('checkDirectTransaction', () => {
     );
   });
 
+  it('refuses a buy whose tokens go to another wallet’s token account', async () => {
+    const ixs = await buy();
+    const swap = ixs[6];
+    if (swap === undefined) throw new Error('fixture');
+    const accounts = [...(swap.accounts ?? [])];
+    const output = accounts[4];
+    if (output === undefined) throw new Error('fixture');
+    const theirs = await findAssociatedTokenAddress(OTHER, CASE.baseMint, 'spl-token');
+    accounts[4] = { ...output, address: address(theirs) };
+    expect(await problemOf([...ixs.slice(0, 6), { ...swap, accounts }, ...ixs.slice(7)])).toBe(
+      'SWAP_MISMATCH',
+    );
+  });
+
+  it('refuses a minimum out other than the order’s (the slippage limit)', async () => {
+    const tx = wire(await buy()); // minimum 1 000 in the swap2
+    const result = await checkDirectTransaction(
+      orderOf(tx, { otherAmountThreshold: 1_001n }),
+      expected,
+    );
+    expect(result.ok ? 'ok' : result.problem).toBe('MINIMUM_OUT_MISMATCH');
+  });
+
   it('refuses a transaction without a minimum out', async () => {
     const ixs = await buy();
     const swap = ixs[6];
@@ -188,5 +215,132 @@ describe('checkDirectTransaction', () => {
     data.fill(0, 16, 24);
     const zeroMin = [...ixs.slice(0, 6), { ...swap, data }, ...ixs.slice(7)];
     expect(await problemOf(zeroMin)).toBe('NO_MINIMUM_OUT');
+  });
+});
+
+describe('checkDirectTransaction, sell (BUNNDLY-63)', () => {
+  const TOKENS = 9_810_963_807_547n;
+  const MIN = 9_647_348n;
+  const sell = (payer = TAKER, amountIn = TOKENS, minimumAmountOut = MIN) =>
+    buildSellInstructions({
+      payer,
+      pool: CASE.pool,
+      config: CASE.config,
+      baseMint: CASE.baseMint,
+      baseVault: 'F34SBRP4ib2Y5xqpXbiS8y6nUGoAEtBu4aJ3NTjUbP6Y',
+      quoteVault: '5DERoUkdGNVxZYNQwCxgPjj2dFWedECrvwZQPMAv83Sb',
+      baseTokenProgram: 'spl-token',
+      amountIn,
+      minimumAmountOut,
+      computeUnitLimit: 200_000,
+      computeUnitPriceMicroLamports: 10_000n,
+    });
+  const sellOrder = (transaction: string, overrides: Partial<JupiterOrder> = {}) =>
+    orderOf(transaction, {
+      inputMint: CASE.baseMint,
+      outputMint: SOL_MINT,
+      inAmount: TOKENS,
+      outAmount: 10_155_104n,
+      otherAmountThreshold: MIN,
+      ...overrides,
+    });
+  const sellExpected = {
+    taker: TAKER,
+    inputMint: CASE.baseMint,
+    outputMint: SOL_MINT,
+    amount: TOKENS,
+    maxSpend: TOKENS,
+  };
+  async function sellProblem(instructions: readonly Instruction[], feePayer = TAKER) {
+    const result = await checkDirectTransaction(
+      sellOrder(wire(instructions, feePayer)),
+      sellExpected,
+    );
+    return result.ok ? 'ok' : result.problem;
+  }
+  /** The sell's swap2 (compute ×2, wrapped SOL account, swap2, close). */
+  async function withSwap(change: (swap: Instruction) => Instruction) {
+    const ixs = await sell();
+    const swap = ixs[3];
+    if (swap === undefined) throw new Error('fixture');
+    return [...ixs.slice(0, 3), change(swap), ...ixs.slice(4)];
+  }
+  const swapAccount = (n: number, to: string) => (swap: Instruction) => {
+    const accounts = [...(swap.accounts ?? [])];
+    const at = accounts[n];
+    if (at === undefined) throw new Error('fixture');
+    accounts[n] = { ...at, address: address(to) };
+    return { ...swap, accounts };
+  };
+
+  it('passes the sell the route builds: no System transfer, taker pays the fee', async () => {
+    const result = await checkDirectTransaction(sellOrder(wire(await sell())), sellExpected);
+    expect(result.ok && result.checked.takerPaysFee).toBe(true);
+  });
+
+  it('refuses more tokens than the sell plan, and another amount in the swap2', async () => {
+    const tx = wire(await sell());
+    const over = await checkDirectTransaction(sellOrder(tx), {
+      ...sellExpected,
+      maxSpend: TOKENS - 1n,
+    });
+    expect(over.ok ? 'ok' : over.problem).toBe('OVER_MAX_SPEND');
+    const more = await checkDirectTransaction(sellOrder(wire(await sell(TAKER, TOKENS + 1n))), {
+      ...sellExpected,
+    });
+    expect(more.ok ? 'ok' : more.problem).toBe('AMOUNT_MISMATCH');
+  });
+
+  it('refuses SOL paid out to another wallet’s wrapped SOL account', async () => {
+    const theirs = await findAssociatedTokenAddress(OTHER, WSOL_MINT, 'spl-token');
+    expect(await sellProblem(await withSwap(swapAccount(4, theirs)))).toBe('SWAP_MISMATCH');
+  });
+
+  it('refuses tokens taken from another token account', async () => {
+    const theirs = await findAssociatedTokenAddress(OTHER, CASE.baseMint, 'spl-token');
+    expect(await sellProblem(await withSwap(swapAccount(3, theirs)))).toBe('SWAP_MISMATCH');
+  });
+
+  it('refuses any System transfer in a sell, even the buy-shaped one into its own wrapped SOL', async () => {
+    expect(await sellProblem([...(await sell()), transferSol(TAKER, OTHER, 1n)])).toBe(
+      'TRANSFER_MISMATCH',
+    );
+    // Passes every per-instruction rule of a buy's transfer; only "none in a sell" stops it.
+    const ownWsol = await findAssociatedTokenAddress(TAKER, WSOL_MINT, 'spl-token');
+    expect(await sellProblem([...(await sell()), transferSol(TAKER, ownWsol, TOKENS)])).toBe(
+      'TRANSFER_MISMATCH',
+    );
+  });
+
+  it('refuses a minimum other than the order’s, and no minimum at all', async () => {
+    expect(await sellProblem(await sell(TAKER, TOKENS, MIN - 1n))).toBe('MINIMUM_OUT_MISMATCH');
+    const zero = await withSwap((swap) => {
+      const data = Uint8Array.from(swap.data ?? []);
+      data.fill(0, 16, 24);
+      return { ...swap, data };
+    });
+    expect(await sellProblem(zero)).toBe('NO_MINIMUM_OUT');
+  });
+
+  it('refuses a sell for anything but SOL, and a buy signed as a sell', async () => {
+    const tx = wire(await sell());
+    const notSol = await checkDirectTransaction(sellOrder(tx, { outputMint: CASE.config }), {
+      ...sellExpected,
+      outputMint: CASE.config,
+    });
+    expect(notSol.ok ? 'ok' : notSol.problem).toBe('OUTPUT_MINT_MISMATCH');
+    // The order says SOL in: it is a buy, whatever the instructions are.
+    const asBuy = await checkDirectTransaction(
+      sellOrder(tx, { inputMint: SOL_MINT }),
+      sellExpected,
+    );
+    expect(asBuy.ok ? 'ok' : asBuy.problem).toBe('INPUT_MINT_MISMATCH');
+    // A buy's transaction under a sell plan: no swap of the wallet's tokens into SOL.
+    const buyTx = await checkDirectTransaction(sellOrder(wire(await buy())), sellExpected);
+    expect(buyTx.ok).toBe(false);
+  });
+
+  it('refuses another fee payer', async () => {
+    expect(await sellProblem(await sell(), OTHER)).toBe('SIGNER_MISMATCH');
   });
 });

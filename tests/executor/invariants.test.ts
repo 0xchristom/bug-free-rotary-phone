@@ -9,7 +9,9 @@
  * its step and nothing is asked while the run is paused.
  * Direct route (BUNNDLY-48): the failures of the devnet Meteora DBC route instead of
  * Jupiter's (preflight refusal, a lost `sendTransaction` answer after the RPC took it, a
- * landed buy with an error, no RFQ) and DRY-RUN through `simulate`.
+ * landed buy with an error, no RFQ) and DRY-RUN through `simulate`. Its sells (BUNNDLY-63)
+ * add the curve moving below the minimum just before the send (`PRICE_MOVED`, not sent)
+ * and too little SOL for the fees.
  *
  * `npm test` runs a fast set of seeds; `npm run test:sim` (`--mode sim`) the long one.
  */
@@ -53,6 +55,9 @@ const FIRST_STAIRS_SEED = 300_001;
 /** Direct-route runs (BUNNDLY-48), on top of the runs above: their own seeds. */
 const DIRECT_SEEDS = LONG ? 1_000 : 10;
 const FIRST_DIRECT_SEED = 400_001;
+/** Direct-route sells (BUNNDLY-63): their own seeds. */
+const DIRECT_SELL_SEEDS = LONG ? 1_000 : 10;
+const FIRST_DIRECT_SELL_SEED = 500_001;
 const MINT = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
 /** The second group's mint (any token mint other than MINT). */
 const MINT_2 = 'Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB';
@@ -130,6 +135,8 @@ export interface SimResult {
   readonly paused: boolean;
   /** Direct route: `simulate` calls (DRY-RUN). */
   readonly simulations: number;
+  /** Direct sells: executions refused because the curve moved (`PRICE_MOVED`). */
+  readonly priceMoved: number;
 }
 
 /**
@@ -160,9 +167,10 @@ export async function simulate(
       if (since < s.serverErrorMs + s.noRouteMs) return { fail: 'NO_ROUTE', httpStatus: 400 };
       const r = random();
       if (direct) {
-        // The route's RPC read failed, or the balance does not cover the buy and its rent.
+        // The route's RPC read failed, or the balance does not cover the buy and its rent
+        // (a sell: the fees and the wrapped SOL rent).
         if (r < 0.1) return { fail: 'NETWORK' };
-        if (r < 0.12) return { build: 'INSUFFICIENT_FUNDS' };
+        if (r < 0.12) return { build: selling ? 'INSUFFICIENT_SOL_FOR_GAS' : 'INSUFFICIENT_FUNDS' };
         return 'ok';
       }
       if (r < 0.05) return { fail: 'RATE_LIMITED', httpStatus: 429 };
@@ -185,8 +193,12 @@ export async function simulate(
         random() < p ? { lands: { ok, afterMs: Math.floor(random() * maxMs) } } : {};
       if (direct) {
         if (r < 0.6) return 'ok';
-        // Refused in preflight: never sent, so it never lands.
-        if (r < 0.7) return { fail: 'NOT_SENT', signature: 'preflight' };
+        // Refused in preflight, or (a sell) the curve moved below the minimum just before
+        // the send: never sent, so it never lands.
+        if (r < 0.7) {
+          const moved = selling && random() < 0.5;
+          return { fail: moved ? 'PRICE_MOVED' : 'NOT_SENT', signature: 'preflight' };
+        }
         // The RPC took it and the answer was lost: it may land later.
         if (r < 0.8) return { fail: 'NETWORK', signature: 'lost', ...later(0.6) };
         // Not confirmed before the deadline: it may still land.
@@ -226,10 +238,15 @@ export async function simulate(
   const groupOf = (index: number): number => (groups === 2 && index >= s.wallets / 2 ? 1 : 0);
   const mintOf = (group: number): string => (group === 0 ? MINT : MINT_2);
   let simulations = 0;
+  let priceMoved = 0;
   const client = direct
     ? {
         getOrder: jupiter.getOrder.bind(jupiter),
-        execute: jupiter.execute.bind(jupiter),
+        execute: async (request: Parameters<typeof jupiter.execute>[0]) => {
+          const result = await jupiter.execute(request);
+          if (!result.ok && result.code === 'PRICE_MOVED') priceMoved += 1;
+          return result;
+        },
         simulate: () => {
           simulations += 1;
           return Promise.resolve(
@@ -326,6 +343,7 @@ export async function simulate(
       sharedFullWindow: false,
       paused: false,
       simulations: 0,
+      priceMoved: 0,
     };
   }
   const done = { wallets: finished.flatMap((r) => r.wallets) };
@@ -443,6 +461,7 @@ export async function simulate(
     sharedFullWindow,
     paused: marks.pausedFrom !== null,
     simulations,
+    priceMoved,
   };
 }
 
@@ -641,6 +660,47 @@ describe(`the direct route (${String(DIRECT_SEEDS)} seeds${LONG ? ', long set' :
     }
     expect(results.reduce((n, r) => n + r.simulations, 0)).toBeGreaterThan(0);
     expect(results.reduce((n, r) => n + r.chainChecks, 0)).toBeGreaterThan(DIRECT_SEEDS * 10);
+    expect(results.reduce((n, r) => n + r.landedWithError, 0)).toBeGreaterThan(0);
+  });
+});
+
+describe(`direct-route sells (${String(DIRECT_SELL_SEEDS)} seeds${LONG ? ', long set' : ''})`, () => {
+  const seeds = Array.from({ length: DIRECT_SELL_SEEDS }, (_, i) => FIRST_DIRECT_SELL_SEED + i);
+
+  const results: SimResult[] = [];
+
+  it.each(seeds)(
+    'direct sell seed %i',
+    async (seed) => {
+      const s = scenario(seed);
+      const result = await simulate(s, 'sell', 1, null, 'direct');
+      results.push(result);
+      expect(result.broken, JSON.stringify(s)).toEqual([]);
+    },
+    60_000,
+  );
+
+  it('the direct sells went through every path (not a vacuous pass)', () => {
+    expect(results).toHaveLength(DIRECT_SELL_SEEDS);
+    const total: Record<string, number> = {};
+    for (const r of results) {
+      for (const [k, v] of Object.entries(r.outcomes)) total[k] = (total[k] ?? 0) + v;
+    }
+    for (const key of [
+      'CONFIRMED',
+      'SKIPPED:DRY_RUN',
+      'SKIPPED:NO_TOKENS',
+      'SKIPPED:INSUFFICIENT_SOL_FOR_GAS',
+      'FAILED:MAX_ATTEMPTS',
+    ]) {
+      expect(total[key] ?? 0, key).toBeGreaterThan(0);
+    }
+    for (const key of ['SKIPPED:PRICE_CEILING', 'SKIPPED:INSUFFICIENT_SOL']) {
+      expect(total[key] ?? 0, key).toBe(0);
+    }
+    expect(results.reduce((n, r) => n + r.priceMoved, 0)).toBeGreaterThan(0);
+    expect(results.reduce((n, r) => n + r.simulations, 0)).toBeGreaterThan(0);
+    expect(results.reduce((n, r) => n + r.chainChecks, 0)).toBeGreaterThan(DIRECT_SELL_SEEDS * 5);
     expect(results.reduce((n, r) => n + r.landedWithError, 0)).toBeGreaterThan(0);
   });
 });

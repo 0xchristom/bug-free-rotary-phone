@@ -130,17 +130,6 @@ describe('getOrder', () => {
     expect(fake.count('sendTransaction')).toBe(0);
   });
 
-  it('a sell is refused: the direct route only buys (BUNNDLY-63)', async () => {
-    const { route } = setup();
-    const answer = await route.getOrder({
-      inputMint: CASE.baseMint,
-      outputMint: 'So11111111111111111111111111111111111111112',
-      amount: 1n,
-      taker: TAKER,
-    });
-    expect(answer.ok ? null : answer.code).toBe('BAD_REQUEST');
-  });
-
   it('the pool from the detection: no getProgramAccounts; without it the fallback reads it', async () => {
     const hinted = setup({}, { mint: CASE.baseMint, pool: CASE.pool });
     await order(hinted.route);

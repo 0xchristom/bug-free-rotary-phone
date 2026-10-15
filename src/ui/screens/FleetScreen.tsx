@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ERROR_MESSAGES, isAppError, toUserMessage } from '../../core/errors.ts';
+import { isAppError, toUserMessage } from '../../core/errors.ts';
 import { effectiveGroups, groupOf, type WalletGroupV1 } from '../../core/groups.ts';
 import type { FleetSettingsV1 } from '../../core/keystore/format.ts';
 import { NETWORK_LABELS, NO_BUY_ROUTE_MESSAGE, buyRouteOf } from '../../core/network.ts';
@@ -377,6 +377,9 @@ export function FleetScreen({
 
   const { global } = info.settings;
   const hasRpc = info.apiKeys.helius || info.apiKeys.heliusRpcUrl;
+  // Balances (and so a sell's plan) are read with a Helius key, or on devnet through its
+  // public RPC (BUNNDLY-63).
+  const hasBalanceRpc = hasRpc || buyRouteOf(global.network) === 'direct';
   const buyBlocked =
     buyRouteOf(global.network) === null
       ? NO_BUY_ROUTE_MESSAGE
@@ -537,17 +540,15 @@ export function FleetScreen({
         ? 'Sending the command…'
         : buyRouteOf(global.network) === null
           ? NO_BUY_ROUTE_MESSAGE
-          : buyRouteOf(global.network) !== 'jupiter'
-            ? ERROR_MESSAGES.NO_SELL_ROUTE_ON_NETWORK
-            : groupArmed
-              ? ARMED_TEXT
-              : buyMint === null
-                ? targetReason(targetCheck, SELL_TARGET)
-                : !hasRpc
-                  ? 'Selling reads the token balances first: it needs a Helius key (Settings).'
-                  : groupSelected.length === 0
-                    ? 'Select the wallets that sell.'
-                    : null,
+          : groupArmed
+            ? ARMED_TEXT
+            : buyMint === null
+              ? targetReason(targetCheck, SELL_TARGET)
+              : !hasBalanceRpc
+                ? 'Selling reads the token balances first: it needs a Helius key (Settings).'
+                : groupSelected.length === 0
+                  ? 'Select the wallets that sell.'
+                  : null,
     // STOP also disarms an armed group (BUNNDLY-87): on while it buys or is armed.
     stop:
       running && stopping && !groupArmed
@@ -808,13 +809,11 @@ export function FleetScreen({
     ? 'Sending the command…'
     : buyRouteOf(global.network) === null
       ? NO_BUY_ROUTE_MESSAGE
-      : buyRouteOf(global.network) !== 'jupiter'
-        ? ERROR_MESSAGES.NO_SELL_ROUTE_ON_NETWORK
-        : buyMint === null
-          ? targetReason(targetCheck, SELL_TARGET)
-          : !hasRpc
-            ? 'Selling reads the token balances first: it needs a Helius key (Settings).'
-            : null;
+      : buyMint === null
+        ? targetReason(targetCheck, SELL_TARGET)
+        : !hasBalanceRpc
+          ? 'Selling reads the token balances first: it needs a Helius key (Settings).'
+          : null;
   const statusGroups = status?.groups;
   const frozen = useMemo(() => {
     const out = new Map<number, string>();
@@ -1127,7 +1126,7 @@ export function FleetScreen({
         busy={commandBusy}
         reasons={reasons}
         blocked={buyBlocked}
-        setup={hasRpc ? null : 'Add the Helius API key in Settings'}
+        setup={hasBalanceRpc ? null : 'Add the Helius API key in Settings'}
         detected={detected}
         onCheck={onTargetCheck}
         onArm={onArm}
@@ -1355,14 +1354,15 @@ export function FleetScreen({
       />
 
       <div className="dash-notes">
-        {balances.source === 'fallback' && (
+        {/* Devnet without a key reads the public RPC by design, not as a fallback. */}
+        {balances.source === 'fallback' && (hasRpc || buyRouteOf(global.network) !== 'direct') && (
           <p className="warn-line">
             Helius is not responding. The balances come from the public Solana RPC and may be
             delayed.
           </p>
         )}
-        {/* Without a Helius key the read cannot work: the target strip says what to do. */}
-        {balances.error && hasRpc && (
+        {/* Without a way to read (no Helius key on mainnet) the target strip says what to do. */}
+        {balances.error && hasBalanceRpc && (
           <p className="field-error" role="alert">
             {balances.error}
           </p>

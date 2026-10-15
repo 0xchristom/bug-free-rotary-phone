@@ -1,5 +1,5 @@
 /**
- * Meteora DBC buy quote for a mint (BUNNDLY-47, D-053): finds the pool, reads the pool and
+ * Meteora DBC buy and sell quotes for a mint (BUNNDLY-47 and -63, D-053): finds the pool, reads the pool and
  * its config, and returns either a quote or an explicit reason why there is none. Only
  * RPC reads; nothing is signed or sent here.
  *
@@ -35,7 +35,13 @@ import {
   type VirtualPool,
 } from './accounts.ts';
 import { WSOL_MINT, findDbcPoolAddress } from './instructions.ts';
-import { minimumAmountOut, quoteBuyExactIn, type BuyQuote } from './math.ts';
+import {
+  minimumAmountOut,
+  quoteBuyExactIn,
+  quoteSellExactIn,
+  type BuyQuote,
+  type SellQuote,
+} from './math.ts';
 
 export type DbcRpc = Rpc<GetProgramAccountsApi & GetAccountInfoApi & GetSlotApi & GetBlockTimeApi>;
 
@@ -224,6 +230,74 @@ export function quoteFromState(
     minimumAmountOut: minimumAmountOut(result.quote.outputAmount, slippageBps),
     currentPoint,
   };
+}
+
+export type DbcSellResult =
+  | {
+      readonly kind: 'ok';
+      readonly state: DbcPoolState;
+      readonly quote: SellQuote;
+      /** Lamports, rounded down. */
+      readonly minimumAmountOut: bigint;
+      readonly currentPoint: bigint;
+    }
+  | { readonly kind: 'no-pool' }
+  | { readonly kind: 'graduated'; readonly state: DbcPoolState }
+  | { readonly kind: 'unsupported-quote'; readonly quoteMint: string }
+  | { readonly kind: 'unsupported-token'; readonly extension: string }
+  /** Nothing to sell. */
+  | { readonly kind: 'zero-amount' }
+  /** The curve holds too little SOL for this many tokens (the sell would go below its start). */
+  | {
+      readonly kind: 'insufficient-liquidity';
+      readonly state: DbcPoolState;
+      readonly amountLeft: bigint;
+    }
+  | { readonly kind: 'not-active'; readonly state: DbcPoolState; readonly activationPoint: bigint };
+
+/** Pure part of the sell quote: every explicit "no" before the curve math. */
+export function sellQuoteFromState(
+  state: DbcPoolState,
+  tokensIn: bigint,
+  slippageBps: number,
+  currentPoint: bigint,
+): DbcSellResult {
+  const { pool, config } = state;
+  if (config.quoteMint !== WSOL_MINT) {
+    return { kind: 'unsupported-quote', quoteMint: config.quoteMint };
+  }
+  if (tokensIn <= 0n) return { kind: 'zero-amount' };
+  if (pool.isMigrated) return { kind: 'graduated', state };
+  if (currentPoint < pool.activationPoint) {
+    return { kind: 'not-active', state, activationPoint: pool.activationPoint };
+  }
+  const result = quoteSellExactIn(pool, config, tokensIn, currentPoint);
+  if (result.kind === 'completed') return { kind: 'graduated', state };
+  if (result.kind === 'insufficient-liquidity') {
+    return { kind: 'insufficient-liquidity', state, amountLeft: result.amountLeft };
+  }
+  return {
+    kind: 'ok',
+    state,
+    quote: result.quote,
+    minimumAmountOut: minimumAmountOut(result.quote.outputAmount, slippageBps),
+    currentPoint,
+  };
+}
+
+/** Finds the pool of `mint` and quotes a sell of `tokensIn` base units for SOL. */
+export async function quoteDbcSell(
+  rpc: DbcRpc,
+  mint: string,
+  tokensIn: bigint,
+  slippageBps: number,
+): Promise<DbcSellResult> {
+  if (tokensIn <= 0n) return { kind: 'zero-amount' };
+  const state = await fetchDbcPool(rpc, mint);
+  if (state === null) return { kind: 'no-pool' };
+  if ('unsupported' in state) return { kind: 'unsupported-token', extension: state.unsupported };
+  const point = await fetchCurrentPoint(rpc, state.config.activationType);
+  return sellQuoteFromState(state, tokensIn, slippageBps, point);
 }
 
 /** Finds the pool of `mint` and quotes a buy for `lamportsIn`. */

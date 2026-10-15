@@ -999,16 +999,19 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
     if (mint !== undefined && typeof mint !== 'string') return badRequest();
     checkAutoLock();
     const vault = requireUnlocked();
-    const url = rpcUrlOf(vault);
+    const network = networkOf(vault);
+    const keyUrl = rpcUrlOf(vault);
+    // Without a key devnet reads through its public RPC, as its direct route does: the buy's
+    // pre-check needs these balances (BUNNDLY-63). Mainnet's refuses the page (D-057).
+    const url = keyUrl ?? (buyRouteOf(network) === 'direct' ? publicRpcUrl(network) : null);
     if (url === null) throw new AppError('HELIUS_KEY_MISSING');
     const wallets = [...vault.publicWallets];
     const readSession = session;
-    const network = networkOf(vault);
     return async () => {
-      let source: RpcSource = 'helius';
+      let source: RpcSource = keyUrl === null ? 'fallback' : 'helius';
       const transport = createResilientTransport({
         primary: createTransport(url),
-        fallback: fallbackOf(network),
+        fallback: keyUrl === null ? null : fallbackOf(network),
         ...(options.chain?.sleep ? { sleep: options.chain.sleep } : {}),
         onSource: (s) => {
           if (s === 'fallback') source = 'fallback';
@@ -1434,9 +1437,8 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
     // A sell is a command of its own; an armed watcher buys and must not meet one.
     if (watchActive(run)) throw new AppError('WATCH_ARMED');
     if (run.buy !== null) throw new AppError('BUY_RUNNING');
+    // A sell takes the buy's route: Jupiter on mainnet, the DBC curve on devnet (BUNNDLY-63).
     requireBuyRoute(vault);
-    // The direct route buys only; a sell through the curve is BUNNDLY-63.
-    if (buyRouteOf(networkOf(vault)) !== 'jupiter') throw new AppError('NO_SELL_ROUTE_ON_NETWORK');
     const mint = mintOf(rawMint);
     // Without a percent in the request each wallet sells its own part (BUNNDLY-58).
     if (rawPercent !== undefined && !isSellPercent(rawPercent)) return badRequest();
@@ -1451,10 +1453,11 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
     // A sell is planned from a balance read, in DRY-RUN too.
     const read = tokenReader(runTransport(vault), mint);
     if (read === null) throw new AppError('HELIUS_KEY_MISSING');
-    // Live mode never retries without the chain check, which needs the RPC.
+    // Live mode never retries without the chain check, which needs the RPC (on devnet the
+    // public one will do, as for a buy).
     if (
       !vault.settings.global.dryRun &&
-      rpcUrlOf(vault) === null &&
+      runTransport(vault) === null &&
       options.executor?.landing === undefined
     ) {
       throw new AppError('HELIUS_KEY_MISSING');
@@ -2143,7 +2146,7 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
       maxSpend: limit,
     };
     // The route comes from the fleet's network, never from the order (BUNNDLY-48): on
-    // Devnet only a checked DBC buy is signed, elsewhere a direct order never is.
+    // Devnet only a checked DBC buy or sell is signed, elsewhere a direct order never is.
     const direct = buyRouteOf(networkOf(vault)) === 'direct';
     if (!direct && order.router === DIRECT_ROUTER)
       return { ok: false, problem: 'DIRECT_ROUTE_OFF' };

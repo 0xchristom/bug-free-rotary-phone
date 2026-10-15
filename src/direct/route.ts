@@ -1,14 +1,19 @@
 /**
- * Direct buy route through Meteora DBC (BUNNDLY-48, D-062): the executor's second route
- * beside Jupiter, with the same contract (`JupiterClient`), so queue, limiter, mint gate,
- * attempts, STOP, Stairs and the chain check before a retry stay shared.
+ * Direct route through Meteora DBC (BUNNDLY-48 buys, BUNNDLY-63 sells; D-062, D-063): the
+ * executor's second route beside Jupiter, with the same contract (`JupiterClient`), so
+ * queue, limiter, mint gate, attempts, STOP, Stairs and the chain check before a retry
+ * stay shared.
  *
  * - `getOrder`: the pool (from the watcher's detection, else `getProgramAccounts`), a quote
  *   with fees, the wallet's balance against amount + token account rent read from the chain
  *   + fees + reserve, a blockhash, and an unsigned v0 transaction paid by the wallet.
+ *   A sell (`inputMint` set, SOL out) quotes the tokens for SOL with the slippage minimum
+ *   in the `swap2`, and needs only the fees and the wrapped SOL account's rent in SOL.
  * - `execute`: one `sendTransaction`, then the signature status until it is confirmed or
  *   its blockhash can no longer land. Never sent twice: an unclear outcome goes back to the
- *   executor, which checks the chain before any new attempt (D-030).
+ *   executor, which checks the chain before any new attempt (D-030). A sell first reads
+ *   the pool again: when the curve now pays less than the minimum, it is not sent
+ *   (`PRICE_MOVED`), so a sell that would fail on the chain costs no fee.
  * - `simulate`: DRY-RUN simulates the signed transaction; nothing is sent.
  * - Devnet only: before its first order the route checks the RPC's genesis hash and
  *   refuses any other network (mainnet stays on Jupiter until a separate test and the
@@ -62,10 +67,12 @@ import {
 } from '../jupiter/client.ts';
 import {
   buildBuyInstructions,
+  buildSellInstructions,
   fetchCurrentPoint,
   fetchDbcPool,
   fetchDbcPoolAt,
   quoteFromState,
+  sellQuoteFromState,
   type DbcPoolState,
 } from './meteora-dbc/index.ts';
 
@@ -134,10 +141,15 @@ export interface DirectRoute extends JupiterClient {
 }
 
 interface Pending {
+  readonly side: 'buy' | 'sell';
   readonly taker: string;
   readonly mint: string;
+  /** Lamports in for a buy, token units in for a sell. */
   readonly amount: bigint;
   readonly baseTokenProgram: DbcPoolState['baseTokenProgram'];
+  readonly pool: string;
+  /** The least the `swap2` accepts: tokens for a buy, lamports for a sell. */
+  readonly minimumOut: bigint;
 }
 
 function failure(code: JupiterFailureCode, signature: string | null = null): JupiterFailure {
@@ -242,11 +254,12 @@ export function createDirectRoute(options: DirectRouteOptions): DirectRoute {
   };
 
   const getOrder: JupiterClient['getOrder'] = async (request) => {
-    // A sell through the curve is BUNNDLY-63.
-    if (request.inputMint !== undefined || request.taker === undefined) {
-      return failure('BAD_REQUEST');
+    if (request.taker === undefined || request.amount <= 0n) return failure('BAD_REQUEST');
+    if (request.inputMint !== undefined) {
+      // Only token → SOL: the curve's quote side is SOL.
+      if (request.outputMint !== SOL_MINT) return failure('BAD_REQUEST');
+      return getSellOrder(request.taker, request.inputMint, request.amount, request.slippageBps);
     }
-    if (request.amount <= 0n) return failure('BAD_REQUEST');
     const taker = request.taker;
     const mint = request.outputMint;
     try {
@@ -326,10 +339,13 @@ export function createDirectRoute(options: DirectRouteOptions): DirectRoute {
       );
       const transaction = getBase64EncodedWireTransaction(compileTransaction(message));
       pending.set(base.requestId, {
+        side: 'buy',
         taker,
         mint,
         amount: request.amount,
         baseTokenProgram: state.baseTokenProgram,
+        pool: state.address,
+        minimumOut: quoted.minimumAmountOut,
       });
       return ok({
         ...base,
@@ -340,6 +356,152 @@ export function createDirectRoute(options: DirectRouteOptions): DirectRoute {
     } catch {
       // A read failed (RPC_UNAVAILABLE, a malformed account): nothing was sent.
       return failure('NETWORK');
+    }
+  };
+
+  /** Sell `amount` token units of `mint` for SOL (BUNNDLY-63). */
+  const getSellOrder = async (
+    taker: string,
+    mint: string,
+    amount: bigint,
+    slippageBps: number | undefined,
+  ): Promise<JupiterResult<JupiterOrder>> => {
+    try {
+      if (!(await onDevnet())) return failure('WRONG_NETWORK');
+      const state = await poolOf(mint);
+      if (state === null) return failure('NO_ROUTE');
+      if (!('address' in state)) return failure('UNSUPPORTED_TOKEN');
+      const point = await fetchCurrentPoint(rpc, state.config.activationType);
+      const quoted = sellQuoteFromState(
+        state,
+        amount,
+        slippageBps ?? DIRECT_AUTO_SLIPPAGE_BPS,
+        point,
+      );
+      switch (quoted.kind) {
+        case 'ok':
+          break;
+        case 'zero-amount':
+          return failure('BAD_REQUEST');
+        case 'not-active':
+        case 'no-pool':
+          return failure('NO_ROUTE');
+        case 'graduated':
+          return failure('GRADUATED');
+        case 'insufficient-liquidity':
+          return failure('INSUFFICIENT_LIQUIDITY');
+        case 'unsupported-quote':
+        case 'unsupported-token':
+          return failure('UNSUPPORTED_TOKEN');
+      }
+      // A minimum of 0 would take any price: too few tokens to sell, never built.
+      if (quoted.minimumAmountOut <= 0n) return failure('BAD_REQUEST');
+      const base: Omit<JupiterOrder, 'transaction' | 'buildError' | 'lastValidBlockHeight'> = {
+        requestId: `dbc-${String(nextRequest++)}`,
+        router: DIRECT_ROUTER,
+        inputMint: mint,
+        outputMint: SOL_MINT,
+        inAmount: amount,
+        outAmount: quoted.quote.outputAmount,
+        otherAmountThreshold: quoted.minimumAmountOut,
+        taker,
+        signatureFeePayer: taker,
+        prioritizationFeePayer: taker,
+        rentFeePayer: taker,
+        gasless: false,
+        expireAt: null,
+        feeMint: null,
+        feeBps: null,
+        priceImpactPct: null,
+      };
+      // The SOL comes out of the curve; the wallet pays only the fees and, while the
+      // transaction runs, the wrapped SOL account's rent (back at its close).
+      const need = await costs(taker, state);
+      const balance = (await rpc.getBalance(address(taker), { commitment: 'confirmed' }).send())
+        .value;
+      if (balance < need.wsolRent + need.fees) {
+        return ok({
+          ...base,
+          transaction: null,
+          buildError: { errorCode: null, reason: 'INSUFFICIENT_SOL_FOR_GAS' },
+          lastValidBlockHeight: null,
+        });
+      }
+      const { value: latest } = await rpc.getLatestBlockhash({ commitment: 'confirmed' }).send();
+      const instructions = await buildSellInstructions({
+        payer: taker,
+        pool: state.address,
+        config: state.pool.config,
+        baseMint: state.pool.baseMint,
+        baseVault: state.pool.baseVault,
+        quoteVault: state.pool.quoteVault,
+        baseTokenProgram: state.baseTokenProgram,
+        amountIn: amount,
+        minimumAmountOut: quoted.minimumAmountOut,
+        computeUnitLimit: DIRECT_COMPUTE_UNIT_LIMIT,
+        computeUnitPriceMicroLamports: DIRECT_COMPUTE_UNIT_PRICE_MICRO_LAMPORTS,
+      });
+      const message = pipe(
+        createTransactionMessage({ version: 0 }),
+        (m) => setTransactionMessageFeePayer(address(taker), m),
+        (m) => setTransactionMessageLifetimeUsingBlockhash(latest, m),
+        (m) => appendTransactionMessageInstructions(instructions, m),
+      );
+      const transaction = getBase64EncodedWireTransaction(compileTransaction(message));
+      pending.set(base.requestId, {
+        side: 'sell',
+        taker,
+        mint,
+        amount,
+        baseTokenProgram: state.baseTokenProgram,
+        pool: state.address,
+        minimumOut: quoted.minimumAmountOut,
+      });
+      return ok({
+        ...base,
+        transaction,
+        buildError: null,
+        lastValidBlockHeight: latest.lastValidBlockHeight,
+      });
+    } catch {
+      // A read failed: nothing was sent.
+      return failure('NETWORK');
+    }
+  };
+
+  /**
+   * A sell, just before sending: does the curve still pay at least the minimum? 'moved'
+   * when it does not (or the curve is gone), 'unread' when the pool could not be read.
+   */
+  const sellStillPays = async (order: Pending): Promise<'ok' | 'moved' | 'unread'> => {
+    try {
+      const state = await fetchDbcPoolAt(rpc, order.pool, order.mint);
+      if (state === null || !('address' in state)) return 'moved';
+      const point = await fetchCurrentPoint(rpc, state.config.activationType);
+      const now = sellQuoteFromState(state, order.amount, 0, point);
+      return now.kind === 'ok' && now.quote.outputAmount >= order.minimumOut ? 'ok' : 'moved';
+    } catch {
+      return 'unread';
+    }
+  };
+
+  /** Lamports a landed sell brought the wallet (the fee payer, account 0): Δ + fee. */
+  const lamportsReceived = async (sig: string): Promise<bigint | null> => {
+    try {
+      const tx = await rpc
+        .getTransaction(toSignature(sig), {
+          commitment: 'confirmed',
+          encoding: 'json',
+          maxSupportedTransactionVersion: 0,
+        })
+        .send();
+      const meta = tx?.meta;
+      const pre = meta?.preBalances[0];
+      const post = meta?.postBalances[0];
+      if (!meta || pre === undefined || post === undefined) return null;
+      return BigInt(post) - BigInt(pre) + BigInt(meta.fee);
+    } catch {
+      return null;
     }
   };
 
@@ -369,6 +531,12 @@ export function createDirectRoute(options: DirectRouteOptions): DirectRoute {
     const sig = firstSignature(request.signedTransaction);
     if (order === undefined || sig === null) return failure('BAD_REQUEST');
     pending.delete(request.requestId);
+    if (order.side === 'sell') {
+      // Not sent in either case; a new attempt quotes the curve again.
+      const pays = await sellStillPays(order);
+      if (pays === 'moved') return failure('PRICE_MOVED', sig);
+      if (pays === 'unread') return failure('NOT_SENT', sig);
+    }
     try {
       await rpc
         .sendTransaction(request.signedTransaction as Base64EncodedWireTransaction, {
@@ -412,10 +580,11 @@ export function createDirectRoute(options: DirectRouteOptions): DirectRoute {
               outcome: 'AGGREGATOR_FAILED_TO_LAND',
             });
           }
-          const tokens = await received(sig, order);
+          const output =
+            order.side === 'sell' ? await lamportsReceived(sig) : await received(sig, order);
           return ok({
             ...landed,
-            totalOutputAmount: tokens,
+            totalOutputAmount: output,
             status: 'Success',
             code: 0,
             outcome: 'SUCCESS',

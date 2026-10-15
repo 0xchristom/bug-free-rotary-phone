@@ -283,12 +283,13 @@ describe('reads after the switch', () => {
     await refresh(w.h);
     expect(w.rpcUrls).toEqual([customMainnet, DEVNET_HELIUS]);
 
-    // Only a custom mainnet address and no key: devnet has no Helius address at all.
+    // Only a custom mainnet address and no key: devnet has no Helius address at all, so
+    // it reads through its public RPC (BUNNDLY-63), never the mainnet address.
     const noKey = world();
     await fleet(noKey.h, { heliusRpcUrl: customMainnet });
     await toDevnet(noKey.h);
-    expect(await codeOf(refresh(noKey.h))).toBe('HELIUS_KEY_MISSING');
-    expect(noKey.rpcUrls).toEqual([]);
+    expect((await refresh(noKey.h)).source).toBe('fallback');
+    expect(noKey.rpcUrls).toEqual([DEVNET_PUBLIC]);
 
     // A custom devnet address is used on devnet and ignored on mainnet.
     const customDevnet = 'https://devnet.helius-rpc.com/?api-key=own';
