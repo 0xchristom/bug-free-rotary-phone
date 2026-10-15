@@ -141,8 +141,32 @@ export interface Devnet {
   readonly rpc: Rpc;
   /** Signs with every wallet in `signers` (first = fee payer), sends, waits for confirmation. */
   send(instructions: readonly Instruction[], signers: readonly Wallet[]): Promise<Sent>;
+  /** Signs and sends once (no preflight, no RPC retries) without waiting. */
+  sendOnly(
+    instructions: readonly Instruction[],
+    signers: readonly Wallet[],
+    lifetime?: Lifetime,
+  ): Promise<SentOnly>;
+  waitFor(signature: string, level: 'processed' | 'confirmed', timeoutMs?: number): Promise<Landed>;
+  latestBlockhash(): Promise<Lifetime>;
   /** Same transaction, simulated without signatures (sigVerify false). */
   simulate(instructions: readonly Instruction[], feePayer: Address): Promise<Simulation>;
+}
+
+export interface Lifetime {
+  readonly blockhash: string;
+  readonly lastValidBlockHeight: number;
+}
+
+export interface Landed {
+  readonly slot: number;
+  readonly atMs: number;
+}
+
+export interface SentOnly {
+  readonly signature: string;
+  readonly signedAtMs: number;
+  readonly sentAtMs: number;
 }
 
 export interface Sent {
@@ -168,10 +192,12 @@ export async function openDevnet(rpc: Rpc): Promise<Devnet> {
     throw new DevnetError(`refusing to work: genesis hash ${genesis} is not devnet`);
   }
 
-  async function compile(instructions: readonly Instruction[], feePayer: Address) {
-    const { value } = await rpc.call<{
-      value: { blockhash: string; lastValidBlockHeight: number };
-    }>('getLatestBlockhash', [{ commitment: 'confirmed' }]);
+  async function compile(
+    instructions: readonly Instruction[],
+    feePayer: Address,
+    lifetime?: Lifetime,
+  ) {
+    const value = lifetime ?? (await latestBlockhash());
     return compileTransaction(
       pipe(
         createTransactionMessage({ version: 0 }),
@@ -189,8 +215,36 @@ export async function openDevnet(rpc: Rpc): Promise<Devnet> {
     );
   }
 
+  async function latestBlockhash(): Promise<Lifetime> {
+    const { value } = await rpc.call<{ value: Lifetime }>('getLatestBlockhash', [
+      { commitment: 'confirmed' },
+    ]);
+    return value;
+  }
+
   return {
     rpc,
+    latestBlockhash,
+    async sendOnly(instructions, signers, lifetime) {
+      const payer = signers[0];
+      if (!payer) throw new DevnetError('no fee payer');
+      const signed = await signTransaction(
+        signers.map((s) => s.keyPair),
+        await compile(instructions, payer.address, lifetime),
+      );
+      const signature = getSignatureFromTransaction(signed);
+      const signedAtMs = Date.now();
+      // Preflight off: the buy goes out in the same moment (the app's live mode simulates
+      // nothing before sending either, D-062).
+      await rpc.call<string>('sendTransaction', [
+        getBase64EncodedWireTransaction(signed),
+        { encoding: 'base64', skipPreflight: true, maxRetries: 0 },
+      ]);
+      return { signature, signedAtMs, sentAtMs: Date.now() };
+    },
+    async waitFor(signature, level, timeoutMs = 60_000) {
+      return waitForConfirmation(rpc, signature, level, timeoutMs);
+    },
     async send(instructions, signers) {
       const payer = signers[0];
       if (!payer) throw new DevnetError('no fee payer');
@@ -224,18 +278,27 @@ export async function openDevnet(rpc: Rpc): Promise<Devnet> {
   };
 }
 
-async function waitForConfirmation(rpc: Rpc, signature: string): Promise<{ slot: number }> {
-  const deadline = Date.now() + 60_000;
+async function waitForConfirmation(
+  rpc: Rpc,
+  signature: string,
+  level: 'processed' | 'confirmed' = 'confirmed',
+  timeoutMs = 60_000,
+): Promise<Landed> {
+  const deadline = Date.now() + timeoutMs;
+  // 'processed' is polled faster: it is the detection moment of the cycle (BUNNDLY-49).
+  const pause = level === 'processed' ? 150 : 400;
   while (Date.now() < deadline) {
     const { value } = await rpc.call<{
       value: ({ slot: number; err: unknown; confirmationStatus: string | null } | null)[];
     }>('getSignatureStatuses', [[signature]]);
     const status = value[0];
     if (status?.err) throw new DevnetError(`${signature} failed: ${JSON.stringify(status.err)}`);
-    if (status && status.confirmationStatus !== 'processed') return { slot: status.slot };
-    await sleep(400);
+    if (status && (level === 'processed' || status.confirmationStatus !== 'processed')) {
+      return { slot: status.slot, atMs: Date.now() };
+    }
+    await sleep(pause);
   }
-  throw new DevnetError(`${signature} not confirmed within 60 s`);
+  throw new DevnetError(`${signature} not ${level} within ${String(timeoutMs / 1000)} s`);
 }
 
 // ---------------------------------------------------------------- instructions

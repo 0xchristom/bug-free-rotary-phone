@@ -10,12 +10,17 @@
  *   report --mint M --s0 SIG [--max-spend-lamports L] [--wallets a,b]
  *                                   buys of M per wallet, read from RPC, with slot - S0
  *   refund                          every test wallet sends its SOL back to main
+ *   simulate-buy --mint M             simulate the first fleet wallet's buy (nothing sent)
+ *   cycle --repeat 5 --sol 0.01 --out results.json
+ *                                   the whole test: per repetition a fresh token, the fleet
+ *                                   buys on detection, the chain table; JSON to --out
  *
  * Environment: BUNNDLY_DEVNET_KEYPAIR (path to the main wallet keypair file),
  * BUNNDLY_DEVNET_STATE (path to a JSON file outside the repo that keeps test wallet seeds),
  * BUNNDLY_DEVNET_RPC (optional, default the public devnet RPC).
  */
 import { readFile, writeFile } from 'node:fs/promises';
+import { buyInstructions, maxSpendOf, readConfig, runCycle, type CycleResult } from './cycle.ts';
 import { getBase58Decoder, getBase58Encoder, type Address } from '@solana/kit';
 import {
   DEVNET_RPC_URL,
@@ -29,6 +34,7 @@ import {
   loadKeypairFile,
   newSeed,
   openDevnet,
+  sleep,
   transfer,
   walletFromSeed,
   type BuyRow,
@@ -227,6 +233,103 @@ async function main(): Promise<void> {
         );
         console.log(`${w.address} -> main ${sol(have - FEE_LAMPORTS)} SOL ${sent.signature}`);
       }
+      return;
+    }
+    case 'simulate-buy': {
+      const mint = f.get('mint');
+      if (!mint) throw new DevnetError('simulate-buy needs --mint');
+      const { fleet } = await readState();
+      const wallet = fleet[0];
+      if (!wallet) throw new DevnetError('no fleet wallet');
+      const poolConfig = await readConfig(devnet, config);
+      const slot = await rpc.call<number>('getSlot', [{ commitment: 'processed' }]);
+      const built = await buyInstructions(
+        devnet,
+        wallet.address,
+        mint,
+        poolConfig,
+        {
+          config,
+          lamportsIn: 10_000_000n,
+          slippageBps: 2000,
+          computeUnitLimit: 150_000,
+          computeUnitPriceMicroLamports: 2000n,
+        },
+        slot,
+      );
+      const sim = await devnet.simulate(built.instructions, wallet.address);
+      console.log(
+        JSON.stringify({
+          wallet: wallet.address,
+          quoted: String(built.quoted),
+          err: sim.err,
+          units: sim.unitsConsumed,
+        }),
+      );
+      console.log(
+        sim.logs.filter((l) => l.includes('dbcij') || l.toLowerCase().includes('error')).join('\n'),
+      );
+      return;
+    }
+    case 'cycle': {
+      const out = f.get('out');
+      if (!out) throw new DevnetError('cycle needs --out <file outside the repo>');
+      const { creator, fleet } = await readState();
+      const options = {
+        config,
+        lamportsIn: BigInt(Math.round(Number(f.get('sol') ?? '0.01') * 1e9)),
+        slippageBps: Number(f.get('slippage-bps') ?? '2000'),
+        computeUnitLimit: Number(f.get('cu-limit') ?? '150000'),
+        computeUnitPriceMicroLamports: BigInt(f.get('cu-price') ?? '2000'),
+      };
+      const poolConfig = await readConfig(devnet, config);
+      const ataRent = BigInt(await rpc.call<number>('getMinimumBalanceForRentExemption', [165]));
+      const results: CycleResult[] = [];
+      const repeat = Number(f.get('repeat') ?? '5');
+      for (let rep = 1; rep <= repeat; rep++) {
+        const r = await runCycle(devnet, creator, fleet, poolConfig, options, ataRent);
+        results.push(r);
+        await writeFile(
+          out,
+          JSON.stringify(
+            results,
+            (_k, v: unknown) => (typeof v === 'bigint' ? v.toString() : v),
+            2,
+          ),
+        );
+        console.log(
+          `#${String(rep)} mint ${r.mint} S0 ${String(r.s0)} creation ${r.creation} seen at slot ${String(r.detectedSlot)} after ${String(r.creationSentToDetectMs)} ms, quote ${String(r.detectToQuotedMs)} ms`,
+        );
+        for (const x of r.rows) {
+          console.log(
+            [
+              x.wallet,
+              x.signature,
+              x.slot,
+              `S0+${String(x.deltaS0)}`,
+              x.ok ? 'ok' : 'FAILED',
+              `detect->sent ${String(x.detectToSentMs)} ms`,
+              `sent->confirmed ${String(x.sentToConfirmedMs)} ms`,
+              `spent ${sol(x.solSpent)}`,
+              `tokens ${String(x.tokensReceived)}`,
+              x.solSpent <= x.maxSpend ? '<= max spend' : 'OVER MAX SPEND',
+            ].join(' | '),
+          );
+        }
+        for (const x of r.failures) console.log(`FAILED ${x.wallet}: ${x.error}`);
+        if (rep < repeat) await sleep(3000);
+      }
+      const all = results.flatMap((r) => r.rows);
+      const byDelta = new Map<number, number>();
+      for (const x of all) byDelta.set(x.deltaS0, (byDelta.get(x.deltaS0) ?? 0) + 1);
+      console.log(
+        `buys ${String(all.length)}, failed ${String(results.reduce((n, r) => n + r.failures.length, 0))}; by slot - S0: ${[
+          ...byDelta.entries(),
+        ]
+          .sort((a, b) => a[0] - b[0])
+          .map(([k, v]) => `+${String(k)}: ${String(v)}`)
+          .join(', ')}; max spend per buy ${sol(maxSpendOf(options, ataRent))} SOL`,
+      );
       return;
     }
     default:

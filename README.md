@@ -220,14 +220,16 @@ npm ci && npm run lint && npm run typecheck && npm test && npm run build && npm 
 
 `node scripts/devnet/run.ts <komenda>` (Node 24 uruchamia TypeScript bez kompilacji). Przed czymkolwiek skrypt sprawdza `getGenesisHash` i odmawia pracy poza devnetem. Klucz portfela głównego devnet czyta z pliku, którego ścieżkę podaje `BUNNDLY_DEVNET_KEYPAIR`; ziarna portfeli testowych trzyma w pliku z `BUNNDLY_DEVNET_STATE`. Oba pliki leżą poza repo i nie są wypisywane.
 
-| Komenda                                             | Co robi                                                                 |
-| --------------------------------------------------- | ----------------------------------------------------------------------- |
-| `balance`                                           | adres i saldo portfela głównego                                         |
-| `simulate-token`                                    | symulacja utworzenia tokenu na DBC, bez podpisu i wysyłki               |
-| `fund --wallets 5 --sol 0.05`                       | nowy twórca i 5 portfeli testowych zasilonych z portfela głównego       |
-| `create-token`                                      | twórca tworzy świeży token na DBC; wypisuje mint, pulę i slot S0        |
-| `report --mint M --s0 SIG [--max-spend-lamports L]` | zakupy mintu z łańcucha: sygnatura, slot, slot − S0, wydany SOL, tokeny |
-| `refund`                                            | portfele testowe odsyłają SOL na portfel główny                         |
+| Komenda                                             | Co robi                                                                                                                                        |
+| --------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| `balance`                                           | adres i saldo portfela głównego                                                                                                                |
+| `simulate-token`                                    | symulacja utworzenia tokenu na DBC, bez podpisu i wysyłki                                                                                      |
+| `fund --wallets 5 --sol 0.05`                       | nowy twórca i 5 portfeli testowych zasilonych z portfela głównego                                                                              |
+| `create-token`                                      | twórca tworzy świeży token na DBC; wypisuje mint, pulę i slot S0                                                                               |
+| `report --mint M --s0 SIG [--max-spend-lamports L]` | zakupy mintu z łańcucha: sygnatura, slot, slot − S0, wydany SOL, tokeny                                                                        |
+| `simulate-buy --mint M`                             | symulacja zakupu pierwszego portfela floty, bez wysyłki                                                                                        |
+| `cycle --repeat 5 --sol 0.01 --out plik.json`       | cały test: w każdym powtórzeniu świeży token, zakupy floty zaraz po wykryciu, tabela z łańcucha (slot − S0, czasy, wydatek względem max spend) |
+| `refund`                                            | portfele testowe odsyłają SOL na portfel główny                                                                                                |
 
 ### Struktura
 

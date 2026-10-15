@@ -16,6 +16,7 @@ import {
   type ChainTx,
   type Fetch,
 } from '../../scripts/devnet/lib.ts';
+import { maxSpendOf } from '../../scripts/devnet/cycle.ts';
 
 const MAINNET_GENESIS = '5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d';
 
@@ -156,5 +157,19 @@ describe('buyRow', () => {
       fee: 5000n,
       tokensReceived: 42n,
     });
+  });
+});
+
+describe('maxSpendOf (cycle)', () => {
+  it('is amount + token account rent + base fee + priority fee rounded up', () => {
+    const o = {
+      config: 'AkKLsP5gRZ6NopNyDmwPEr7z9Bwwrao8irCUZ9Rx3J7D',
+      lamportsIn: 10_000_000n,
+      slippageBps: 2000,
+      computeUnitLimit: 150_001,
+      computeUnitPriceMicroLamports: 2000n,
+    };
+    // 150 001 × 2000 µlamports = 300 002 000 µlamports = 300,002 lamports → 301
+    expect(maxSpendOf(o, 1_488_440n)).toBe(10_000_000n + 1_488_440n + 5_000n + 301n);
   });
 });
