@@ -284,3 +284,61 @@ export async function buildBuyInstructions(p: BuyParams): Promise<Instruction[]>
     closeAccount(wsolAta, p.payer, p.payer),
   ];
 }
+
+export interface SellParams {
+  readonly payer: string;
+  readonly pool: string;
+  readonly config: string;
+  readonly baseMint: string;
+  readonly baseVault: string;
+  readonly quoteVault: string;
+  readonly baseTokenProgram: TokenProgram;
+  /** Base token units sold. */
+  readonly amountIn: bigint;
+  /** Lamports out, after fees (`minimumAmountOut` of the quote). */
+  readonly minimumAmountOut: bigint;
+  readonly computeUnitLimit: number;
+  readonly computeUnitPriceMicroLamports: bigint;
+}
+
+/**
+ * The whole sell (BUNNDLY-63), the order real sells on mainnet use (fixtures in tests/fixtures):
+ * compute budget, ATA CreateIdempotent for wrapped SOL, `swap2` base → SOL (input = the base
+ * ATA, output = the wrapped SOL ATA), CloseAccount of the wrapped SOL account to the payer,
+ * which turns the output and the rent back into lamports.
+ */
+export async function buildSellInstructions(p: SellParams): Promise<Instruction[]> {
+  if (p.amountIn <= 0n) throw new RangeError('amountIn must be positive');
+  const baseProgram = programAddress(p.baseTokenProgram);
+  const [wsolAta, baseAta, poolAuthority, eventAuthority] = await Promise.all([
+    findAssociatedTokenAddress(p.payer, WSOL_MINT, 'spl-token'),
+    findAssociatedTokenAddress(p.payer, p.baseMint, p.baseTokenProgram),
+    findDbcPoolAuthority(),
+    findDbcEventAuthority(),
+  ]);
+  return [
+    setComputeUnitLimit(p.computeUnitLimit),
+    setComputeUnitPrice(p.computeUnitPriceMicroLamports),
+    createAtaIdempotent(p.payer, wsolAta, WSOL_MINT, TOKEN_PROGRAM_ADDRESS),
+    swap2ExactIn(
+      {
+        poolAuthority,
+        config: p.config,
+        pool: p.pool,
+        inputTokenAccount: baseAta,
+        outputTokenAccount: wsolAta,
+        baseVault: p.baseVault,
+        quoteVault: p.quoteVault,
+        baseMint: p.baseMint,
+        quoteMint: WSOL_MINT,
+        payer: p.payer,
+        tokenBaseProgram: baseProgram,
+        tokenQuoteProgram: TOKEN_PROGRAM_ADDRESS,
+        eventAuthority,
+      },
+      p.amountIn,
+      p.minimumAmountOut,
+    ),
+    closeAccount(wsolAta, p.payer, p.payer),
+  ];
+}

@@ -62,6 +62,7 @@ const PROBLEMS: Record<JupiterFailureCode, ConnectionProblem> = {
   GRADUATED: 'HTTP_ERROR',
   UNSUPPORTED_TOKEN: 'HTTP_ERROR',
   INSUFFICIENT_LIQUIDITY: 'HTTP_ERROR',
+  PRICE_MOVED: 'HTTP_ERROR',
 };
 
 export async function checkJupiterQuote(options: QuoteCheckOptions): Promise<JupiterCheck> {

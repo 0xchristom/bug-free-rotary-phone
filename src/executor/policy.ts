@@ -86,8 +86,9 @@ export function afterExecuteFailure(failure: JupiterFailure): Decision {
   if (failure.code === 'RATE_LIMITED') {
     return { action: 'requeue', countAttempt: false, detail: failure.code };
   }
-  // The direct route's RPC refused it in preflight: nothing was sent (BUNNDLY-48).
-  if (failure.code === 'NOT_SENT') {
+  // The direct route did not send it: the RPC refused it in preflight (BUNNDLY-48), or
+  // the curve moved below a sell's minimum just before sending (BUNNDLY-63).
+  if (failure.code === 'NOT_SENT' || failure.code === 'PRICE_MOVED') {
     return { action: 'requeue', countAttempt: true, detail: failure.code };
   }
   if (

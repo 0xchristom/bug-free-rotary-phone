@@ -52,16 +52,22 @@ export type JupiterFailureCode =
   /** A 2xx answer that is not what the docs describe (missing or malformed field). */
   | 'INVALID_RESPONSE'
   // The direct route (BUNNDLY-48, src/direct/route.ts) answers with these as well:
-  /** The RPC refused the transaction before sending it (preflight): nothing was sent. */
+  /** The direct route did not send it (preflight refusal, or a sell whose pool could not be
+   * read again just before sending): nothing was sent. */
   | 'NOT_SENT'
   /** The RPC is not on the network the route works on (genesis hash). */
   | 'WRONG_NETWORK'
-  /** The bonding curve is complete or the pool migrated: no buy on the curve. */
+  /** The bonding curve is complete or the pool migrated: no trade on the curve. */
   | 'GRADUATED'
-  /** A token the direct route cannot buy (quote not in SOL, Token-2022 extension). */
+  /** A token the direct route cannot trade (quote not in SOL, Token-2022 extension). */
   | 'UNSUPPORTED_TOKEN'
-  /** Less left on the curve than the amount. */
-  | 'INSUFFICIENT_LIQUIDITY';
+  /** Less left on the curve than the amount (tokens for a buy, SOL for a sell). */
+  | 'INSUFFICIENT_LIQUIDITY'
+  /**
+   * A sell, just before sending: the curve now pays less than the order's minimum, so
+   * the transaction was not sent (BUNNDLY-63).
+   */
+  | 'PRICE_MOVED';
 
 export interface JupiterFailure {
   readonly ok: false;

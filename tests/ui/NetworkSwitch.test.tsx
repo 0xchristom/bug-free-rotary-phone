@@ -393,18 +393,19 @@ describe('an unsaved fleet file on the screen', () => {
   });
 });
 
-describe('devnet buys directly, sells nothing yet (BUNNDLY-48)', () => {
-  it('BUY starts on a mint; SELL is off with its reason; no startSell leaves the UI', async () => {
+describe('devnet buys and sells directly (BUNNDLY-48, BUNNDLY-63)', () => {
+  it('BUY and SELL both start on a mint', async () => {
     const { user, requests } = setup(onDevnet());
     await enter(user, await screen.findByLabelText(TARGET_LABEL), MINT);
     await screen.findByText('Token · SPL', {}, TARGET_WAIT);
     const sell = screen.getByRole<HTMLButtonElement>('button', { name: 'Sell' });
-    expect(sell.disabled).toBe(true);
-    expect(sell.title).toBe(
-      'Selling is off on Devnet for now: the direct Meteora DBC route only buys.',
-    );
+    await waitFor(() => {
+      expect(sell.disabled).toBe(false);
+    });
     await user.click(sell);
-    expect(requests('startSell')).toEqual([]);
+    await waitFor(() => {
+      expect(requests('startSell')).toHaveLength(1);
+    });
 
     const buy = screen.getByRole<HTMLButtonElement>('button', { name: 'Buy' });
     await waitFor(() => {
@@ -436,6 +437,10 @@ describe('devnet buys directly, sells nothing yet (BUNNDLY-48)', () => {
       expect(buy.disabled).toBe(false);
     });
     expect(screen.queryByText('Live mode needs a Helius key (Settings).')).toBeNull();
+    // A sell reads the token balances through devnet's public RPC: no key needed either.
+    const sell = screen.getByRole<HTMLButtonElement>('button', { name: 'Sell' });
+    expect(sell.disabled).toBe(false);
+    expect(screen.queryByText('Add the Helius API key in Settings')).toBeNull();
   });
 });
 
