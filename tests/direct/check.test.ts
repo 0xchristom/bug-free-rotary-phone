@@ -301,8 +301,13 @@ describe('checkDirectTransaction, sell (BUNNDLY-63)', () => {
     expect(await sellProblem(await withSwap(swapAccount(3, theirs)))).toBe('SWAP_MISMATCH');
   });
 
-  it('refuses any System transfer in a sell', async () => {
+  it('refuses any System transfer in a sell, even the buy-shaped one into its own wrapped SOL', async () => {
     expect(await sellProblem([...(await sell()), transferSol(TAKER, OTHER, 1n)])).toBe(
+      'TRANSFER_MISMATCH',
+    );
+    // Passes every per-instruction rule of a buy's transfer; only "none in a sell" stops it.
+    const ownWsol = await findAssociatedTokenAddress(TAKER, WSOL_MINT, 'spl-token');
+    expect(await sellProblem([...(await sell()), transferSol(TAKER, ownWsol, TOKENS)])).toBe(
       'TRANSFER_MISMATCH',
     );
   });
