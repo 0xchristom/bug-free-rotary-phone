@@ -1,7 +1,8 @@
 /**
  * The executor with the real direct route over a fake devnet RPC (BUNNDLY-48): a lost
  * answer to `sendTransaction` after the RPC took the transaction gives exactly one send
- * and one buy; DRY-RUN simulates and sends nothing.
+ * and one buy; DRY-RUN simulates and sends nothing. A sell (BUNNDLY-63) whose curve moves
+ * below the minimum before the send is not sent, and the next attempt quotes again.
  */
 import { describe, expect, it } from 'vitest';
 import { JUPITER_PLAN_RPM } from '../../src/core/settings.ts';
@@ -21,6 +22,7 @@ import {
 import { signCheckedOrder } from '../../src/worker/sign-order.ts';
 import { FakeClock } from '../helpers/fake-clock.ts';
 import { CASE, CASE_LAMPORTS, fakeDirectRpc, type FakeChain } from '../helpers/direct-rpc.ts';
+import sells from '../fixtures/meteora-dbc-sell.devnet.json';
 
 const [derived] = deriveWallets(`${'abandon '.repeat(11)}about`, 0, 1);
 if (derived === undefined) throw new Error('fixture');
@@ -123,5 +125,113 @@ describe('executor over the direct route', () => {
       code: 'CHECK_FAILED',
       detail: 'SIMULATION_FAILED:"InsufficientFundsForRent"',
     });
+  });
+});
+
+describe('executor over the direct route, sell (BUNNDLY-63)', () => {
+  const [FIRST, SECOND] = sells.cases;
+  if (FIRST === undefined || SECOND === undefined) throw new Error('fixture');
+  /** The first devnet sell's tokens (meta token balances). */
+  const TOKENS = 9_810_963_807_547n;
+
+  const sellSigner: OrderSigner = async (_index, request, order) => {
+    const check = await checkDirectTransaction(order, {
+      taker: wallet.address,
+      ...(request.inputMint === undefined ? {} : { inputMint: request.inputMint }),
+      outputMint: request.outputMint,
+      amount: request.amount,
+      maxSpend: TOKENS,
+    });
+    if (!check.ok) return { ok: false, problem: check.problem };
+    return { ok: true, ...(await signCheckedOrder(wallet.secretKey, check.checked)) };
+  };
+
+  async function sell(dryRun: boolean, moveAfterFirstOrder: boolean) {
+    const clock = new FakeClock();
+    const fake = fakeDirectRpc(wallet.address, {}, FIRST);
+    const route = createDirectRoute({
+      rpc: fake.rpc,
+      minReserveLamports: 0n,
+      now: () => clock.now(),
+      sleep: (ms) => clock.sleep(ms),
+    });
+    let orders = 0;
+    const events: ExecutorEvent[] = [];
+    const started = startRun(
+      {
+        jupiter: {
+          getOrder: async (request) => {
+            const answer = await route.getOrder(request);
+            // Someone sells on the curve right after the first quote.
+            orders += 1;
+            if (moveAfterFirstOrder && orders === 1) fake.chain.poolData = SECOND.poolData;
+            return answer;
+          },
+          execute: (request) => route.execute(request),
+          ...(route.simulate === undefined ? {} : { simulate: route.simulate.bind(route) }),
+        },
+        orderLimiter: new OrderLimiter({ orderRpm: JUPITER_PLAN_RPM.free, clock }),
+        executeLimiter: new ExecuteLimiter({
+          plan: 'free',
+          orderRpm: JUPITER_PLAN_RPM.free,
+          clock,
+        }),
+        sign: sellSigner,
+        landing: () => Promise.resolve({ status: 'pending' }),
+        clock,
+        emit: (e) => events.push(e),
+      },
+      {
+        runId: 1,
+        side: 'sell',
+        mint: FIRST.baseMint,
+        wallets: [
+          {
+            index: 0,
+            address: wallet.address,
+            maxSpend: TOKENS,
+            balance: 1_000_000_000n,
+            slippageBps: 100,
+          },
+        ],
+        dryRun,
+        maxAttempts: 3,
+        minReserveLamports: 0n,
+        priceCeilingPercent: 50,
+        noRouteWindowMs: 60_000,
+        noRouteBackoffMinMs: 1_000,
+        noRouteBackoffMaxMs: 5_000,
+      },
+    );
+    await clock.runUntil();
+    const summary = await started.done;
+    const wallets = events.filter((e): e is WalletEvent => e.kind === 'wallet');
+    return { fake, summary, orders, states: wallets.map((e) => e.state), last: wallets.at(-1) };
+  }
+
+  it('the curve moved below 1% before the send: not sent, quoted again, then sent once', async () => {
+    const r = await sell(false, true);
+    expect(r.orders).toBe(2);
+    expect(r.fake.count('sendTransaction')).toBe(1);
+    expect(r.summary.counts.CONFIRMED).toBe(1);
+    expect(r.last?.attempt).toBe(2);
+    expect(r.states).toEqual([
+      'QUEUED',
+      'QUOTING',
+      'SIGNING',
+      'SUBMITTED',
+      'QUEUED',
+      'QUOTING',
+      'SIGNING',
+      'SUBMITTED',
+      'CONFIRMED',
+    ]);
+  });
+
+  it('DRY-RUN: the sell is simulated once, zero sendTransaction', async () => {
+    const r = await sell(true, false);
+    expect(r.fake.count('simulateTransaction')).toBe(1);
+    expect(r.fake.count('sendTransaction')).toBe(0);
+    expect(r.summary.wallets[0]?.reason).toMatchObject({ code: 'DRY_RUN' });
   });
 });

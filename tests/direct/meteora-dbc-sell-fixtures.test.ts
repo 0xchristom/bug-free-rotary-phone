@@ -128,9 +128,11 @@ describe('sell fixtures', () => {
     }
   });
 
-  it('cover both collect fee modes on mainnet', () => {
-    const modes = new Set(mainnetCases.map((c) => stateOf(c).config.collectFeeMode));
-    expect([...modes].sort()).toEqual([0, 1]);
+  it('cover both collect fee modes: fee in SOL (0, devnet) and in the output (1, mainnet)', () => {
+    const modes = (list: readonly Case[]) =>
+      [...new Set(list.map((c) => stateOf(c).config.collectFeeMode))].sort();
+    expect(modes(mainnetCases)).toEqual([1]);
+    expect(modes(devnetCases)).toEqual([0]);
   });
 });
 

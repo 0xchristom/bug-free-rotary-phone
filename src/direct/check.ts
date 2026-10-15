@@ -1,10 +1,14 @@
 /**
- * Checks before signing a direct Meteora DBC buy (BUNNDLY-48, D-062). Unlike a Jupiter
- * order, the transaction is built in this app from RPC data, so the check reads every
- * instruction: the wallet is the only signer and the fee payer, only the programs of a
- * DBC buy are called, exactly one `swap2` spends the ordered lamports for the ordered
- * token with a minimum out above 0, and exactly one System transfer moves the same lamports
- * into the wallet's own wrapped SOL account. Pure and keyless.
+ * Checks before signing a direct Meteora DBC buy (BUNNDLY-48, D-062) or sell (BUNNDLY-63).
+ * Unlike a Jupiter order, the transaction is built in this app from RPC data, so the check
+ * reads every instruction: the wallet is the only signer and the fee payer, only the
+ * programs of a DBC trade are called, and exactly one `swap2` ExactIn spends the ordered
+ * amount between the wallet's own accounts with the order's minimum out (above 0).
+ * - Buy: lamports from the wallet's wrapped SOL account into its token account, and exactly
+ *   one System transfer moves the same lamports into that wrapped SOL account.
+ * - Sell: tokens from the wallet's token account into its wrapped SOL account, which is
+ *   closed back to the wallet; no System transfer at all.
+ * Pure and keyless.
  */
 import {
   getBase64Encoder,
@@ -47,13 +51,17 @@ export type DirectCheckProblem =
   /** Not exactly one SOL transfer of the amount into the wallet's wrapped SOL account. */
   | 'TRANSFER_MISMATCH'
   | 'NO_MINIMUM_OUT'
+  /** The `swap2` minimum differs from the order's (the slippage limit, BUNNDLY-58). */
+  | 'MINIMUM_OUT_MISMATCH'
   | 'PRIORITY_FEE_TOO_HIGH';
 
 export const DIRECT_CHECK_MESSAGES: Record<DirectCheckProblem, string> = {
   NO_TRANSACTION: 'The direct route built no transaction to sign.',
   TAKER_MISMATCH: 'The transaction is for another wallet. It was not signed.',
-  INPUT_MINT_MISMATCH: 'The transaction does not pay in SOL. It was not signed.',
-  OUTPUT_MINT_MISMATCH: 'The transaction buys a different token than ordered. It was not signed.',
+  INPUT_MINT_MISMATCH:
+    'The transaction does not spend what was ordered (SOL for a buy, the token for a sell). It was not signed.',
+  OUTPUT_MINT_MISMATCH:
+    'The transaction does not give what was ordered (the token for a buy, SOL for a sell). It was not signed.',
   AMOUNT_MISMATCH: 'The amount in the transaction differs from the ordered one. It was not signed.',
   OVER_MAX_SPEND:
     "The amount in the transaction is above the wallet's max spend. It was not signed.",
@@ -61,10 +69,12 @@ export const DIRECT_CHECK_MESSAGES: Record<DirectCheckProblem, string> = {
   NOT_V0: 'Unsupported transaction version (v0 expected). It was not signed.',
   SIGNER_MISMATCH: 'The wallet must be the only signer and the fee payer. It was not signed.',
   TAKER_ALREADY_SIGNED: "The wallet's signature slot is not empty. The transaction was not signed.",
-  PROGRAM_NOT_ALLOWED: 'The transaction calls a program outside a DBC buy. It was not signed.',
-  SWAP_MISMATCH: 'The transaction is not one DBC buy of the ordered token. It was not signed.',
+  PROGRAM_NOT_ALLOWED: 'The transaction calls a program outside a DBC trade. It was not signed.',
+  SWAP_MISMATCH: 'The transaction is not one DBC trade of the ordered token. It was not signed.',
   TRANSFER_MISMATCH: 'The SOL moved by the transaction differs from the order. It was not signed.',
   NO_MINIMUM_OUT: 'The transaction has no minimum amount out. It was not signed.',
+  MINIMUM_OUT_MISMATCH:
+    'The minimum amount out in the transaction differs from the order. It was not signed.',
   PRIORITY_FEE_TOO_HIGH: 'The priority fee is above 0.001 SOL. It was not signed.',
 };
 
@@ -82,6 +92,8 @@ const SWAP_BASE_MINT = 7;
 const SWAP_QUOTE_MINT = 8;
 const SWAP_PAYER = 9;
 const SWAP_INPUT_ACCOUNT = 3;
+const SWAP_OUTPUT_ACCOUNT = 4;
+const SWAP_BASE_TOKEN_PROGRAM = 10;
 /** System `Transfer` = 2, then u64 lamports. */
 const SYSTEM_TRANSFER = 2;
 /** ComputeBudget: SetComputeUnitLimit = 2 (u32), SetComputeUnitPrice = 3 (u64 micro-lamports). */
@@ -120,10 +132,13 @@ export async function checkDirectTransaction(
 ): Promise<DirectCheckResult> {
   if (order.transaction === null) return fail('NO_TRANSACTION');
   if (order.taker !== expected.taker) return fail('TAKER_MISMATCH');
-  if (expected.inputMint !== undefined || order.inputMint !== SOL_MINT) {
-    return fail('INPUT_MINT_MISMATCH');
+  const selling = expected.inputMint !== undefined;
+  // The token the curve trades: bought for SOL, or sold for SOL.
+  const mint = expected.inputMint ?? expected.outputMint;
+  if (order.inputMint !== (expected.inputMint ?? SOL_MINT)) return fail('INPUT_MINT_MISMATCH');
+  if (order.outputMint !== expected.outputMint || (selling && order.outputMint !== SOL_MINT)) {
+    return fail('OUTPUT_MINT_MISMATCH');
   }
-  if (order.outputMint !== expected.outputMint) return fail('OUTPUT_MINT_MISMATCH');
   if (order.inAmount > expected.maxSpend) return fail('OVER_MAX_SPEND');
   if (order.inAmount !== expected.amount) return fail('AMOUNT_MISMATCH');
 
@@ -164,11 +179,22 @@ export async function checkDirectTransaction(
     if (program === DBC_PROGRAM_ADDRESS) {
       if (!startsWith(data, SWAP2_DISCRIMINATOR)) return fail('SWAP_MISMATCH');
       swaps += 1;
+      const tokenProgram = account(SWAP_BASE_TOKEN_PROGRAM);
+      if (tokenProgram !== TOKEN_PROGRAM_ADDRESS && tokenProgram !== TOKEN_2022_PROGRAM_ADDRESS) {
+        return fail('SWAP_MISMATCH');
+      }
+      // Both ends are the wallet's own accounts, so nothing goes to anyone else.
+      const tokenAccount = await findAssociatedTokenAddress(
+        expected.taker,
+        mint,
+        tokenProgram === TOKEN_PROGRAM_ADDRESS ? 'spl-token' : 'token-2022',
+      );
       if (
-        account(SWAP_BASE_MINT) !== expected.outputMint ||
+        account(SWAP_BASE_MINT) !== mint ||
         account(SWAP_QUOTE_MINT) !== WSOL_MINT ||
         account(SWAP_PAYER) !== expected.taker ||
-        account(SWAP_INPUT_ACCOUNT) !== wsolAccount ||
+        account(SWAP_INPUT_ACCOUNT) !== (selling ? tokenAccount : wsolAccount) ||
+        account(SWAP_OUTPUT_ACCOUNT) !== (selling ? wsolAccount : tokenAccount) ||
         data[24] !== 0 // ExactIn
       ) {
         return fail('SWAP_MISMATCH');
@@ -176,6 +202,7 @@ export async function checkDirectTransaction(
       if (u64At(data, 8) !== expected.amount) return fail('AMOUNT_MISMATCH');
       const minimumOut = u64At(data, 16);
       if (minimumOut === null || minimumOut <= 0n) return fail('NO_MINIMUM_OUT');
+      if (minimumOut !== order.otherAmountThreshold) return fail('MINIMUM_OUT_MISMATCH');
     } else if (program === COMPUTE_BUDGET_PROGRAM_ADDRESS) {
       if (data[0] === COMPUTE_UNIT_LIMIT && data.length === 5) {
         unitLimit = BigInt(data[1] ?? 0) | (BigInt(data[2] ?? 0) << 8n);
@@ -214,7 +241,8 @@ export async function checkDirectTransaction(
     }
   }
   if (swaps !== 1) return fail('SWAP_MISMATCH');
-  if (transfers !== 1) return fail('TRANSFER_MISMATCH');
+  // A sell moves no lamports of its own: the SOL comes out of the curve.
+  if (transfers !== (selling ? 0 : 1)) return fail('TRANSFER_MISMATCH');
   // Without a limit the runtime allows up to 1.4M units per transaction.
   if ((unitLimit ?? MAX_UNITS) * unitPrice > MAX_PRIORITY_FEE_LAMPORTS * 1_000_000n) {
     return fail('PRIORITY_FEE_TOO_HIGH');
