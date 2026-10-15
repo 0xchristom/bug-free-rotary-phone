@@ -18,9 +18,27 @@ export interface LaunchNotification {
   readonly tx: unknown;
 }
 
+/** A launch kept as its transaction only (no log notification), e.g. `dbcCreate1`. */
+export interface LaunchTransaction {
+  readonly watched: string;
+  readonly expectedMint: string;
+  readonly tx: unknown;
+}
+
 const F = JSON.parse(readFileSync('tests/fixtures/detectors.mainnet.json', 'utf8')) as {
   readonly notifications: readonly LaunchNotification[];
+  readonly transactions: Readonly<Record<string, LaunchTransaction>>;
 };
+
+export function launchTransaction(name: string): LaunchTransaction {
+  const t = F.transactions[name];
+  if (t === undefined) throw new Error(`no transaction ${name}`);
+  return t;
+}
+
+/** The first signature of a `getTransaction` answer. */
+export const signatureOfTx = (tx: unknown): string =>
+  (tx as { transaction: { signatures: string[] } }).transaction.signatures[0] ?? '';
 
 export function launch(i: number): LaunchNotification {
   const n = F.notifications[i];

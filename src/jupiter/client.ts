@@ -50,7 +50,18 @@ export type JupiterFailureCode =
   /** Another unexpected HTTP status. */
   | 'HTTP_ERROR'
   /** A 2xx answer that is not what the docs describe (missing or malformed field). */
-  | 'INVALID_RESPONSE';
+  | 'INVALID_RESPONSE'
+  // The direct route (BUNNDLY-48, src/direct/route.ts) answers with these as well:
+  /** The RPC refused the transaction before sending it (preflight): nothing was sent. */
+  | 'NOT_SENT'
+  /** The RPC is not on the network the route works on (genesis hash). */
+  | 'WRONG_NETWORK'
+  /** The bonding curve is complete or the pool migrated: no buy on the curve. */
+  | 'GRADUATED'
+  /** A token the direct route cannot buy (quote not in SOL, Token-2022 extension). */
+  | 'UNSUPPORTED_TOKEN'
+  /** Less left on the curve than the amount. */
+  | 'INSUFFICIENT_LIQUIDITY';
 
 export interface JupiterFailure {
   readonly ok: false;
@@ -403,7 +414,17 @@ function isNoRoute(body: unknown): boolean {
 export interface JupiterClient {
   getOrder(request: OrderRequest): Promise<JupiterResult<JupiterOrder>>;
   execute(request: ExecuteRequest): Promise<JupiterResult<JupiterExecution>>;
+  /**
+   * DRY-RUN of a route that can simulate (the direct route, BUNNDLY-48): the signed
+   * transaction is simulated instead of thrown away. Jupiter has none: DRY-RUN never
+   * calls `/execute`.
+   */
+  simulate?(signedTransaction: string): Promise<SimulationResult>;
 }
+
+export type SimulationResult =
+  | { readonly ok: true; readonly unitsConsumed: bigint | null }
+  | { readonly ok: false; readonly problem: string };
 
 /**
  * URL of `/order` for a request: the documented required parameters, the taker, and

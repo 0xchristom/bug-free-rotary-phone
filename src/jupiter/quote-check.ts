@@ -56,6 +56,12 @@ const PROBLEMS: Record<JupiterFailureCode, ConnectionProblem> = {
   NO_ROUTE: 'HTTP_ERROR',
   BAD_REQUEST: 'HTTP_ERROR',
   HTTP_ERROR: 'HTTP_ERROR',
+  // Only the direct route gives these; the connection test asks Jupiter.
+  NOT_SENT: 'HTTP_ERROR',
+  WRONG_NETWORK: 'HTTP_ERROR',
+  GRADUATED: 'HTTP_ERROR',
+  UNSUPPORTED_TOKEN: 'HTTP_ERROR',
+  INSUFFICIENT_LIQUIDITY: 'HTTP_ERROR',
 };
 
 export async function checkJupiterQuote(options: QuoteCheckOptions): Promise<JupiterCheck> {

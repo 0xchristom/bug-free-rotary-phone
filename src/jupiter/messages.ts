@@ -19,6 +19,13 @@ const FAILURES: Record<JupiterFailureCode, string> = {
     'Jupiter: access forbidden (HTTP 403). The key has no access to the Swap API or a firewall blocks it.',
   HTTP_ERROR: 'Jupiter responded with an unexpected HTTP code.',
   INVALID_RESPONSE: 'Jupiter returned a response in an unexpected format.',
+  // The direct Meteora DBC route on Devnet (BUNNDLY-48).
+  NOT_SENT: 'The RPC refused the transaction before sending it; nothing was sent.',
+  WRONG_NETWORK: 'The RPC is not on Devnet: the direct route buys on Devnet only.',
+  GRADUATED: 'The bonding curve is complete: the token has left the Meteora DBC curve.',
+  UNSUPPORTED_TOKEN:
+    'The direct route cannot buy this token (quote not in SOL or a Token-2022 extension).',
+  INSUFFICIENT_LIQUIDITY: 'Less is left on the bonding curve than this amount.',
 };
 
 const BUILD_REASONS: Record<OrderBuildReason, string> = {

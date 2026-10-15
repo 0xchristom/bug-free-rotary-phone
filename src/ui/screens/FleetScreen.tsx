@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { isAppError, toUserMessage } from '../../core/errors.ts';
+import { ERROR_MESSAGES, isAppError, toUserMessage } from '../../core/errors.ts';
 import { effectiveGroups, groupOf, type WalletGroupV1 } from '../../core/groups.ts';
 import type { FleetSettingsV1 } from '../../core/keystore/format.ts';
 import { NETWORK_LABELS, NO_BUY_ROUTE_MESSAGE, buyRouteOf } from '../../core/network.ts';
@@ -380,7 +380,8 @@ export function FleetScreen({
   const buyBlocked =
     buyRouteOf(global.network) === null
       ? NO_BUY_ROUTE_MESSAGE
-      : !global.dryRun && !hasRpc
+      : // Devnet's direct route checks the chain through the public RPC (BUNNDLY-48).
+        !global.dryRun && !hasRpc && buyRouteOf(global.network) !== 'direct'
         ? 'Live mode needs a Helius key (Settings).'
         : null;
   const token = balances.token;
@@ -536,15 +537,17 @@ export function FleetScreen({
         ? 'Sending the command…'
         : buyRouteOf(global.network) === null
           ? NO_BUY_ROUTE_MESSAGE
-          : groupArmed
-            ? ARMED_TEXT
-            : buyMint === null
-              ? targetReason(targetCheck, SELL_TARGET)
-              : !hasRpc
-                ? 'Selling reads the token balances first: it needs a Helius key (Settings).'
-                : groupSelected.length === 0
-                  ? 'Select the wallets that sell.'
-                  : null,
+          : buyRouteOf(global.network) !== 'jupiter'
+            ? ERROR_MESSAGES.NO_SELL_ROUTE_ON_NETWORK
+            : groupArmed
+              ? ARMED_TEXT
+              : buyMint === null
+                ? targetReason(targetCheck, SELL_TARGET)
+                : !hasRpc
+                  ? 'Selling reads the token balances first: it needs a Helius key (Settings).'
+                  : groupSelected.length === 0
+                    ? 'Select the wallets that sell.'
+                    : null,
     // STOP also disarms an armed group (BUNNDLY-87): on while it buys or is armed.
     stop:
       running && stopping && !groupArmed
@@ -805,11 +808,13 @@ export function FleetScreen({
     ? 'Sending the command…'
     : buyRouteOf(global.network) === null
       ? NO_BUY_ROUTE_MESSAGE
-      : buyMint === null
-        ? targetReason(targetCheck, SELL_TARGET)
-        : !hasRpc
-          ? 'Selling reads the token balances first: it needs a Helius key (Settings).'
-          : null;
+      : buyRouteOf(global.network) !== 'jupiter'
+        ? ERROR_MESSAGES.NO_SELL_ROUTE_ON_NETWORK
+        : buyMint === null
+          ? targetReason(targetCheck, SELL_TARGET)
+          : !hasRpc
+            ? 'Selling reads the token balances first: it needs a Helius key (Settings).'
+            : null;
   const statusGroups = status?.groups;
   const frozen = useMemo(() => {
     const out = new Map<number, string>();

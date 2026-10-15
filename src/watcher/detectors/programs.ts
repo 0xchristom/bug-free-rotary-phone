@@ -32,6 +32,8 @@ export interface MintInstruction {
   readonly discriminator: readonly number[];
   /** Index of the new mint in the instruction's accounts. */
   readonly mintAccount: number;
+  /** Index of the launchpad pool the token trades in, where the direct route uses it. */
+  readonly poolAccount?: number;
 }
 
 export const MINT_INSTRUCTIONS: readonly MintInstruction[] = [
@@ -50,13 +52,15 @@ export const MINT_INSTRUCTIONS: readonly MintInstruction[] = [
     discriminator: [214, 144, 76, 236, 95, 139, 49, 180],
     mintAccount: 0,
   },
-  // Meteora DBC: account 2 `creator` (signer), 3 `base_mint` (signer)
+  // Meteora DBC: account 2 `creator` (signer), 3 `base_mint` (signer), 5 `pool` (the
+  // direct route's pool, BUNNDLY-48; the test checks it is the pool PDA of accounts 0, 3, 4)
   {
     source: 'meteora-dbc',
     program: METEORA_DBC_PROGRAM,
     name: 'initialize_virtual_pool_with_spl_token',
     discriminator: [140, 85, 215, 176, 102, 54, 104, 79],
     mintAccount: 3,
+    poolAccount: 5,
   },
   {
     source: 'meteora-dbc',
@@ -64,6 +68,7 @@ export const MINT_INSTRUCTIONS: readonly MintInstruction[] = [
     name: 'initialize_virtual_pool_with_token2022',
     discriminator: [169, 118, 51, 78, 145, 110, 220, 155],
     mintAccount: 3,
+    poolAccount: 5,
   },
   {
     source: 'meteora-dbc',
@@ -71,6 +76,7 @@ export const MINT_INSTRUCTIONS: readonly MintInstruction[] = [
     name: 'initialize_virtual_pool_with_token2022_transfer_hook',
     discriminator: [182, 13, 233, 177, 42, 145, 135, 2],
     mintAccount: 3,
+    poolAccount: 5,
   },
   // Raydium LaunchLab: account 0 `payer` (signer), 6 `base_mint` (signer)
   {

@@ -28,6 +28,8 @@ export interface Detection {
   readonly blockTime: number | null;
   /** When the signature reached the worker (`performance.now()`), for the reaction time. */
   readonly receivedAt: number;
+  /** The launchpad pool, when the transaction named it (BUNNDLY-48); not on the fast path. */
+  readonly pool?: string;
 }
 
 export type DetectorEvent =
@@ -111,6 +113,7 @@ export function createDetector(
           detect({
             mint: f.mint,
             source: f.source,
+            ...(f.pool === undefined ? {} : { pool: f.pool }),
             path: input.source === 'catch-up' ? 'catch-up' : 'transaction',
             signature: input.signature,
             slot: BigInt(tx.slot),

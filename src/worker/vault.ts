@@ -57,6 +57,8 @@ import {
   type JupiterOrder,
 } from '../jupiter/index.ts';
 import { signCheckedOrder, type SignedOrder } from './sign-order.ts';
+import { checkDirectTransaction, type DirectCheckProblem } from '../direct/check.ts';
+import { DIRECT_ROUTER, createDirectRoute, createDirectRpc } from '../direct/route.ts';
 import {
   API_KEY_NAMES,
   AppError,
@@ -162,6 +164,8 @@ export interface NetOptions {
 /** Executor dependencies; tests pass a fake Jupiter and clock. */
 export interface ExecutorOptions {
   readonly jupiter?: JupiterClient;
+  /** The direct Meteora DBC route on devnet (BUNNDLY-48); by default over the run's RPC. */
+  readonly direct?: JupiterClient;
   readonly clock?: LimiterClock;
   /** Even `/order` pace instead of a burst (D-027 emergency mode). */
   readonly steady?: boolean;
@@ -255,6 +259,9 @@ export type SignOrderResult =
       readonly ok: false;
       readonly problem:
         | OrderCheckProblem
+        | DirectCheckProblem
+        /** A direct-route order off Devnet: never signed (BUNNDLY-48, SPEC 2.2). */
+        | 'DIRECT_ROUTE_OFF'
         | 'VAULT_LOCKED'
         | 'UNKNOWN_WALLET'
         | 'SIGNING_FAILED'
@@ -979,7 +986,7 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
     return url === null ? null : createTransport(url);
   };
 
-  /** Buying needs a route on the fleet's network; devnet has none yet (D-041). */
+  /** Buying needs a route on the fleet's network (D-041); devnet buys directly since BUNNDLY-48. */
   const requireBuyRoute = (vault: UnlockedVault): void => {
     if (buyRouteOf(networkOf(vault)) === null) throw new AppError('NO_BUY_ROUTE_ON_NETWORK');
   };
@@ -1263,10 +1270,11 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
     if (wallets.length === 0) {
       throw new AppError(unsafe ? 'WALLET_NOT_BACKED_UP' : 'NO_WALLETS_TO_BUY');
     }
-    // Live mode never retries without the chain check, which needs the RPC.
+    // Live mode never retries without the chain check, which needs the RPC (on devnet the
+    // public one will do, BUNNDLY-48).
     if (
       !vault.settings.global.dryRun &&
-      rpcUrlOf(vault) === null &&
+      runTransport(vault) === null &&
       options.executor?.landing === undefined
     ) {
       throw new AppError('HELIUS_KEY_MISSING');
@@ -1374,16 +1382,29 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
     return mint;
   };
 
-  /** RPC of the open fleet's network, Helius first; null without a Helius key. */
+  /**
+   * RPC of the open fleet's network, Helius first. Without a Helius key: devnet's public
+   * RPC, through which the direct route buys and the chain is checked (BUNNDLY-48); on
+   * mainnet null.
+   */
   const runTransport = (vault: UnlockedVault): RpcTransport | null => {
+    const network = networkOf(vault);
     const rpcUrl = rpcUrlOf(vault);
-    return rpcUrl === null
-      ? null
-      : createResilientTransport({
-          primary: createTransport(rpcUrl),
-          fallback: fallbackOf(networkOf(vault)),
-          ...(options.chain?.sleep ? { sleep: options.chain.sleep } : {}),
-        });
+    if (rpcUrl === null) {
+      const publicUrl = buyRouteOf(network) === 'direct' ? publicRpcUrl(network) : null;
+      return publicUrl === null
+        ? null
+        : createResilientTransport({
+            primary: createTransport(publicUrl),
+            fallback: null,
+            ...(options.chain?.sleep ? { sleep: options.chain.sleep } : {}),
+          });
+    }
+    return createResilientTransport({
+      primary: createTransport(rpcUrl),
+      fallback: fallbackOf(network),
+      ...(options.chain?.sleep ? { sleep: options.chain.sleep } : {}),
+    });
   };
 
   const tokenReader = (transport: RpcTransport | null, mint: string): TokenReader | null =>
@@ -1414,6 +1435,8 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
     if (watchActive(run)) throw new AppError('WATCH_ARMED');
     if (run.buy !== null) throw new AppError('BUY_RUNNING');
     requireBuyRoute(vault);
+    // The direct route buys only; a sell through the curve is BUNNDLY-63.
+    if (buyRouteOf(networkOf(vault)) !== 'jupiter') throw new AppError('NO_SELL_ROUTE_ON_NETWORK');
     const mint = mintOf(rawMint);
     // Without a percent in the request each wallet sells its own part (BUNNDLY-58).
     if (rawPercent !== undefined && !isSellPercent(rawPercent)) return badRequest();
@@ -1539,6 +1562,10 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
     });
   };
 
+  const missingRpc = (): never => {
+    throw new AppError('RPC_UNAVAILABLE');
+  };
+
   /** Starts the executor for a buy or a sell and keeps it as the running one. */
   const launch = (
     vault: UnlockedVault,
@@ -1589,12 +1616,25 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
       }
     };
     const net = options.net ?? {};
-    const client =
-      options.executor?.jupiter ??
-      createJupiterClient({
-        apiKey: vault.apiKeys.jupiter ?? null,
-        fetch: net.fetch ?? ((url, init) => globalThis.fetch(url, init)),
-      });
+    // The route comes from the network alone (BUNNDLY-48): mainnet never builds the
+    // direct one, devnet never asks Jupiter.
+    const client: JupiterClient =
+      buyRouteOf(networkOf(vault)) === 'direct'
+        ? (injected?.direct ??
+          createDirectRoute({
+            // Devnet always has its public RPC (runTransport).
+            rpc: createDirectRpc(transport ?? missingRpc()),
+            minReserveLamports: global.minReserveLamports,
+            poolHint: trigger?.pool === undefined ? null : { mint, pool: trigger.pool },
+            sleep: (ms) => clock.sleep(ms),
+            now: () => clock.now(),
+          }))
+        : (injected?.jupiter ??
+          createJupiterClient({
+            apiKey: vault.apiKeys.jupiter ?? null,
+            fetch: net.fetch ?? ((url, init) => globalThis.fetch(url, init)),
+          }));
+    const simulate = client.simulate?.bind(client);
     const jupiter: JupiterClient =
       trigger === null
         ? client
@@ -1605,6 +1645,7 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
               return answer;
             },
             execute: (request) => client.execute(request),
+            ...(simulate === undefined ? {} : { simulate }),
           };
     // Without a Jupiter key the API applies Keyless limits, not the plan in the settings.
     const effective = effectiveJupiterPlan(global, vault.apiKeys.jupiter !== undefined);
@@ -2094,14 +2135,23 @@ export function createVaultHandler(options: VaultOptions = {}): VaultHandler {
       }
       limit = runPlan.amounts.get(walletIndex) ?? 0n;
     }
-    const check = checkOrderTransaction(order, {
+    const expectation = {
       taker: wallet.address,
       ...(request.inputMint === undefined ? {} : { inputMint: request.inputMint }),
       outputMint: request.outputMint,
       amount: request.amount,
       maxSpend: limit,
-    });
+    };
+    // The route comes from the fleet's network, never from the order (BUNNDLY-48): on
+    // Devnet only a checked DBC buy is signed, elsewhere a direct order never is.
+    const direct = buyRouteOf(networkOf(vault)) === 'direct';
+    if (!direct && order.router === DIRECT_ROUTER)
+      return { ok: false, problem: 'DIRECT_ROUTE_OFF' };
+    const check = direct
+      ? await checkDirectTransaction(order, expectation)
+      : checkOrderTransaction(order, expectation);
     if (!check.ok) return check;
+    if (!stillOpen()) return { ok: false, problem: 'VAULT_LOCKED' };
     let signed: SignedOrder;
     try {
       signed = await signCheckedOrder(secret.secretKey, check.checked);

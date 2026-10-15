@@ -140,25 +140,54 @@ export async function fetchDbcPool(
     })
     .send();
   for (const { pubkey, account } of found) {
-    const pool = decodeVirtualPool(accountBytes(account.data), encodeAddress);
-    if (pool.baseMint !== mint) continue;
-    const configInfo = await rpc
-      .getAccountInfo(address(pool.config), { encoding: 'base64', commitment: 'confirmed' })
-      .send();
-    if (!configInfo.value || configInfo.value.owner !== DBC_PROGRAM_ADDRESS) continue;
-    const config = decodePoolConfig(accountBytes(configInfo.value.data), encodeAddress);
-    // The account must be the pool PDA for (config, base, quote), not a lookalike.
-    const pda = await findDbcPoolAddress(pool.config, pool.baseMint, config.quoteMint);
-    if (pda !== pubkey) continue;
-    const mintInfo = await rpc
-      .getAccountInfo(address(mint), { encoding: 'base64', commitment: 'confirmed' })
-      .send();
-    if (!mintInfo.value) continue;
-    const base = checkBaseMint(mintInfo.value.owner, accountBytes(mintInfo.value.data));
-    if ('unsupported' in base) return base;
-    return { address: pubkey, pool, config, baseTokenProgram: base.program };
+    const state = await poolStateOf(rpc, pubkey, accountBytes(account.data), mint);
+    if (state !== null) return state;
   }
   return null;
+}
+
+/**
+ * Reads the pool at a known address (BUNNDLY-48: the pool from the watcher's detection),
+ * with the same checks as `fetchDbcPool`; null when it is not the DBC pool of `mint`.
+ */
+export async function fetchDbcPoolAt(
+  rpc: DbcRpc,
+  poolAddress: string,
+  mint: string,
+): Promise<DbcPoolState | { readonly unsupported: string } | null> {
+  const info = await rpc
+    .getAccountInfo(address(poolAddress), { encoding: 'base64', commitment: 'confirmed' })
+    .send();
+  if (!info.value || info.value.owner !== DBC_PROGRAM_ADDRESS) return null;
+  const data = accountBytes(info.value.data);
+  if (data.length !== VIRTUAL_POOL_SIZE) return null;
+  return poolStateOf(rpc, poolAddress, data, mint);
+}
+
+/** The pool of `mint` at `pubkey` with its config and base mint, or null for a lookalike. */
+async function poolStateOf(
+  rpc: DbcRpc,
+  pubkey: string,
+  data: Uint8Array,
+  mint: string,
+): Promise<DbcPoolState | { readonly unsupported: string } | null> {
+  const pool = decodeVirtualPool(data, encodeAddress);
+  if (pool.baseMint !== mint) return null;
+  const configInfo = await rpc
+    .getAccountInfo(address(pool.config), { encoding: 'base64', commitment: 'confirmed' })
+    .send();
+  if (!configInfo.value || configInfo.value.owner !== DBC_PROGRAM_ADDRESS) return null;
+  const config = decodePoolConfig(accountBytes(configInfo.value.data), encodeAddress);
+  // The account must be the pool PDA for (config, base, quote), not a lookalike.
+  const pda = await findDbcPoolAddress(pool.config, pool.baseMint, config.quoteMint);
+  if (pda !== pubkey) return null;
+  const mintInfo = await rpc
+    .getAccountInfo(address(mint), { encoding: 'base64', commitment: 'confirmed' })
+    .send();
+  if (!mintInfo.value) return null;
+  const base = checkBaseMint(mintInfo.value.owner, accountBytes(mintInfo.value.data));
+  if ('unsupported' in base) return base;
+  return { address: pubkey, pool, config, baseTokenProgram: base.program };
 }
 
 /** Slot or unix time, whichever the config's `activation_type` counts in. */

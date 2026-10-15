@@ -22,6 +22,7 @@ import {
   asTransaction,
   detectFromTransaction,
 } from '../../src/watcher/detectors/transaction-path.ts';
+import { findDbcPoolAddress } from '../../src/direct/meteora-dbc/instructions.ts';
 import { FakeClock, T0 } from '../helpers/fake-clock.ts';
 
 interface FixtureTx {
@@ -145,21 +146,58 @@ describe('program ids per network (BUNNDLY-44)', () => {
       ([, f]) => f.expectedSource === 'pump.fun' || f.expectedSource === 'meteora-dbc',
     );
     expect(same.length).toBeGreaterThanOrEqual(4);
-    for (const [, f] of same) {
+    for (const [name, f] of same) {
       const tx = asTransaction(f.tx);
       if (!tx) throw new Error('fixture is not a transaction');
-      expect(detectFromTransaction(tx, f.watched, 'devnet')).toEqual([
-        { mint: f.expectedMint, source: f.expectedSource },
-      ]);
+      expect(detectFromTransaction(tx, f.watched, 'devnet')).toEqual([expectedOf(name, f)]);
     }
   });
 });
 
+/**
+ * The Meteora DBC pool, derived on its own: the pool PDA of the create instruction's
+ * accounts 0 (config), 3 (base mint) and 4 (quote mint), not read from the account the
+ * detector takes (BUNNDLY-48).
+ */
+async function dbcPoolOf(f: FixtureTx): Promise<string> {
+  const { message } = (
+    f.tx as {
+      transaction: {
+        message: {
+          accountKeys: string[];
+          instructions: { programIdIndex: number; accounts: number[] }[];
+        };
+      };
+    }
+  ).transaction;
+  const key = (i: number | undefined) => message.accountKeys[i ?? -1] ?? '';
+  const create = message.instructions.find((ix) => key(ix.programIdIndex) === METEORA_DBC_PROGRAM);
+  if (!create) throw new Error('no DBC instruction');
+  const [config, , , baseMint, quoteMint] = create.accounts.map(key);
+  return findDbcPoolAddress(config ?? '', baseMint ?? '', quoteMint ?? '');
+}
+
+const dbc = positives.filter(([, f]) => f.expectedSource === 'meteora-dbc');
+const dbcPools = new Map(
+  await Promise.all(dbc.map(async ([n, f]) => [n, await dbcPoolOf(f)] as const)),
+);
+const expectedOf = (name: string, f: FixtureTx) => {
+  const pool = dbcPools.get(name);
+  return { mint: f.expectedMint, source: f.expectedSource, ...(pool ? { pool } : {}) };
+};
+
 describe('slow path (getTransaction)', () => {
-  it.each(positives)('%s: the right mint and source', (_name, f) => {
-    expect(detectFromTransaction(txOf(f), f.watched)).toEqual([
-      { mint: f.expectedMint, source: f.expectedSource },
-    ]);
+  it.each(positives)('%s: the right mint and source', (name, f) => {
+    expect(detectFromTransaction(txOf(f), f.watched)).toEqual([expectedOf(name, f)]);
+  });
+
+  it('Meteora DBC: the detection names the pool, the PDA of config and both mints', () => {
+    expect(dbc.length).toBeGreaterThanOrEqual(2);
+    for (const [name, f] of dbc) {
+      const pool = dbcPools.get(name);
+      expect(pool).toMatch(/^[1-9A-HJ-NP-Za-km-z]{32,44}$/u);
+      expect(detectFromTransaction(txOf(f), f.watched)[0]?.pool).toBe(pool);
+    }
   });
 
   it.each(negatives)('%s: no detection', (_name, f) => {

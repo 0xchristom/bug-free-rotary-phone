@@ -30,10 +30,11 @@ export function parseNetwork(value: unknown): Network {
 
 /**
  * How a buy reaches the chain. Jupiter's Swap API has no devnet (its program does not
- * exist there), so devnet has no route yet; a direct launchpad route can be added here
- * later without touching the switch.
+ * exist there), so devnet buys directly from the Meteora DBC curve (BUNNDLY-48,
+ * `src/direct/route.ts`). Mainnet stays on Jupiter: the direct route is off there until a
+ * separate test and the owner's consent (SPEC 2.2).
  */
-export type BuyRoute = 'jupiter';
+export type BuyRoute = 'jupiter' | 'direct';
 
 interface NetworkConfig {
   readonly heliusHost: string;
@@ -62,9 +63,16 @@ const CONFIG: Record<Network, NetworkConfig> = {
     heliusHost: `devnet.${HELIUS_DOMAIN}`,
     publicRpcUrl: 'https://api.devnet.solana.com',
     explorerQuery: '?cluster=devnet',
-    buyRoute: null,
+    buyRoute: 'direct',
   },
 };
+
+/**
+ * Devnet's genesis hash, read with `getGenesisHash` from api.devnet.solana.com on
+ * 2026-10-15. Whatever signs on devnet (the direct route, scripts/fund-devnet.ts) checks
+ * the RPC against it first and refuses any other network.
+ */
+export const DEVNET_GENESIS_HASH = 'EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG';
 
 export function buyRouteOf(network: Network): BuyRoute | null {
   return CONFIG[network].buyRoute;
@@ -72,7 +80,7 @@ export function buyRouteOf(network: Network): BuyRoute | null {
 
 /** One sentence for the UI where buying is switched off on the network. */
 export const NO_BUY_ROUTE_MESSAGE =
-  'Buying and the watcher are off on Devnet: Jupiter works on Mainnet only.';
+  'Buying and the watcher are off on this network: it has no buy route.';
 
 export function heliusHost(network: Network): string {
   return CONFIG[network].heliusHost;
