@@ -1,5 +1,5 @@
 /**
- * Checks before signing a direct Meteora DBC buy (BUNNDLY-48, D-061). Unlike a Jupiter
+ * Checks before signing a direct Meteora DBC buy (BUNNDLY-48, D-062). Unlike a Jupiter
  * order, the transaction is built in this app from RPC data, so the check reads every
  * instruction: the wallet is the only signer and the fee payer, only the programs of a
  * DBC buy are called, exactly one `swap2` spends the ordered lamports for the ordered
@@ -88,7 +88,7 @@ const SYSTEM_TRANSFER = 2;
 const COMPUTE_UNIT_LIMIT = 2;
 const COMPUTE_UNIT_PRICE = 3;
 const MAX_UNITS = 1_400_000n;
-/** At most 0.001 SOL of priority fee per buy; the route asks for 0.000002 (D-061). */
+/** At most 0.001 SOL of priority fee per buy; the route asks for 0.000002 (D-062). */
 export const MAX_PRIORITY_FEE_LAMPORTS = 1_000_000n;
 /** ATA `CreateIdempotent` = 1; Token `CloseAccount` = 9, `SyncNative` = 17. */
 const ATA_CREATE_IDEMPOTENT = 1;

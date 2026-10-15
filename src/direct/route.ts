@@ -1,5 +1,5 @@
 /**
- * Direct buy route through Meteora DBC (BUNNDLY-48, D-061): the executor's second route
+ * Direct buy route through Meteora DBC (BUNNDLY-48, D-062): the executor's second route
  * beside Jupiter, with the same contract (`JupiterClient`), so queue, limiter, mint gate,
  * attempts, STOP, Stairs and the chain check before a retry stay shared.
  *
@@ -95,7 +95,7 @@ export const DIRECT_ROUTER = 'meteora-dbc';
 /**
  * Slippage when the wallet's setting is Auto (Jupiter picks it there; the curve has no
  * one to ask). The quote is read just before each wallet's send, so it covers the move
- * between the read and the landing, not the whole fleet's buying (D-061).
+ * between the read and the landing, not the whole fleet's buying (D-062).
  */
 export const DIRECT_AUTO_SLIPPAGE_BPS = 500;
 /** A DBC buy uses about 100k compute units (devnet simulation in BUNNDLY-47). */

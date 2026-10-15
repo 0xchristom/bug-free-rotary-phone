@@ -184,8 +184,8 @@ export function useBuyView(client: VaultClient, schedule: FrameScheduler = nextF
   useEffect(() => {
     alive.current = true;
     const off = client.onEvent((event) => {
-      // mode B detections: BUNNDLY-35; live balances: use-balances.ts
-      if (event.kind === 'watch' || event.kind === 'balance') return;
+      // mode B detections: BUNNDLY-35; live balances: use-balances.ts; backup: use-backup.ts
+      if (event.kind === 'watch' || event.kind === 'balance' || event.kind === 'backup') return;
       buffer.current.push(event);
       if (!scheduled.current) {
         scheduled.current = true;

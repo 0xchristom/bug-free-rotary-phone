@@ -245,6 +245,17 @@ strong {
   color: var(--danger);
 }
 
+/* The backup's plain-text key file is said in amber beside its green time (BUNNDLY-62). */
+.rail-item b[data-tone='warn'] {
+  color: var(--warn);
+  white-space: pre;
+}
+
+.rail-item[data-tone='danger'] .linkbtn,
+.rail-item[data-tone='warn'] .linkbtn {
+  color: inherit;
+}
+
 .rail .k-i {
   width: 13px;
   height: 13px;

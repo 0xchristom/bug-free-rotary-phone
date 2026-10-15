@@ -38,6 +38,8 @@ export const ERROR_MESSAGES = {
   NO_WALLETS_TO_SELL: 'No wallet is marked for selling.',
   WALLET_IN_RUN:
     'A wallet in the running buy or sell keeps its trade settings until the run ends. Wait for it or press STOP.',
+  WALLET_NOT_BACKED_UP:
+    'A wallet has no confirmed backup in the backup folder: it does not buy or arm until the folder holds its keys. Reconnect the folder or check the backup in the status bar.',
   GROUP_RUNNING:
     'This group is buying, selling or armed: its wallets stay in it until that ends. Wait for it, press STOP or DISARM.',
   INVALID_MINT_ADDRESS: 'This is not a valid token mint address (base58, 32–44 characters).',

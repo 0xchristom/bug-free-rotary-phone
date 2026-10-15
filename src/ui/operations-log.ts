@@ -35,7 +35,8 @@ export function createOperationsLog(client: VaultClient): OperationsLog {
   let addresses = new Map<number, string>();
   let network: Network = DEFAULT_NETWORK;
   client.onEvent((event) => {
-    if (event.kind === 'balance') return; // balances are not operations (BUNNDLY-57)
+    // balances (BUNNDLY-57) and the backup folder (BUNNDLY-62) are not operations
+    if (event.kind === 'balance' || event.kind === 'backup') return;
     const address =
       event.kind === 'wallet' || event.kind === 'verify'
         ? (addresses.get(event.index) ?? null)

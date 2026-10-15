@@ -1225,7 +1225,28 @@ Rejestr decyzji i rozbieżności z dokumentacją zewnętrzną. Nowe wpisy dopisu
   - Napisy z makiety wchodzą tylko tam, gdzie znaczą to samo co stan aplikacji; „Filled” dopiero po zgodnym odczycie z łańcucha (BUNNDLY-94).
 - Konsekwencje: te decyzje przestają być tymczasowe; zmiana któregoś z tych zachowań wymaga nowego wpisu.
 
-## D-061: Droga bezpośrednia Meteora DBC, etap 2: podpis w workerze, wysyłka przez RPC, tylko Devnet
+## D-061: Folder kopii zapasowej: dwa pliki, sprawdzenie odczytem, portfele bez kopii nie kupują
+
+- Data: 2026-10-15
+- Zadanie: BUNNDLY-62; SPEC 11.1 i 6.1 (po BUNNDLY-66)
+- Kontekst: Krystian chce, żeby klucze utworzonych portfeli zawsze miały kopię w jednym folderze na dysku. 13.10.2026 zdecydował, że folder dostaje także plik z kluczami jawnym tekstem (decyzja tymczasowa).
+- Decyzja:
+  - Folder wskazuje się raz w oknie „Backup folder” (link „Set up folder” w pasku stanu). Okno ostrzega przed plikiem jawnym i folderem synchronizowanym z chmurą, wymaga zaznaczenia ostrzeżenia i ponownego wpisania hasła. Worker sprawdza hasło pełną derywacją, tak jak przy eksporcie jawnym (D-023).
+  - Po włączeniu worker sam zapisuje oba pliki po każdym utworzeniu i otwarciu floty i po każdej przebudowie pliku: dodanie portfeli, ustawienia, parametry, sieć.
+    - `<flota>.keystore.json`: zaszyfrowany plik floty, ten sam tekst co w odpowiedzi workera.
+    - `<flota>.PLAIN-BACKUP.json`: fraza i klucze prywatne w formacie JSON eksportu jawnego (D-023).
+  - Każdy plik jest po zapisie odczytany i porównany z zapisaną treścią. Treść jawna powstaje w workerze tylko na czas zapisu (`src/worker/backup.ts`). Nie trafia do odpowiedzi, zdarzeń, stanu strony ani magazynów przeglądarki.
+  - Jeden przełącznik `WRITE_PLAIN_BACKUP` w `src/worker/backup.ts` decyduje o pliku jawnym. Wyłączony: w folderze jest tylko plik zaszyfrowany, a pasek stanu nie mówi „unencrypted keys”.
+  - Przeglądarka trzyma w osobnej bazie IndexedDB `bunndly-backup` tylko uchwyt folderu, nazwę floty i jej identyfikator (`fileIdOf`: nazwa i czas utworzenia z jawnej części pliku). Zapisuje i czyta ją wyłącznie worker.
+  - Uprawnienia: worker pyta `queryPermission`. Przy `prompt` stan to „Backup: reconnect” i nie ma żadnej próby zapisu. `requestPermission` wymaga kliknięcia i okna (w workerze rzuca `SecurityError`), więc pyta strona, po kliknięciu „Backup: reconnect” albo „Retry”, a potem worker zapisuje (`backupRetry`).
+  - Cudze pliki: plik o tej samej nazwie nadpisywany jest tylko wtedy, gdy należy do tej floty. Dla pliku zaszyfrowanego decyduje ten sam `fileIdOf`, dla pliku jawnego nazwa floty i adres pierwszego portfela. W przeciwnym razie kopia dostaje przyrostek `-2`, `-3`… (do `-20`).
+  - Portfel jest „Backed up”, gdy ostatni zapis obu plików z nim przeszedł porównanie. Portfele z pliku otwartego z dysku są na nim, więc też się liczą. Portfel bez kopii przy włączonym folderze ma w tabeli chip „Not backed up”, a `startBuy` i `arm` odrzucają go w workerze kodem `WALLET_NOT_BACKED_UP`. Sprzedaż nie jest blokowana.
+- Decyzje tymczasowe (2026-10-15), do potwierdzenia:
+  - Bez włączonego folderu żaden portfel nie jest blokowany. Brak kopii pokazuje wtedy dotychczasowe ostrzeżenie o niezapisanym pliku (D-058).
+  - Przeglądarka bez dostępu do folderów (Firefox, Safari): pasek mówi „Backup: manual download”, a plik zaszyfrowany zapisuje się przyciskiem „Save the fleet file” z ostrzeżenia o niezapisanym pliku. Nie ma automatycznego pobierania po każdej zmianie. Plik jawny nigdy nie pobiera się sam.
+- Konsekwencje: plik jawny w folderze daje pełny dostęp do środków każdemu programowi i każdej osobie z dostępem do folderu (SECURITY.md). Wyłączenie pliku jawnego to zmiana jednej stałej.
+
+## D-062: Droga bezpośrednia Meteora DBC, etap 2: podpis w workerze, wysyłka przez RPC, tylko Devnet
 
 - Data: 2026-10-14
 - Zadanie: BUNNDLY-48 (etap 1: D-053)
