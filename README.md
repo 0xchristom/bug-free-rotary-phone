@@ -225,6 +225,21 @@ node scripts/fund-devnet.ts 0.05 <adres> <adres>
 
 Najwyżej 0,5 SOL na adres i 10 adresów naraz. Przed każdym podpisem skrypt sprawdza `getGenesisHash` i poza Devnetem odmawia. Klucza ani zawartości pliku nie wypisuje.
 
+#### Devnet: test floty na DBC (BUNNDLY-49)
+
+`node scripts/devnet/run.ts <komenda>` (Node 24 uruchamia TypeScript bez kompilacji). Przed czymkolwiek skrypt sprawdza `getGenesisHash` i odmawia pracy poza devnetem. Klucz portfela głównego devnet czyta z pliku, którego ścieżkę podaje `BUNNDLY_DEVNET_KEYPAIR`; ziarna portfeli testowych trzyma w pliku z `BUNNDLY_DEVNET_STATE`. Oba pliki leżą poza repo i nie są wypisywane.
+
+| Komenda                                             | Co robi                                                                                                                                        |
+| --------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| `balance`                                           | adres i saldo portfela głównego                                                                                                                |
+| `simulate-token`                                    | symulacja utworzenia tokenu na DBC, bez podpisu i wysyłki                                                                                      |
+| `fund --wallets 5 --sol 0.05`                       | nowy twórca i 5 portfeli testowych zasilonych z portfela głównego                                                                              |
+| `create-token`                                      | twórca tworzy świeży token na DBC; wypisuje mint, pulę i slot S0                                                                               |
+| `report --mint M --s0 SIG [--max-spend-lamports L]` | zakupy mintu z łańcucha: sygnatura, slot, slot − S0, wydany SOL, tokeny                                                                        |
+| `simulate-buy --mint M`                             | symulacja zakupu pierwszego portfela floty, bez wysyłki                                                                                        |
+| `cycle --repeat 5 --sol 0.01 --out plik.json`       | cały test: w każdym powtórzeniu świeży token, zakupy floty zaraz po wykryciu, tabela z łańcucha (slot − S0, czasy, wydatek względem max spend) |
+| `refund`                                            | portfele testowe odsyłają SOL na portfel główny                                                                                                |
+
 ### Struktura
 
 ```
@@ -240,6 +255,7 @@ src/
   ui/          komponenty React
 public/_headers  nagłówki bezpieczeństwa (Cloudflare Pages i vite preview)
 deploy/        parser _headers i plugin vite preview
+scripts/devnet/ skrypt testu na devnecie (BUNNDLY-49)
 tests/         testy jednostkowe i integracyjne (Vitest)
 docs/          SPEC.md, DECISIONS.md
 ```
