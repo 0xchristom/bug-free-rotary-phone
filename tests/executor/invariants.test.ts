@@ -7,6 +7,9 @@
  * runs them; STOP stops only the first.
  * Stairs (BUNNDLY-61): steps at fixed times, now and then a pause; no wallet asks before
  * its step and nothing is asked while the run is paused.
+ * Direct route (BUNNDLY-48): the failures of the devnet Meteora DBC route instead of
+ * Jupiter's (preflight refusal, a lost `sendTransaction` answer after the RPC took it, a
+ * landed buy with an error, no RFQ) and DRY-RUN through `simulate`.
  *
  * `npm test` runs a fast set of seeds; `npm run test:sim` (`--mode sim`) the long one.
  */
@@ -47,6 +50,9 @@ const FIRST_GROUP_SEED = 200_001;
 /** Stairs runs (BUNNDLY-61), on top of the runs above: their own seeds. */
 const STAIRS_SEEDS = LONG ? 1_000 : 10;
 const FIRST_STAIRS_SEED = 300_001;
+/** Direct-route runs (BUNNDLY-48), on top of the runs above: their own seeds. */
+const DIRECT_SEEDS = LONG ? 1_000 : 10;
+const FIRST_DIRECT_SEED = 400_001;
 const MINT = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
 /** The second group's mint (any token mint other than MINT). */
 const MINT_2 = 'Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB';
@@ -122,6 +128,8 @@ export interface SimResult {
   readonly sharedFullWindow: boolean;
   /** Stairs: the run really was paused for a while. */
   readonly paused: boolean;
+  /** Direct route: `simulate` calls (DRY-RUN). */
+  readonly simulations: number;
 }
 
 /**
@@ -136,8 +144,10 @@ export async function simulate(
   side: Side = 'buy',
   groups: 1 | 2 = 1,
   stairs: StairsPlan | null = null,
+  route: 'jupiter' | 'direct' = 'jupiter',
 ): Promise<SimResult> {
   const selling = side === 'sell';
+  const direct = route === 'direct';
   const random = seeded(s.seed);
   const clock = new FakeClock(true);
   const chain = new FakeChain(clock);
@@ -149,6 +159,12 @@ export async function simulate(
       if (since < s.serverErrorMs) return { fail: 'SERVER_ERROR', httpStatus: 500 };
       if (since < s.serverErrorMs + s.noRouteMs) return { fail: 'NO_ROUTE', httpStatus: 400 };
       const r = random();
+      if (direct) {
+        // The route's RPC read failed, or the balance does not cover the buy and its rent.
+        if (r < 0.1) return { fail: 'NETWORK' };
+        if (r < 0.12) return { build: 'INSUFFICIENT_FUNDS' };
+        return 'ok';
+      }
       if (r < 0.05) return { fail: 'RATE_LIMITED', httpStatus: 429 };
       if (r < 0.1) return { fail: 'SERVER_ERROR', httpStatus: 503 };
       if (r < 0.12) return { fail: 'TIMEOUT' };
@@ -156,7 +172,7 @@ export async function simulate(
       if (r < 0.15) return { build: 'INSUFFICIENT_FUNDS' };
       return 'ok';
     },
-    rfq: () => random() < 0.3,
+    rfq: () => !direct && random() < 0.3,
     // the price drifts; now and then it spikes above the 50 % ceiling
     outAmount: (c) =>
       random() < 0.05
@@ -167,6 +183,17 @@ export async function simulate(
       const r = random();
       const later = (p: number, ok = true, maxMs = 90_000) =>
         random() < p ? { lands: { ok, afterMs: Math.floor(random() * maxMs) } } : {};
+      if (direct) {
+        if (r < 0.6) return 'ok';
+        // Refused in preflight: never sent, so it never lands.
+        if (r < 0.7) return { fail: 'NOT_SENT', signature: 'preflight' };
+        // The RPC took it and the answer was lost: it may land later.
+        if (r < 0.8) return { fail: 'NETWORK', signature: 'lost', ...later(0.6) };
+        // Not confirmed before the deadline: it may still land.
+        if (r < 0.88) return { fail: 'TIMEOUT', signature: 'slow', ...later(0.5) };
+        // Landed with an error (slippage on the curve).
+        return { code: -1000, lands: { ok: false } };
+      }
       if (r < 0.55) return 'ok';
       if (r < 0.65) return { fail: 'TIMEOUT', ...later(0.7) };
       if (r < 0.7) return { fail: 'NETWORK' };
@@ -198,10 +225,25 @@ export async function simulate(
   const executeLimiter = new ExecuteLimiter({ plan: s.plan, orderRpm: rpm, clock });
   const groupOf = (index: number): number => (groups === 2 && index >= s.wallets / 2 ? 1 : 0);
   const mintOf = (group: number): string => (group === 0 ? MINT : MINT_2);
+  let simulations = 0;
+  const client = direct
+    ? {
+        getOrder: jupiter.getOrder.bind(jupiter),
+        execute: jupiter.execute.bind(jupiter),
+        simulate: () => {
+          simulations += 1;
+          return Promise.resolve(
+            random() < 0.1
+              ? { ok: false as const, problem: '{"InstructionError":[4,{"Custom":6001}]}' }
+              : { ok: true as const, unitsConsumed: 61_000n },
+          );
+        },
+      }
+    : jupiter;
   const runs = Array.from({ length: groups }, (_, group) =>
     startRun(
       {
-        jupiter,
+        jupiter: client,
         orderLimiter,
         executeLimiter,
         sign: signer,
@@ -283,6 +325,7 @@ export async function simulate(
       durationMs: 0,
       sharedFullWindow: false,
       paused: false,
+      simulations: 0,
     };
   }
   const done = { wallets: finished.flatMap((r) => r.wallets) };
@@ -337,6 +380,15 @@ export async function simulate(
       return window.length === budget && both.size === 2;
     });
   if (s.dryRun && jupiter.executions().length > 0) broken.push('/execute in DRY-RUN');
+  if (direct) {
+    // DRY-RUN simulates each signed buy once and only then skips it; live never simulates.
+    const dryRuns = outcomes['SKIPPED:DRY_RUN'] ?? 0;
+    const refused = done.wallets.filter((w) => w.reason?.detail?.startsWith('SIMULATION_FAILED'));
+    if (!s.dryRun && simulations > 0) broken.push(`${String(simulations)} simulations live`);
+    if (s.dryRun && simulations !== dryRuns + refused.length) {
+      broken.push(`${String(simulations)} simulations for ${String(dryRuns + refused.length)}`);
+    }
+  }
   if (stoppedAt !== null) {
     // STOP of the first group: none of its wallets asks again; the second goes on.
     const stop = stoppedAt;
@@ -390,6 +442,7 @@ export async function simulate(
     durationMs: clock.now() - T0,
     sharedFullWindow,
     paused: marks.pausedFrom !== null,
+    simulations,
   };
 }
 
@@ -552,5 +605,42 @@ describe(`Stairs (${String(STAIRS_SEEDS)} seeds${LONG ? ', long set' : ''})`, ()
     expect(results.some((r) => (r.outcomes['SKIPPED:STOPPED'] ?? 0) > 0)).toBe(true);
     expect(results.reduce((n, r) => n + (r.outcomes.CONFIRMED ?? 0), 0)).toBeGreaterThan(0);
     expect(results.reduce((n, r) => n + r.executes, 0)).toBeGreaterThan(STAIRS_SEEDS * 20);
+  });
+});
+
+describe(`the direct route (${String(DIRECT_SEEDS)} seeds${LONG ? ', long set' : ''})`, () => {
+  const seeds = Array.from({ length: DIRECT_SEEDS }, (_, i) => FIRST_DIRECT_SEED + i);
+
+  const results: SimResult[] = [];
+
+  it.each(seeds)(
+    'direct seed %i',
+    async (seed) => {
+      const s = scenario(seed);
+      const result = await simulate(s, 'buy', 1, null, 'direct');
+      results.push(result);
+      expect(result.broken, JSON.stringify(s)).toEqual([]);
+    },
+    60_000,
+  );
+
+  it('the direct runs went through every path (not a vacuous pass)', () => {
+    expect(results).toHaveLength(DIRECT_SEEDS);
+    const total: Record<string, number> = {};
+    for (const r of results) {
+      for (const [k, v] of Object.entries(r.outcomes)) total[k] = (total[k] ?? 0) + v;
+    }
+    for (const key of [
+      'CONFIRMED',
+      'SKIPPED:DRY_RUN',
+      'SKIPPED:INSUFFICIENT_FUNDS',
+      'FAILED:CHECK_FAILED',
+      'FAILED:MAX_ATTEMPTS',
+    ]) {
+      expect(total[key] ?? 0, key).toBeGreaterThan(0);
+    }
+    expect(results.reduce((n, r) => n + r.simulations, 0)).toBeGreaterThan(0);
+    expect(results.reduce((n, r) => n + r.chainChecks, 0)).toBeGreaterThan(DIRECT_SEEDS * 10);
+    expect(results.reduce((n, r) => n + r.landedWithError, 0)).toBeGreaterThan(0);
   });
 });

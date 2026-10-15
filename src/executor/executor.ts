@@ -8,7 +8,10 @@
  *   wallet with a fast `/order` executes while others still wait for theirs; `/execute`
  *   calls of different wallets run in parallel. A wallet is in at most one attempt.
  * - DRY-RUN runs real `/order`, checks and signing, then throws the signed transaction
- *   away: `/execute` is never called, on any path.
+ *   away: `/execute` is never called, on any path. A route with `simulate` (the direct
+ *   route, BUNNDLY-48) simulates it on the chain first.
+ * - Route (BUNNDLY-48): `jupiter` is Jupiter's client on mainnet, or the direct Meteora DBC
+ *   route on devnet (`src/direct/route.ts`) with the same contract.
  * - Idempotency: after `/execute` a wallet is retried only when Jupiter said nothing was
  *   sent, or after the chain showed the transaction did not land and can no longer land.
  *   Until then the wallet is UNKNOWN and checked every 2 s (`landing.ts`).
@@ -715,7 +718,15 @@ export function startRun(deps: ExecutorDeps, options: RunOptions): ExecutorRun {
       return;
     }
     if (options.dryRun) {
-      // The signed transaction is dropped here; /execute is never called in DRY-RUN.
+      // The signed transaction is dropped here; /execute is never called in DRY-RUN. A
+      // route that can simulate it on the chain does so first (BUNNDLY-48).
+      if (jupiter.simulate !== undefined) {
+        const simulated = await jupiter.simulate(signed.signedTransaction);
+        if (!simulated.ok) {
+          fail(index, 'CHECK_FAILED', `SIMULATION_FAILED:${simulated.problem}`);
+          return;
+        }
+      }
       skip(index, 'DRY_RUN');
       return;
     }

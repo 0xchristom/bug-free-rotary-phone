@@ -531,10 +531,10 @@ describe('startSell refusals', () => {
     expect(await codeOf(t.sell([0]))).toBe('VAULT_LOCKED');
   });
 
-  it('devnet has no route: refused before any read', async () => {
+  it('devnet has no sell route until BUNNDLY-63: refused before any read', async () => {
     const t = await setup();
     await t.h.handle({ type: 'setNetwork', network: 'devnet' });
-    expect(await codeOf(t.sell([0]))).toBe('NO_BUY_ROUTE_ON_NETWORK');
+    expect(await codeOf(t.sell([0]))).toBe('NO_SELL_ROUTE_ON_NETWORK');
     expect(t.reads).toEqual([]);
   });
 });

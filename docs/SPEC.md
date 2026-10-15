@@ -46,6 +46,7 @@ Narzędzie do zarządzania flotą (domyślnie 30, konfigurowalnie 1–100) portf
 | Usługa | Do czego | Uwagi |
 |---|---|---|
 | **Jupiter Swap API V2**, ścieżka Meta-Aggregator: `GET /swap/v2/order` + `POST /swap/v2/execute` | Quote, budowa transakcji, wysyłka i potwierdzenie | Bez własnego RPC do wysyłki. Slippage automatyczny (RTSE). Nagłówek `x-api-key`. Limit `/order` zależy od planu (Free ~1 RPS, Developer ~10 RPS) i jest liczony **na organizację**, nie na klucz. `/execute` ma osobną, wyższą pulę. Zweryfikuj aktualne wartości. |
+| **Meteora DBC, droga bezpośrednia** (program w łańcuchu, bez API) | Zakup tokenu z krzywej DBC bez Jupitera: transakcja `swap2` budowana w aplikacji, podpis w workerze, wysyłka przez RPC sieci | Tylko Devnet, gdzie nie ma Jupitera. Na Mainnecie wyłączona do osobnego testu i zgody właściciela. Bez ponownej wysyłki, dopóki nie wiadomo, że poprzednia transakcja nie weszła. Szczegóły: D-053. |
 | **Helius RPC** (jeden klucz, plan Free wystarcza) | WebSocket do obserwacji portfela, odczyt sald, weryfikacja sygnatur | NIE wysyłamy przez niego transakcji swapów (Free ma ~1 sendTransaction/s). Grupuj odczyty (`getMultipleAccounts`). |
 | Publiczny `api.mainnet.solana.com` | Tylko jako awaryjny fallback do odczytów | Nie do produkcji. Niskie limity per IP. |
 
@@ -111,7 +112,7 @@ Kolumny dla każdego portfela:
 
 Dwa tryby, przełączane w UI, z dużym przyciskiem **UZBRÓJ / ROZBRÓJ**:
 
-**A. Bezpośredni mint.** Użytkownik wkleja adres mintu i klika „Kupuj teraz”. Walidacja: adres base58, konto istnieje, jest mintem.
+**A. Bezpośredni mint.** Użytkownik wkleja adres mintu i klika „Kupuj teraz”. Walidacja: adres base58, konto istnieje, jest mintem. Droga zakupu wynika z sieci: Mainnet kupuje przez Jupitera, Devnet bezpośrednio z krzywej Meteora DBC (2.2). Token bez obsługiwanej drogi dostaje jawny powód i nie jest kupowany.
 
 **B. Obserwacja portfela.** Użytkownik podaje adres twórcy.
 - Helius WebSocket `logsSubscribe` z filtrem `mentions: [creator]`, commitment `processed` (szybkość). Weryfikacja przez pobranie transakcji (`getTransaction`, `maxSupportedTransactionVersion: 0`).

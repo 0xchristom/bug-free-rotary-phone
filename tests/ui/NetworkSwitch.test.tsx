@@ -393,40 +393,49 @@ describe('an unsaved fleet file on the screen', () => {
   });
 });
 
-describe('devnet has no buy', () => {
-  it('BUY and ARM are off with one sentence; no startBuy and no arm leave the UI', async () => {
+describe('devnet buys directly, sells nothing yet (BUNNDLY-48)', () => {
+  it('BUY starts on a mint; SELL is off with its reason; no startSell leaves the UI', async () => {
     const { user, requests } = setup(onDevnet());
-    const sentence = 'Buying and the watcher are off on Devnet: Jupiter works on Mainnet only.';
-    const buy = await screen.findByRole<HTMLButtonElement>('button', { name: 'Buy' });
-    expect(buy.disabled).toBe(true);
-    expect(screen.getByText(sentence)).toBeTruthy();
+    await enter(user, await screen.findByLabelText(TARGET_LABEL), MINT);
+    await screen.findByText('Token · SPL', {}, TARGET_WAIT);
+    const sell = screen.getByRole<HTMLButtonElement>('button', { name: 'Sell' });
+    expect(sell.disabled).toBe(true);
+    expect(sell.title).toBe(
+      'Selling is off on Devnet for now: the direct Meteora DBC route only buys.',
+    );
+    await user.click(sell);
+    expect(requests('startSell')).toEqual([]);
+
+    const buy = screen.getByRole<HTMLButtonElement>('button', { name: 'Buy' });
+    await waitFor(() => {
+      expect(buy.disabled).toBe(false);
+    });
+    expect(screen.queryByText(/off on Devnet: Jupiter/u)).toBeNull();
     await user.click(buy);
-
-    await enter(user, screen.getByLabelText(TARGET_LABEL), CREATOR);
-    await screen.findByText('Creator wallet', {}, TARGET_WAIT);
-    const arm = screen.getByRole<HTMLButtonElement>('button', { name: 'Arm' });
-    expect(arm.disabled).toBe(true);
-    expect(screen.getByText(sentence)).toBeTruthy();
-    await user.click(arm);
-
-    expect(requests('startBuy')).toEqual([]);
-    expect(requests('arm')).toEqual([]);
+    await waitFor(() => {
+      expect(requests('startBuy')).toHaveLength(1);
+    });
   });
 
-  it('on mainnet the same fleet has no such sentence', async () => {
+  it('live on devnet without a Helius key: BUY is not held back for the key', async () => {
     const devnet = onDevnet();
     if (!devnet.info) throw new Error('no fleet');
-    const { settings } = devnet.info;
-    setup({
+    const { info } = devnet;
+    const { user } = setup({
       ...devnet,
-      network: 'mainnet',
       info: {
-        ...devnet.info,
-        settings: { ...settings, global: { ...settings.global, network: 'mainnet' } },
+        ...info,
+        apiKeys: { ...info.apiKeys, helius: false },
+        settings: { ...info.settings, global: { ...info.settings.global, dryRun: false } },
       },
     });
-    await screen.findByRole('button', { name: 'Buy' });
-    expect(screen.queryByText(/off on Devnet/u)).toBeNull();
+    await enter(user, await screen.findByLabelText(TARGET_LABEL), MINT);
+    await screen.findByText('Token · SPL', {}, TARGET_WAIT);
+    const buy = screen.getByRole<HTMLButtonElement>('button', { name: 'Buy' });
+    await waitFor(() => {
+      expect(buy.disabled).toBe(false);
+    });
+    expect(screen.queryByText('Live mode needs a Helius key (Settings).')).toBeNull();
   });
 });
 

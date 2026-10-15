@@ -1245,3 +1245,24 @@ Rejestr decyzji i rozbieżności z dokumentacją zewnętrzną. Nowe wpisy dopisu
   - Bez włączonego folderu żaden portfel nie jest blokowany. Brak kopii pokazuje wtedy dotychczasowe ostrzeżenie o niezapisanym pliku (D-058).
   - Przeglądarka bez dostępu do folderów (Firefox, Safari): pasek mówi „Backup: manual download”, a plik zaszyfrowany zapisuje się przyciskiem „Save the fleet file” z ostrzeżenia o niezapisanym pliku. Nie ma automatycznego pobierania po każdej zmianie. Plik jawny nigdy nie pobiera się sam.
 - Konsekwencje: plik jawny w folderze daje pełny dostęp do środków każdemu programowi i każdej osobie z dostępem do folderu (SECURITY.md). Wyłączenie pliku jawnego to zmiana jednej stałej.
+
+## D-062: Droga bezpośrednia Meteora DBC, etap 2: podpis w workerze, wysyłka przez RPC, tylko Devnet
+
+- Data: 2026-10-14
+- Zadanie: BUNNDLY-48 (etap 1: D-053)
+- Kontekst: Jupiter nie działa na Devnecie, więc test zakupu na żywo bez prawdziwych środków wymaga drugiej drogi. SPEC 2.2 i 3.4 dostały ją za zgodą Krystiana.
+- Decyzja:
+  - **Droga wynika z sieci, nie z zamówienia.** `buyRouteOf`: Mainnet `jupiter`, Devnet `direct`. Executor dostaje drogę bezpośrednią (`src/direct/route.ts`) przez ten sam kontrakt co klient Jupitera (`getOrder`, `execute`, opcjonalnie `simulate`). Na Mainnecie sejf odmawia podpisu zamówienia z routerem `meteora-dbc` (`DIRECT_ROUTE_OFF`).
+  - **Sprawdzenie przed podpisem** (`src/direct/check.ts`): transakcja v0 bez tabel adresów, jeden podpisujący (portfel, płatnik opłaty), tylko programy zakupu DBC, jeden przelew SOL równy kwocie, jeden `swap2` ExactIn na ten mint z minimum > 0, opłata priorytetowa najwyżej 0,001 SOL.
+  - **Koszt przed budową:** kwota + rent ATA tokenu (gdy go nie ma) + rent konta wrapped SOL + opłaty + rezerwa ≤ saldo; rent z łańcucha (`getMinimumBalanceForRentExemption`). Za mało: zamówienie bez transakcji z powodem `INSUFFICIENT_FUNDS`.
+  - **Bez podwójnej wysyłki:** `sendTransaction` raz na próbę. Odmowa w preflight to `NOT_SENT` (nic nie poszło, nowa próba bez sprawdzania łańcucha). Zgubiona odpowiedź, brak potwierdzenia przed terminem i transakcja z błędem idą do sprawdzenia łańcucha executora; nowa próba dopiero, gdy łańcuch pokaże, że poprzednia nie weszła i już nie wejdzie.
+  - **Sieć sprawdzana przed każdym zamówieniem:** `getGenesisHash` musi być hashem Devnetu (`DEVNET_GENESIS_HASH`), inaczej `WRONG_NETWORK` bez odczytu puli.
+  - **DRY-RUN** symuluje podpisaną transakcję (`simulateTransaction`, `sigVerify: true`); błąd symulacji kończy portfel jako `CHECK_FAILED`. `sendTransaction` w DRY-RUN nie pada nigdy.
+  - **Pula w trybie B** pochodzi z instrukcji tworzącej (konto 5, sprawdzone w teście jako PDA configu i obu mintów), a `getProgramAccounts` jest zapasem; droga podaje, którą drogą znalazła pulę (`detection` albo `program-accounts`).
+  - **RPC:** z kluczem Helius jego adres Devnet, bez klucza publiczne `api.devnet.solana.com` (jest w CSP), także w trybie na żywo.
+  - **Decyzje tymczasowe z 14.10.2026, do potwierdzenia (komentarz w BUNNDLY-48):** kwota do krzywej = kwota wiersza; Auto slippage drogi bezpośredniej 500 bps; limit 200 000 jednostek, cena 10 000 µlamportów; sprzedaż na Devnecie wyłączona do BUNNDLY-63 (`NO_SELL_ROUTE_ON_NETWORK`); uzbrajanie na żywo na Devnecie poza zakresem tego zadania (decyzja Andy'ego).
+  - **Skrypt `scripts/fund-devnet.ts`** zasila portfele testowe z portfela głównego Devnet. Ścieżka klucza tylko ze zmiennej `BUNNDLY_DEVNET_KEYPAIR`, sprawdzenie genesis przed każdym podpisem, limity 0,5 SOL na adres i 10 adresów, klucz nigdy nie jest wypisywany.
+- Konsekwencje / alternatywy:
+  - Na Mainnecie droga bezpośrednia pozostaje wyłączona do osobnego testu i zgody właściciela (SPEC 2.2).
+  - Rent na Devnecie jest inny niż na Mainnecie (165 B: 1 488 440 wobec 2 039 280 lamportów, odczyt 14.10.2026 22:35 UTC), dlatego nie ma go w stałej.
+  - Odrzucone: ponowna wysyłka tej samej podpisanej transakcji przy braku odpowiedzi (wymaga pewności, że poprzednia nie weszła, czyli tego samego sprawdzenia łańcucha) i Jupiter jako jedyna droga (brak Devnetu).

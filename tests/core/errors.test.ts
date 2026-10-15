@@ -28,6 +28,7 @@ describe('ERROR_MESSAGES', () => {
         'PASSWORD_TOO_SHORT',
         'VAULT_LOCKED',
         'NO_BUY_ROUTE_ON_NETWORK',
+        'NO_SELL_ROUTE_ON_NETWORK',
         'INVALID_SETTINGS',
         'RPC_UNAVAILABLE',
         'PUBLIC_RPC_REFUSED',

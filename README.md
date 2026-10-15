@@ -127,7 +127,7 @@ W nagłówku, na każdym ekranie, jest przełącznik **Mainnet / Devnet**. Nowa 
 1. **Przełączenie:** otwórz flotę i kliknij **Devnet** albo **Mainnet**. Sieć zmienia się od razu: salda są czytane od nowa, a linki do transakcji prowadzą do stron wybranej sieci.
 2. **Zapis:** sieć jest ustawieniem floty, więc po przełączeniu kliknij **Save the fleet file with the new network**. Stary plik otworzy flotę na poprzedniej sieci.
 3. **Kiedy się nie da:** w trakcie zakupu, przy uzbrojonym watcherze i gdy czeka niezapisany plik floty. Aplikacja mówi, co trzeba najpierw zrobić.
-4. **Devnet służy do testów:** zakup (**Buy**) i watcher (**Arm**) są tam wyłączone, bo Jupiter działa tylko na Mainnecie; aplikacja nie wysyła wtedy do Jupitera żadnego zapytania. **Test connections** sprawdza na Devnecie sam Helius.
+4. **Devnet służy do testów:** Jupiter działa tylko na Mainnecie, więc na Devnecie aplikacja nie wysyła do niego żadnego zapytania. **Buy** kupuje tam bezpośrednio z krzywej Meteora DBC (D-062): transakcję buduje aplikacja, podpisuje sejf, a wysyła RPC sieci. Bez klucza Helius jest to publiczne `api.devnet.solana.com`, także w trybie na żywo. Token spoza Meteora DBC dostaje powód i nie jest kupowany. **Sell** jest na Devnecie wyłączony do BUNNDLY-63. **Test connections** sprawdza na Devnecie sam Helius.
 5. **Klucz Helius:** aplikacja używa na obu sieciach tego samego klucza z **Settings**. Własne adresy RPC i WebSocket z **Settings** działają tylko na tej sieci, na którą wskazuje ich host (`devnet.helius-rpc.com` to Devnet, każdy inny to Mainnet); na drugiej sieci aplikacja używa adresu zbudowanego z klucza.
 6. **Powrót na Mainnet z wyłączonym DRY-RUN** wymaga potwierdzenia, bo następny zakup wyda prawdziwe SOL.
 
@@ -204,17 +204,26 @@ npm ci && npm run lint && npm run typecheck && npm test && npm run build && npm 
 
 ### Skrypty
 
-| Skrypt                 | Co robi                                                    |
-| ---------------------- | ---------------------------------------------------------- |
-| `npm run dev`          | serwer deweloperski Vite (bez nagłówka CSP)                |
-| `npm run build`        | typecheck + statyczny build do `dist/` (z `dist/_headers`) |
-| `npm run preview`      | podgląd zbudowanej wersji z nagłówkami z `public/_headers` |
-| `npm run lint`         | ESLint (type-aware, reguły bezpieczeństwa)                 |
-| `npm run typecheck`    | `tsc -b` bez emisji                                        |
-| `npm test`             | Vitest (Node; testy UI w jsdom), bez prawdziwej sieci      |
-| `npm run test:sim`     | długa symulacja niezmienników executora (5000 ziaren)      |
-| `npm run format`       | Prettier, zapis zmian                                      |
-| `npm run format:check` | Prettier, tylko sprawdzenie                                |
+| Skrypt                        | Co robi                                                    |
+| ----------------------------- | ---------------------------------------------------------- |
+| `npm run dev`                 | serwer deweloperski Vite (bez nagłówka CSP)                |
+| `npm run build`               | typecheck + statyczny build do `dist/` (z `dist/_headers`) |
+| `npm run preview`             | podgląd zbudowanej wersji z nagłówkami z `public/_headers` |
+| `npm run lint`                | ESLint (type-aware, reguły bezpieczeństwa)                 |
+| `npm run typecheck`           | `tsc -b` bez emisji                                        |
+| `npm test`                    | Vitest (Node; testy UI w jsdom), bez prawdziwej sieci      |
+| `npm run test:sim`            | długa symulacja niezmienników executora (5000 ziaren)      |
+| `npm run format`              | Prettier, zapis zmian                                      |
+| `npm run format:check`        | Prettier, tylko sprawdzenie                                |
+| `node scripts/fund-devnet.ts` | zasila portfele testowe na Devnecie (niżej)                |
+
+**Zasilenie portfeli testowych na Devnecie** z portfela głównego Devnet: ścieżkę do pliku klucza podaje zmienna `BUNNDLY_DEVNET_KEYPAIR`, kwota w SOL i adresy idą w argumentach:
+
+```bash
+node scripts/fund-devnet.ts 0.05 <adres> <adres>
+```
+
+Najwyżej 0,5 SOL na adres i 10 adresów naraz. Przed każdym podpisem skrypt sprawdza `getGenesisHash` i poza Devnetem odmawia. Klucza ani zawartości pliku nie wypisuje.
 
 ### Struktura
 

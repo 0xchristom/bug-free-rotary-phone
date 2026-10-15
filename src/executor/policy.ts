@@ -86,6 +86,10 @@ export function afterExecuteFailure(failure: JupiterFailure): Decision {
   if (failure.code === 'RATE_LIMITED') {
     return { action: 'requeue', countAttempt: false, detail: failure.code };
   }
+  // The direct route's RPC refused it in preflight: nothing was sent (BUNNDLY-48).
+  if (failure.code === 'NOT_SENT') {
+    return { action: 'requeue', countAttempt: true, detail: failure.code };
+  }
   if (
     failure.code === 'UNAUTHORIZED' ||
     failure.code === 'FORBIDDEN' ||

@@ -49,6 +49,8 @@ export interface TransactionJson {
 export interface TransactionDetection {
   readonly mint: string;
   readonly source: DetectionSource;
+  /** The launchpad pool named by the instruction (Meteora DBC, BUNNDLY-48). */
+  readonly pool?: string;
 }
 
 function isRecord(v: unknown): v is Record<string, unknown> {
@@ -144,7 +146,8 @@ export function detectFromTransaction(
     );
     if (known) {
       const mint = ix.accounts[known.mintAccount];
-      if (mint) launchpad.push({ mint, source: known.source });
+      const pool = known.poolAccount === undefined ? undefined : ix.accounts[known.poolAccount];
+      if (mint) launchpad.push({ mint, source: known.source, ...(pool ? { pool } : {}) });
       continue;
     }
     const tag = ix.data[0];
