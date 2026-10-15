@@ -129,8 +129,10 @@ describe('executor over the direct route', () => {
 });
 
 describe('executor over the direct route, sell (BUNNDLY-63)', () => {
-  const [FIRST, SECOND] = sells.cases;
-  if (FIRST === undefined || SECOND === undefined) throw new Error('fixture');
+  type Sell = (typeof sells.cases)[number];
+  if (sells.cases.length < 2) throw new Error('fixture');
+  const FIRST = sells.cases[0] as Sell;
+  const SECOND = sells.cases[1] as Sell;
   /** The first devnet sell's tokens (meta token balances). */
   const TOKENS = 9_810_963_807_547n;
 
