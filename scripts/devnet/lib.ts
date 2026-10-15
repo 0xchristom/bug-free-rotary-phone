@@ -148,6 +148,8 @@ export interface Devnet {
     lifetime?: Lifetime,
   ): Promise<SentOnly>;
   waitFor(signature: string, level: 'processed' | 'confirmed', timeoutMs?: number): Promise<Landed>;
+  /** Waits for many signatures with one `getSignatureStatuses` call per poll (devnet 429). */
+  waitForAll(signatures: readonly string[], timeoutMs?: number): Promise<Map<string, Outcome>>;
   latestBlockhash(): Promise<Lifetime>;
   /** Same transaction, simulated without signatures (sigVerify false). */
   simulate(instructions: readonly Instruction[], feePayer: Address): Promise<Simulation>;
@@ -162,6 +164,9 @@ export interface Landed {
   readonly slot: number;
   readonly atMs: number;
 }
+
+export type Outcome =
+  ({ readonly ok: true } & Landed) | { readonly ok: false; readonly error: string };
 
 export interface SentOnly {
   readonly signature: string;
@@ -245,6 +250,9 @@ export async function openDevnet(rpc: Rpc): Promise<Devnet> {
     async waitFor(signature, level, timeoutMs = 60_000) {
       return waitForConfirmation(rpc, signature, level, timeoutMs);
     },
+    async waitForAll(signatures, timeoutMs = 60_000) {
+      return waitForAllConfirmed(rpc, signatures, timeoutMs);
+    },
     async send(instructions, signers) {
       const payer = signers[0];
       if (!payer) throw new DevnetError('no fee payer');
@@ -299,6 +307,41 @@ async function waitForConfirmation(
     await sleep(pause);
   }
   throw new DevnetError(`${signature} not ${level} within ${String(timeoutMs / 1000)} s`);
+}
+
+/**
+ * `confirmed` for every signature, polled together: one request per 400 ms however many
+ * buys are in flight. Separate pollers per buy hit the public devnet limit (HTTP 429,
+ * 15.10.2026). A failed or timed-out signature is reported, not thrown.
+ */
+export async function waitForAllConfirmed(
+  rpc: Rpc,
+  signatures: readonly string[],
+  timeoutMs = 60_000,
+): Promise<Map<string, Outcome>> {
+  const out = new Map<string, Outcome>();
+  const deadline = Date.now() + timeoutMs;
+  while (out.size < signatures.length && Date.now() < deadline) {
+    const pending = signatures.filter((s) => !out.has(s));
+    const { value } = await rpc.call<{
+      value: ({ slot: number; err: unknown; confirmationStatus: string | null } | null)[];
+    }>('getSignatureStatuses', [pending]);
+    const atMs = Date.now();
+    for (const [i, s] of pending.entries()) {
+      const status = value[i];
+      if (status?.err) out.set(s, { ok: false, error: `failed: ${JSON.stringify(status.err)}` });
+      else if (status && status.confirmationStatus !== 'processed') {
+        out.set(s, { ok: true, slot: status.slot, atMs });
+      }
+    }
+    if (out.size < signatures.length) await sleep(400);
+  }
+  for (const s of signatures) {
+    if (!out.has(s)) {
+      out.set(s, { ok: false, error: `not confirmed within ${String(timeoutMs / 1000)} s` });
+    }
+  }
+  return out;
 }
 
 // ---------------------------------------------------------------- instructions

@@ -13,6 +13,7 @@ import {
   loadKeypairFile,
   openDevnet,
   transfer,
+  waitForAllConfirmed,
   type ChainTx,
   type Fetch,
 } from '../../scripts/devnet/lib.ts';
@@ -156,6 +157,47 @@ describe('buyRow', () => {
       solSpent: 11_493_440n,
       fee: 5000n,
       tokensReceived: 42n,
+    });
+  });
+});
+
+describe('waitForAllConfirmed (cycle)', () => {
+  it('polls every pending signature in one request and reports a failed one without throwing', async () => {
+    const asked: string[][] = [];
+    const rounds = [
+      {
+        a: { slot: 10, err: null, confirmationStatus: 'confirmed' },
+        b: { slot: 11, err: null, confirmationStatus: 'processed' },
+        c: null,
+      },
+      {
+        b: { slot: 11, err: null, confirmationStatus: 'confirmed' },
+        c: { slot: 12, err: { InstructionError: [3, { Custom: 6001 }] }, confirmationStatus: null },
+      },
+    ] as const;
+    const fetchFn: Fetch = (_url, init) => {
+      const { method, params } = JSON.parse(init.body as string) as {
+        method: string;
+        params: [string[]];
+      };
+      expect(method).toBe('getSignatureStatuses');
+      const round: Record<string, unknown> = rounds[asked.length] ?? {};
+      asked.push(params[0]);
+      const value = params[0].map((s) => round[s] ?? null);
+      return Promise.resolve(
+        new Response(JSON.stringify({ jsonrpc: '2.0', id: 1, result: { value } })),
+      );
+    };
+    const out = await waitForAllConfirmed(createRpc('http://rpc.test', fetchFn), ['a', 'b', 'c']);
+    expect(asked).toEqual([
+      ['a', 'b', 'c'],
+      ['b', 'c'],
+    ]);
+    expect(out.get('a')).toMatchObject({ ok: true, slot: 10 });
+    expect(out.get('b')).toMatchObject({ ok: true, slot: 11 });
+    expect(out.get('c')).toEqual({
+      ok: false,
+      error: 'failed: {"InstructionError":[3,{"Custom":6001}]}',
     });
   });
 });

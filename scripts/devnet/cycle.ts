@@ -189,13 +189,18 @@ export async function runCycle(
         computeUnitLimit: o.computeUnitLimit,
         computeUnitPriceMicroLamports: o.computeUnitPriceMicroLamports,
       });
-      const s = await d.sendOnly(ixs, [w], lifetime);
-      const landed = await d.waitFor(s.signature, 'confirmed');
-      return { wallet: w.address, ...s, landed };
+      return d.sendOnly(ixs, [w], lifetime);
     }),
   );
 
-  const creationLanded = await d.waitFor(creation.signature, 'confirmed');
+  const outcomes = await d.waitForAll([
+    creation.signature,
+    ...sent.flatMap((r) => (r.status === 'fulfilled' ? [r.value.signature] : [])),
+  ]);
+  const creationLanded = outcomes.get(creation.signature);
+  if (!creationLanded?.ok) {
+    throw new DevnetError(`creation ${creation.signature}: ${creationLanded?.error ?? 'lost'}`);
+  }
   const creationTx = await getTransaction(d.rpc, creation.signature);
   const s0 = creationTx?.slot ?? creationLanded.slot;
   const rows: CycleRow[] = [];
@@ -207,6 +212,11 @@ export async function runCycle(
       failures.push({ wallet, error: r.reason instanceof Error ? r.reason.message : 'failed' });
       continue;
     }
+    const landed = outcomes.get(r.value.signature);
+    if (!landed?.ok) {
+      failures.push({ wallet, error: `${r.value.signature} ${landed?.error ?? 'lost'}` });
+      continue;
+    }
     const tx = await getTransaction(d.rpc, r.value.signature);
     if (!tx) {
       failures.push({ wallet, error: `${r.value.signature} not found` });
@@ -215,7 +225,7 @@ export async function runCycle(
     rows.push({
       ...buyRow(wallet, mint.address, r.value.signature, s0, tx),
       detectToSentMs: r.value.sentAtMs - detected.atMs,
-      sentToConfirmedMs: r.value.landed.atMs - r.value.sentAtMs,
+      sentToConfirmedMs: landed.atMs - r.value.sentAtMs,
       attempts: 1,
       quotedTokens: quote.quote.outputAmount,
       maxSpend,
